@@ -34,6 +34,6 @@ jobs:
           gh release create "$TAG" \
             --title "v$TAG" \
             --generate-notes \
-            main.js \
-            manifest.json \
-            styles.css
+            apps/obsidian-plugin/main.js \
+            apps/obsidian-plugin/manifest.json \
+            apps/obsidian-plugin/styles.css
