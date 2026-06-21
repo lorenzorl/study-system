@@ -1,0 +1,9 @@
+{
+  "id": "obsidian-flashcard-plugin",
+  "name": "Flashcards",
+  "version": "1.0.0",
+  "minAppVersion": "1.5.0",
+  "description": "Interactive flashcards with flip-to-reveal behavior for your study notes.",
+  "author": "",
+  "isDesktopOnly": false
+}

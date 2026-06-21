@@ -1,0 +1,20 @@
+{
+  "name": "obsidian-flashcard-plugin",
+  "version": "1.0.0",
+  "description": "Obsidian plugin that displays interactive flashcards with flip-to-reveal behavior",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+    "test": "vitest run"
+  },
+  "keywords": [],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "esbuild": "^0.20.0",
+    "obsidian": "^1.5.7",
+    "typescript": "^5.3.3",
+    "vitest": "^2.1.0"
+  }
+}

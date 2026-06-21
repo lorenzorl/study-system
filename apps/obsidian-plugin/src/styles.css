@@ -1,0 +1,73 @@
+.flashcard-modal .modal-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.5rem;
+}
+
+.flashcard-card {
+  width: 100%;
+  min-height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-secondary);
+  cursor: pointer;
+  transition: border-color 0.2s ease;
+  user-select: none;
+}
+
+.flashcard-card:hover {
+  border-color: var(--interactive-accent);
+}
+
+.flashcard-face {
+  font-size: 1.1rem;
+  text-align: center;
+  line-height: 1.6;
+}
+
+.flashcard-face.is-flipped {
+  font-style: italic;
+}
+
+.flashcard-empty {
+  padding: 2rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.flashcard-nav {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+  justify-content: center;
+}
+
+.flashcard-nav-btn {
+  padding: 0.4rem 1rem;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: background-color 0.15s ease;
+}
+
+.flashcard-nav-btn:hover {
+  background: var(--background-modifier-hover);
+}
+
+.flashcard-progress {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  min-width: 3rem;
+  text-align: center;
+}
