@@ -29,6 +29,7 @@ defineEmits<{
   justify-content: space-between;
   width: 100%;
   min-height: 44px;
+  height: auto;
   padding: 0.75rem;
   border: 1px solid var(--background-modifier-border);
   border-radius: 8px;
