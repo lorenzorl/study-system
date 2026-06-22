@@ -1,7 +1,7 @@
 {
   "name": "obsidian-flashcard-plugin",
-  "version": "1.0.0",
-  "description": "Obsidian plugin that displays interactive flashcards with flip-to-reveal behavior",
+  "version": "2.0.0",
+  "description": "Obsidian plugin with Vue 3 SPA study dashboard — domain exploration, flashcards, Feynman technique, and command center",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
@@ -10,8 +10,14 @@
   },
   "keywords": [],
   "license": "MIT",
+  "dependencies": {
+    "pinia": "^2.1.7",
+    "vue": "^3.4.0",
+    "vue-router": "^4.3.0"
+  },
   "devDependencies": {
     "@types/node": "^20.11.0",
+    "@vue/compiler-sfc": "^3.4.0",
     "esbuild": "^0.20.0",
     "obsidian": "^1.5.7",
     "typescript": "^5.3.3",

@@ -1,9 +1,9 @@
 {
   "id": "obsidian-flashcard-plugin",
-  "name": "Flashcards",
-  "version": "1.0.0",
+  "name": "Study Dashboard",
+  "version": "2.0.0",
   "minAppVersion": "1.5.0",
-  "description": "Interactive flashcards with flip-to-reveal behavior for your study notes.",
+  "description": "Study dashboard with domain exploration, flashcards, Feynman technique, and command center.",
   "author": "",
   "isDesktopOnly": false
 }
