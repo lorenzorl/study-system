@@ -1,0 +1,108 @@
+<template>
+  <button
+    class="flashcard-card"
+    :class="{ 'flashcard-card--flipped': isFlipped }"
+    @click="toggle"
+    :aria-label="isFlipped ? 'Show question' : 'Show answer'"
+  >
+    <div class="flashcard-card__inner">
+      <div class="flashcard-card__face flashcard-card__front">
+        <p class="flashcard-card__text">{{ card.question }}</p>
+        <span class="flashcard-card__hint">Tap to reveal</span>
+      </div>
+      <div class="flashcard-card__face flashcard-card__back">
+        <p class="flashcard-card__text">{{ card.answer }}</p>
+        <span class="flashcard-card__hint">Tap to hide</span>
+      </div>
+    </div>
+  </button>
+</template>
+
+<script setup lang="ts">
+import { ref, watch } from "vue";
+import type { Flashcard } from "../../types";
+
+const props = defineProps<{
+  card: Flashcard;
+}>();
+
+const isFlipped = ref(false);
+
+function toggle() {
+  isFlipped.value = !isFlipped.value;
+}
+
+// Reset flip state when card changes
+watch(
+  () => props.card.id,
+  () => {
+    isFlipped.value = false;
+  },
+);
+</script>
+
+<style scoped>
+.flashcard-card {
+  width: 100%;
+  min-height: 180px;
+  padding: 0;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 12px;
+  background: transparent;
+  cursor: pointer;
+  perspective: 800px;
+}
+
+.flashcard-card__inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 180px;
+  transition: transform 0.4s ease;
+  transform-style: preserve-3d;
+}
+
+.flashcard-card--flipped .flashcard-card__inner {
+  transform: rotateY(180deg);
+}
+
+.flashcard-card__face {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  border-radius: 12px;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.flashcard-card__front {
+  background: var(--background-secondary);
+  color: var(--text-normal);
+}
+
+.flashcard-card__back {
+  background: var(--background-primary-alt, var(--background-secondary));
+  color: var(--text-normal);
+  transform: rotateY(180deg);
+}
+
+.flashcard-card__text {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+  text-align: center;
+  line-height: 1.6;
+  user-select: none;
+}
+
+.flashcard-card__hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+</style>
