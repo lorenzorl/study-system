@@ -4,6 +4,8 @@ import type {
   SyncConceptResponse,
   SyncFlashcardsRequest,
   SyncFlashcardsResponse,
+  CreateTopicResponse,
+  CreateConceptResponse,
 } from "../../types"
 
 const API_BASE = "http://localhost:8080"
@@ -78,5 +80,44 @@ export async function syncFlashcards(
   return request<SyncFlashcardsResponse>("/api/sync/flashcards", {
     method: "POST",
     body: JSON.stringify(req),
+  })
+}
+
+export async function createTopic(
+  name: string,
+): Promise<CreateTopicResponse> {
+  return request<CreateTopicResponse>("/api/topics", {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  }).catch((e) => {
+    if (e instanceof ApiError) {
+      if (e.status === 409) {
+        throw new ApiError("Ya existe un tema con ese nombre", 409)
+      }
+      if (e.status === 400) {
+        throw new ApiError("El nombre no puede estar vacío", 400)
+      }
+    }
+    throw e
+  })
+}
+
+export async function createConcept(
+  topicId: string,
+  title: string,
+): Promise<CreateConceptResponse> {
+  return request<CreateConceptResponse>("/api/concepts", {
+    method: "POST",
+    body: JSON.stringify({ topic_id: topicId, title }),
+  }).catch((e) => {
+    if (e instanceof ApiError) {
+      if (e.status === 404) {
+        throw new ApiError("El tema no existe", 404)
+      }
+      if (e.status === 400) {
+        throw new ApiError("El título no puede estar vacío", 400)
+      }
+    }
+    throw e
   })
 }

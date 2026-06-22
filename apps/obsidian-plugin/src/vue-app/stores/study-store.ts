@@ -1,7 +1,7 @@
 import { defineStore } from "pinia"
 import { ref, computed } from "vue"
 import type { Topic, ConceptSummary, Flashcard } from "../../types"
-import { fetchTopics, syncConcept, syncFlashcards } from "../services/api"
+import { fetchTopics, syncConcept, syncFlashcards, createTopic, createConcept } from "../services/api"
 import { parseFlashcards } from "../services/markdown-parser"
 
 export const useStudyStore = defineStore("study", () => {
@@ -140,6 +140,43 @@ export const useStudyStore = defineStore("study", () => {
     }
   }
 
+  async function createTopicAction(name: string): Promise<void> {
+    loading.value = true
+    error.value = null
+    try {
+      await createTopic(name)
+      await loadTopics()
+    } catch (e) {
+      if (e instanceof Error) {
+        error.value = e.message
+      } else {
+        error.value = "Error al crear el tema"
+      }
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function createConceptAction(
+    topicId: string,
+    title: string,
+  ): Promise<void> {
+    loading.value = true
+    error.value = null
+    try {
+      await createConcept(topicId, title)
+      await loadTopics()
+    } catch (e) {
+      if (e instanceof Error) {
+        error.value = e.message
+      } else {
+        error.value = "Error al crear el concepto"
+      }
+    } finally {
+      loading.value = false
+    }
+  }
+
   return {
     topics,
     currentTopicId,
@@ -156,5 +193,7 @@ export const useStudyStore = defineStore("study", () => {
     loadTopics,
     syncCurrentNote,
     getCachedFlashcards,
+    createTopic: createTopicAction,
+    createConcept: createConceptAction,
   }
 })

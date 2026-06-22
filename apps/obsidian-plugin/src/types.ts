@@ -68,3 +68,28 @@ export interface SyncFlashcardsRequest {
 export interface SyncFlashcardsResponse {
   synced: number
 }
+
+// ─── Create Topic / Concept Types ──────────────────────────────────────────
+
+export interface CreateTopicRequest {
+  name: string
+}
+
+export interface CreateTopicResponse {
+  id: string
+  name: string
+  created_at: string
+}
+
+export interface CreateConceptRequest {
+  topic_id: string
+  title: string
+}
+
+export interface CreateConceptResponse {
+  id: string
+  topic_id: string
+  title: string
+  file_path: string
+  created_at: string
+}
