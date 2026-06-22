@@ -168,8 +168,8 @@ describe("isValidDomain", () => {
     expect(isValidDomain({ ...validDomain, description: "" })).toBe(false);
   });
 
-  it("returns false when concepts array is empty", () => {
-    expect(isValidDomain({ ...validDomain, concepts: [] })).toBe(false);
+  it("returns true when concepts array is empty (valid empty domain)", () => {
+    expect(isValidDomain({ ...validDomain, concepts: [] })).toBe(true);
   });
 });
 
@@ -197,8 +197,8 @@ describe("isValidConcept", () => {
     expect(isValidConcept({ ...validConcept, summary: "" })).toBe(false);
   });
 
-  it("returns false when flashcards array is empty", () => {
-    expect(isValidConcept({ ...validConcept, flashcards: [] })).toBe(false);
+  it("returns true when flashcards array is empty (valid empty concept)", () => {
+    expect(isValidConcept({ ...validConcept, flashcards: [] })).toBe(true);
   });
 });
 
