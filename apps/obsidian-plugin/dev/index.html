@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Study Dashboard — Dev Preview</title>
+    <style>
+      /* Fallback CSS variables for non-Obsidian environments */
+      :root {
+        --text-normal: #222;
+        --text-muted: #666;
+        --text-accent: #7b6cd9;
+        --background-primary: #fff;
+        --background-secondary: #f5f5f5;
+        --background-modifier-border: #ddd;
+        --background-modifier-hover: #eee;
+        --interactive-accent: #7b6cd9;
+        --font-text: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --text-normal: #dcddde;
+          --text-muted: #999;
+          --text-accent: #a29bfe;
+          --background-primary: #1e1e1e;
+          --background-secondary: #2a2a2a;
+          --background-modifier-border: #444;
+          --background-modifier-hover: #333;
+          --interactive-accent: #a29bfe;
+        }
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      html, body, #app {
+        height: 100%;
+        font-family: var(--font-text);
+        background: var(--background-primary);
+        color: var(--text-normal);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script src="./dist/main.js"></script>
+  </body>
+</html>
