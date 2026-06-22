@@ -2,6 +2,23 @@ package http
 
 import "net/http"
 
+// corsMiddleware adds permissive CORS headers for local-first development.
+// In production behind Obsidian's webview, these headers are harmless.
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
 // NewRouter creates an http.Handler with all API routes registered.
 // It accepts the three use case implementations which are wired in main.go.
 func NewRouter(
@@ -15,5 +32,5 @@ func NewRouter(
 	mux.Handle("POST /api/sync/flashcards", NewSyncFlashcardsHandler(syncFlashcards))
 	mux.Handle("GET /api/concepts", NewListConceptsHandler(listConcepts))
 
-	return mux
+	return corsMiddleware(mux)
 }
