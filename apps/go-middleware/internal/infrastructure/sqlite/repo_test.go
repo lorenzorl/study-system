@@ -238,6 +238,142 @@ func TestFlashcardRepository_UpsertByObsidianID_BatchCreate(t *testing.T) {
 	assert.Equal(t, 2, count)
 }
 
+func TestTopicRepository_Create_Success(t *testing.T) {
+	topicRepo, _, _, cleanup := openTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	topic := &domain.Topic{
+		ID:        uuid.New().String(),
+		Name:      "Computer Science",
+		CreatedAt: time.Now().UTC(),
+	}
+
+	err := topicRepo.Create(ctx, topic)
+	require.NoError(t, err)
+
+	// Verify it can be found
+	found, err := topicRepo.FindByID(ctx, topic.ID)
+	require.NoError(t, err)
+	assert.Equal(t, topic.Name, found.Name)
+	assert.Equal(t, topic.ID, found.ID)
+}
+
+func TestTopicRepository_Create_DuplicateName(t *testing.T) {
+	topicRepo, _, _, cleanup := openTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	first := &domain.Topic{
+		ID:        uuid.New().String(),
+		Name:      "Physics",
+		CreatedAt: time.Now().UTC(),
+	}
+	err := topicRepo.Create(ctx, first)
+	require.NoError(t, err)
+
+	second := &domain.Topic{
+		ID:        uuid.New().String(),
+		Name:      "Physics",
+		CreatedAt: time.Now().UTC(),
+	}
+	err = topicRepo.Create(ctx, second)
+	assert.ErrorIs(t, err, domain.ErrConflict)
+}
+
+func TestTopicRepository_FindByID_Existing(t *testing.T) {
+	topicRepo, _, _, cleanup := openTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	topic := &domain.Topic{
+		ID:        uuid.New().String(),
+		Name:      "Literature",
+		CreatedAt: time.Now().UTC(),
+	}
+	err := topicRepo.Create(ctx, topic)
+	require.NoError(t, err)
+
+	found, err := topicRepo.FindByID(ctx, topic.ID)
+	require.NoError(t, err)
+	assert.Equal(t, topic.Name, found.Name)
+	assert.False(t, found.CreatedAt.IsZero())
+}
+
+func TestTopicRepository_FindByID_NotFound(t *testing.T) {
+	topicRepo, _, _, cleanup := openTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	_, err := topicRepo.FindByID(ctx, "nonexistent-id")
+	assert.ErrorIs(t, err, domain.ErrNotFound)
+}
+
+func TestConceptRepository_Create_Success(t *testing.T) {
+	topicRepo, conceptRepo, _, cleanup := openTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	topic := &domain.Topic{
+		ID:        uuid.New().String(),
+		Name:      "DDD",
+		CreatedAt: time.Now().UTC(),
+	}
+	err := topicRepo.Create(ctx, topic)
+	require.NoError(t, err)
+
+	concept := &domain.Concept{
+		ID:        uuid.New().String(),
+		TopicID:   topic.ID,
+		Title:     "Aggregates",
+		FilePath:  "ddd/aggregates.md",
+		CreatedAt: time.Now().UTC(),
+	}
+
+	err = conceptRepo.Create(ctx, concept)
+	require.NoError(t, err)
+
+	// Verify via ListByTopicID
+	concepts, err := conceptRepo.ListByTopicID(ctx, topic.ID)
+	require.NoError(t, err)
+	assert.Len(t, concepts, 1)
+	assert.Equal(t, "Aggregates", concepts[0].Title)
+}
+
+func TestConceptRepository_Create_DuplicateFilePath(t *testing.T) {
+	topicRepo, conceptRepo, _, cleanup := openTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	topic := &domain.Topic{
+		ID:        uuid.New().String(),
+		Name:      "Go",
+		CreatedAt: time.Now().UTC(),
+	}
+	err := topicRepo.Create(ctx, topic)
+	require.NoError(t, err)
+
+	first := &domain.Concept{
+		ID:        uuid.New().String(),
+		TopicID:   topic.ID,
+		Title:     "Concurrency",
+		FilePath:  "go/concurrency.md",
+		CreatedAt: time.Now().UTC(),
+	}
+	err = conceptRepo.Create(ctx, first)
+	require.NoError(t, err)
+
+	second := &domain.Concept{
+		ID:        uuid.New().String(),
+		TopicID:   topic.ID,
+		Title:     "Concurrency",
+		FilePath:  "go/concurrency.md",
+		CreatedAt: time.Now().UTC(),
+	}
+	err = conceptRepo.Create(ctx, second)
+	assert.ErrorIs(t, err, domain.ErrConflict)
+}
+
 func TestFlashcardRepository_UpsertByObsidianID_MixedInsertUpdate(t *testing.T) {
 	// R6: mixed insert and update in same batch
 	topicRepo, conceptRepo, flashcardRepo, cleanup := openTestDB(t)

@@ -70,6 +70,40 @@ func (r *TopicRepository) findByName(ctx context.Context, name string) (*domain.
 	return &topic, nil
 }
 
+// Create inserts a new topic. Returns domain.ErrConflict on duplicate name.
+func (r *TopicRepository) Create(ctx context.Context, topic *domain.Topic) error {
+	_, err := r.db.ExecContext(ctx,
+		"INSERT INTO topics (id, name, created_at) VALUES (?, ?, ?)",
+		topic.ID, topic.Name, topic.CreatedAt.Format(time.RFC3339),
+	)
+	if err != nil {
+		if isUniqueConstraintError(err) {
+			return domain.ErrConflict
+		}
+		return fmt.Errorf("create topic: %w", err)
+	}
+	return nil
+}
+
+// FindByID returns a topic by its primary key, or domain.ErrNotFound if missing.
+func (r *TopicRepository) FindByID(ctx context.Context, id string) (*domain.Topic, error) {
+	var topic domain.Topic
+	var createdAt string
+
+	err := r.db.QueryRowContext(ctx,
+		`SELECT id, name, created_at FROM topics WHERE id = ?`, id,
+	).Scan(&topic.ID, &topic.Name, &createdAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, domain.ErrNotFound
+		}
+		return nil, fmt.Errorf("query topic by id: %w", err)
+	}
+
+	topic.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+	return &topic, nil
+}
+
 // ListAll returns all topics ordered by creation time.
 func (r *TopicRepository) ListAll(ctx context.Context) ([]domain.Topic, error) {
 	rows, err := r.db.QueryContext(ctx,

@@ -71,6 +71,21 @@ func (r *ConceptRepository) findByFilePath(ctx context.Context, filePath string)
 	return &concept, nil
 }
 
+// Create inserts a new concept. Returns domain.ErrConflict on duplicate file_path.
+func (r *ConceptRepository) Create(ctx context.Context, concept *domain.Concept) error {
+	_, err := r.db.ExecContext(ctx,
+		"INSERT INTO concepts (id, topic_id, title, file_path, created_at) VALUES (?, ?, ?, ?, ?)",
+		concept.ID, concept.TopicID, concept.Title, concept.FilePath, concept.CreatedAt.Format(time.RFC3339),
+	)
+	if err != nil {
+		if isUniqueConstraintError(err) {
+			return domain.ErrConflict
+		}
+		return fmt.Errorf("create concept: %w", err)
+	}
+	return nil
+}
+
 // ListByTopicID returns all concepts for a given topic, ordered by creation time.
 func (r *ConceptRepository) ListByTopicID(ctx context.Context, topicID string) ([]domain.Concept, error) {
 	rows, err := r.db.QueryContext(ctx,
