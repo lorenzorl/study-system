@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { parse, compileScript, compileStyle } from "@vue/compiler-sfc";
 import esbuild from "esbuild";
 
@@ -9,7 +10,10 @@ export const vuePlugin = () => ({
       const source = readFileSync(args.path, "utf-8");
       const { descriptor } = parse(source, { filename: args.path });
 
-      const id = args.path;
+      // Hash the file path to produce a valid CSS scope ID (8 hex chars).
+      // Using the raw path produces selectors like [data-v-/Users/...] which
+      // are invalid CSS because slashes and special chars break the selector.
+      const id = createHash("md5").update(args.path).digest("hex").slice(0, 8);
       const scriptBlock = descriptor.scriptSetup || descriptor.script;
 
       // Compile script with inline template render function
