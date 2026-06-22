@@ -99,4 +99,10 @@ const total = computed(() => totalReviewed.value);
   font-weight: 600;
   min-width: 44px;
 }
+
+@media (max-width: 480px) {
+  .metrics-bar__item:first-child {
+    flex-basis: 100%;
+  }
+}
 </style>
