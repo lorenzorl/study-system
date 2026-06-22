@@ -60,6 +60,9 @@ const total = computed(() => totalReviewed.value);
   gap: 0.4rem;
   min-width: 44px;
   min-height: 44px;
+}
+
+.metrics-bar__item:first-child {
   flex: 1;
 }
 
@@ -102,7 +105,11 @@ const total = computed(() => totalReviewed.value);
 
 @media (max-width: 480px) {
   .metrics-bar__item:first-child {
-    flex-basis: 100%;
+    flex: 1 1 100%;
+  }
+
+  .metrics-bar__item:not(:first-child) {
+    flex: 1;
   }
 }
 </style>
