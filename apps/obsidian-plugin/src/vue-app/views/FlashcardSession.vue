@@ -1,7 +1,18 @@
 <template>
   <div class="flashcard-session" ref="sessionEl">
-    <!-- Loading / empty concept -->
-    <div v-if="!concept" class="flashcard-session__empty">
+    <!-- Loading -->
+    <div v-if="loading" class="flashcard-session__state loading-state">
+      <span class="spinner"></span> Cargando...
+    </div>
+
+    <!-- Error -->
+    <div v-else-if="error" class="flashcard-session__state error-state">
+      <p>{{ error }}</p>
+      <button class="flashcard-session__retry-btn" @click="retry">Reintentar</button>
+    </div>
+
+    <!-- No concept found -->
+    <div v-else-if="!concept" class="flashcard-session__empty">
       <p>Concepto no encontrado.</p>
       <button
         class="flashcard-session__back-btn"
@@ -13,7 +24,7 @@
 
     <!-- No flashcards for this concept -->
     <div v-else-if="flashcards.length === 0" class="flashcard-session__empty">
-      <p>No hay tarjetas para este concepto aún.</p>
+      <p>No hay tarjetas para estudiar. Sincronizá la nota primero.</p>
       <button
         class="flashcard-session__back-btn"
         @click="goBackToConcept"
@@ -28,7 +39,7 @@
       <h2 class="flashcard-session__complete-title">¡Sesión Completada!</h2>
       <p class="flashcard-session__complete-text">
         Revisaste las {{ flashcards.length }} tarjeta{{ flashcards.length === 1 ? '' : 's' }}
-        de {{ concept.name }}.
+        de {{ concept.title }}.
       </p>
       <div class="flashcard-session__complete-actions">
         <button class="flashcard-session__btn" @click="restartSession">
@@ -74,82 +85,87 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from "vue";
-import { useRouter } from "vue-router";
-import { useStudyStore } from "../stores/study-store";
-import { useSwipe } from "../composables/useSwipe";
-import { storeToRefs } from "pinia";
-import FlashcardCard from "../components/FlashcardCard.vue";
+import { ref, computed, onMounted, onBeforeUnmount } from "vue"
+import { useRouter } from "vue-router"
+import { useStudyStore } from "../stores/study-store"
+import { useSwipe } from "../composables/useSwipe"
+import { storeToRefs } from "pinia"
+import FlashcardCard from "../components/FlashcardCard.vue"
 
 const props = defineProps<{
-  domainId: string;
-  conceptId: string;
-}>();
+  topicId: string
+  conceptId: string
+}>()
 
-const router = useRouter();
-const studyStore = useStudyStore();
-const { currentConcept: concept, currentFlashcards: flashcards } =
-  storeToRefs(studyStore);
+const router = useRouter()
+const studyStore = useStudyStore()
+const { currentConcept: concept, currentFlashcards: flashcards, loading, error } =
+  storeToRefs(studyStore)
 
-const sessionEl = ref<HTMLElement | null>(null);
-const currentIndex = ref(0);
-const isComplete = ref(false);
+const sessionEl = ref<HTMLElement | null>(null)
+const currentIndex = ref(0)
+const isComplete = ref(false)
 
 const hasTouch = computed(() => {
-  return typeof window !== "undefined" && "ontouchstart" in window;
-});
+  return typeof window !== "undefined" && "ontouchstart" in window
+})
 
 // Touch swipe support
 useSwipe(sessionEl, {
   onSwipeLeft: () => nextCard(),
   onSwipeRight: () => prevCard(),
-});
+})
 
 onMounted(() => {
-  studyStore.selectDomain(props.domainId);
-  studyStore.selectConcept(props.conceptId);
+  studyStore.selectTopic(props.topicId)
+  studyStore.selectConcept(props.conceptId)
 
-  window.addEventListener("keydown", handleKeydown);
-});
+  window.addEventListener("keydown", handleKeydown)
+})
 
 onBeforeUnmount(() => {
-  window.removeEventListener("keydown", handleKeydown);
-});
+  window.removeEventListener("keydown", handleKeydown)
+})
+
+function retry() {
+  studyStore.clearError()
+  studyStore.loadTopics()
+}
 
 function handleKeydown(e: KeyboardEvent) {
   if (e.key === "ArrowRight") {
-    e.preventDefault();
-    nextCard();
+    e.preventDefault()
+    nextCard()
   } else if (e.key === "ArrowLeft") {
-    e.preventDefault();
-    prevCard();
+    e.preventDefault()
+    prevCard()
   }
 }
 
 function nextCard() {
   if (currentIndex.value < flashcards.value.length - 1) {
-    currentIndex.value++;
+    currentIndex.value++
   } else {
-    isComplete.value = true;
+    isComplete.value = true
   }
 }
 
 function prevCard() {
   if (currentIndex.value > 0) {
-    currentIndex.value--;
+    currentIndex.value--
   }
 }
 
 function restartSession() {
-  currentIndex.value = 0;
-  isComplete.value = false;
+  currentIndex.value = 0
+  isComplete.value = false
 }
 
 function goBackToConcept() {
   router.push({
     name: "concept",
-    params: { domainId: props.domainId, conceptId: props.conceptId },
-  });
+    params: { topicId: props.topicId, conceptId: props.conceptId },
+  })
 }
 </script>
 
@@ -212,7 +228,8 @@ function goBackToConcept() {
 }
 
 .flashcard-session__empty,
-.flashcard-session__complete {
+.flashcard-session__complete,
+.flashcard-session__state {
   padding: 2rem 1rem;
   text-align: center;
   display: flex;
@@ -272,7 +289,8 @@ function goBackToConcept() {
   border-color: var(--background-modifier-border);
 }
 
-.flashcard-session__back-btn {
+.flashcard-session__back-btn,
+.flashcard-session__retry-btn {
   min-height: 44px;
   min-width: 44px;
   padding: 0.5rem 1rem;
@@ -285,7 +303,32 @@ function goBackToConcept() {
   transition: background-color 0.15s ease;
 }
 
-.flashcard-session__back-btn:hover {
+.flashcard-session__back-btn:hover,
+.flashcard-session__retry-btn:hover {
   background: var(--background-modifier-hover);
+}
+
+.spinner {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--background-modifier-border);
+  border-top: 2px solid var(--interactive-accent);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loading-state {
+  color: var(--text-muted);
+}
+
+.error-state {
+  color: var(--text-error);
 }
 </style>

@@ -1,22 +1,42 @@
 <template>
   <div class="concept-view">
-    <div v-if="concept" class="concept-view__content">
+    <div v-if="loading" class="concept-view__state loading-state">
+      <span class="spinner"></span> Cargando...
+    </div>
+
+    <div v-else-if="error" class="concept-view__state error-state">
+      <p>{{ error }}</p>
+      <button class="concept-view__retry-btn" @click="retry">Reintentar</button>
+    </div>
+
+    <div v-else-if="!concept" class="concept-view__state empty-state">
+      <p>Concepto no encontrado.</p>
+      <button
+        class="concept-view__back-btn"
+        @click="router.push({ name: 'topic', params: { topicId: props.topicId } })"
+      >
+        ← Volver al Tema
+      </button>
+    </div>
+
+    <div v-else class="concept-view__content">
       <div class="concept-view__header">
-        <h2 class="concept-view__name">{{ concept.name }}</h2>
-        <p class="concept-view__summary">{{ concept.summary }}</p>
+        <h2 class="concept-view__title">{{ concept.title }}</h2>
+        <p class="concept-view__path">{{ concept.file_path }}</p>
       </div>
 
       <div class="concept-view__actions">
         <button
           class="concept-view__action"
           @click="navigateTo('flashcards')"
-          :disabled="concept.flashcards.length === 0"
+          :disabled="flashcardCount === 0"
         >
           <span class="concept-view__action-icon">🃏</span>
           <span class="concept-view__action-text">
             Tarjetas
             <small class="concept-view__action-meta">
-              {{ concept.flashcards.length }} tarjetas
+              {{ flashcardCount }}
+              tarjeta{{ flashcardCount === 1 ? '' : 's' }}
             </small>
           </span>
         </button>
@@ -31,45 +51,51 @@
           </span>
         </button>
       </div>
-    </div>
 
-    <div v-else class="concept-view__empty">
-      <p>Concepto no encontrado.</p>
-      <button
-        class="concept-view__back-btn"
-        @click="router.push({ name: 'domain', params: { domainId: props.domainId } })"
+      <div
+        v-if="flashcardCount === 0 && !loading && !error"
+        class="concept-view__state empty-state"
       >
-        ← Volver al Tema
-      </button>
+        <p>Este concepto no tiene tarjetas. Sincronizá la nota para generarlas.</p>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted } from "vue";
-import { useRouter } from "vue-router";
-import { useStudyStore } from "../stores/study-store";
-import { storeToRefs } from "pinia";
+import { computed, onMounted } from "vue"
+import { useRouter } from "vue-router"
+import { useStudyStore } from "../stores/study-store"
+import { storeToRefs } from "pinia"
 
 const props = defineProps<{
-  domainId: string;
-  conceptId: string;
-}>();
+  topicId: string
+  conceptId: string
+}>()
 
-const router = useRouter();
-const studyStore = useStudyStore();
-const { currentConcept: concept } = storeToRefs(studyStore);
+const router = useRouter()
+const studyStore = useStudyStore()
+const { currentConcept: concept, loading, error } = storeToRefs(studyStore)
+
+const flashcardCount = computed(() => {
+  return studyStore.getCachedFlashcards(props.conceptId).length
+})
 
 onMounted(() => {
-  studyStore.selectDomain(props.domainId);
-  studyStore.selectConcept(props.conceptId);
-});
+  studyStore.selectTopic(props.topicId)
+  studyStore.selectConcept(props.conceptId)
+})
+
+function retry() {
+  studyStore.clearError()
+  studyStore.loadTopics()
+}
 
 function navigateTo(module: "flashcards" | "feynman") {
   router.push({
     name: module,
-    params: { domainId: props.domainId, conceptId: props.conceptId },
-  });
+    params: { topicId: props.topicId, conceptId: props.conceptId },
+  })
 }
 </script>
 
@@ -80,11 +106,17 @@ function navigateTo(module: "flashcards" | "feynman") {
   gap: 1rem;
 }
 
+.concept-view__content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
 .concept-view__header {
   margin-bottom: 0.25rem;
 }
 
-.concept-view__name {
+.concept-view__title {
   margin: 0 0 0.25rem;
   font-size: 1.1rem;
   font-weight: 600;
@@ -93,11 +125,11 @@ function navigateTo(module: "flashcards" | "feynman") {
   align-items: center;
 }
 
-.concept-view__summary {
+.concept-view__path {
   margin: 0;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   color: var(--text-muted);
-  line-height: 1.5;
+  font-family: monospace;
 }
 
 .concept-view__actions {
@@ -151,7 +183,7 @@ function navigateTo(module: "flashcards" | "feynman") {
   font-weight: 400;
 }
 
-.concept-view__empty {
+.concept-view__state {
   padding: 2rem 1rem;
   text-align: center;
   color: var(--text-muted);
@@ -162,7 +194,8 @@ function navigateTo(module: "flashcards" | "feynman") {
   gap: 0.75rem;
 }
 
-.concept-view__back-btn {
+.concept-view__back-btn,
+.concept-view__retry-btn {
   min-height: 44px;
   min-width: 44px;
   padding: 0.5rem 1rem;
@@ -175,7 +208,32 @@ function navigateTo(module: "flashcards" | "feynman") {
   transition: background-color 0.15s ease;
 }
 
-.concept-view__back-btn:hover {
+.concept-view__back-btn:hover,
+.concept-view__retry-btn:hover {
   background: var(--background-modifier-hover);
+}
+
+.spinner {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--background-modifier-border);
+  border-top: 2px solid var(--interactive-accent);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loading-state {
+  color: var(--text-muted);
+}
+
+.error-state {
+  color: var(--text-error);
 }
 </style>
