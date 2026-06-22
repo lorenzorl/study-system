@@ -50,7 +50,7 @@ watch(
   border-radius: 12px;
   background: transparent;
   cursor: pointer;
-  perspective: 800px;
+  overflow: hidden;
 }
 
 .flashcard-card__inner {
@@ -58,13 +58,8 @@ watch(
   width: 100%;
   height: 100%;
   min-height: 180px;
-  transition: transform 0.4s ease;
-  transform-style: preserve-3d;
 }
 
-.flashcard-card--flipped .flashcard-card__inner {
-  transform: rotateY(180deg);
-}
 
 .flashcard-card__face {
   position: absolute;
@@ -75,19 +70,27 @@ watch(
   justify-content: center;
   padding: 1.25rem;
   border-radius: 12px;
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
+  transition: transform 0.4s ease;
 }
 
 .flashcard-card__front {
   background: var(--background-secondary);
   color: var(--text-normal);
+  transform: translateX(0);
 }
 
 .flashcard-card__back {
   background: var(--background-primary-alt, var(--background-secondary));
   color: var(--text-normal);
-  transform: rotateY(180deg);
+  transform: translateX(100%);
+}
+
+.flashcard-card--flipped .flashcard-card__front {
+  transform: translateX(-100%);
+}
+
+.flashcard-card--flipped .flashcard-card__back {
+  transform: translateX(0);
 }
 
 .flashcard-card__text {
