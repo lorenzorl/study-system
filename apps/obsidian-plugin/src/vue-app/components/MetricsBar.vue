@@ -47,7 +47,7 @@ const total = computed(() => totalReviewed.value);
 .metrics-bar {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: 0.75rem;
   padding: 0.5rem 0.75rem;
   border: 1px solid var(--background-modifier-border);
   border-radius: 8px;
