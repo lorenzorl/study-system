@@ -19,6 +19,14 @@
       <h2 class="dashboard__section-title">
         <span>Temas</span>
         <button
+          class="dashboard__add-btn"
+          @click="showNewTopicForm = !showNewTopicForm"
+          aria-label="Agregar tema"
+          title="Agregar tema"
+        >
+          +
+        </button>
+        <button
           class="dashboard__sync-btn"
           @click="syncActiveNote"
           aria-label="Sincronizar nota"
@@ -27,6 +35,39 @@
           Sincronizar nota
         </button>
       </h2>
+
+      <form
+        v-if="showNewTopicForm"
+        class="dashboard__new-form"
+        @submit.prevent="handleCreateTopic"
+      >
+        <input
+          ref="newTopicInputRef"
+          v-model="newTopicName"
+          type="text"
+          class="dashboard__new-input"
+          placeholder="Nombre del tema (ej. DDD, Matemáticas)"
+          :disabled="formSubmitting"
+        />
+        <div class="dashboard__new-actions">
+          <button
+            type="submit"
+            class="dashboard__new-submit"
+            :disabled="formSubmitting || !newTopicName.trim()"
+          >
+            <span v-if="formSubmitting" class="spinner"></span>
+            <span v-else>Guardar</span>
+          </button>
+          <button
+            type="button"
+            class="dashboard__new-cancel"
+            :disabled="formSubmitting"
+            @click="cancelNewTopic"
+          >
+            Cancelar
+          </button>
+        </div>
+      </form>
 
       <div v-if="topics.length === 0" class="dashboard__state empty-state">
         <p>No hay temas todavía. Sincronizá una nota para crear el primero.</p>
@@ -45,7 +86,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from "vue"
+import { computed, onMounted, ref } from "vue"
 import { useRouter } from "vue-router"
 import { useStudyStore } from "../stores/study-store"
 import { useMetricsStore } from "../stores/metrics-store"
@@ -64,6 +105,11 @@ const { topics, loading, error } = storeToRefs(studyStore)
 const { dailyCardCount } = storeToRefs(metricsStore)
 
 const showCTA = computed(() => dailyCardCount.value > 0)
+
+const showNewTopicForm = ref(false)
+const newTopicName = ref("")
+const newTopicInputRef = ref<HTMLInputElement | null>(null)
+const formSubmitting = ref(false)
 
 onMounted(() => {
   studyStore.loadTopics()
@@ -90,6 +136,28 @@ function handleDailyReview() {
       params: { topicId: topic.id, conceptId: concept.id },
     })
   }
+}
+
+async function handleCreateTopic() {
+  const name = newTopicName.value.trim()
+  if (!name) return
+
+  formSubmitting.value = true
+  studyStore.clearError()
+
+  try {
+    await studyStore.createTopic(name)
+    showNewTopicForm.value = false
+    newTopicName.value = ""
+  } finally {
+    formSubmitting.value = false
+  }
+}
+
+function cancelNewTopic() {
+  showNewTopicForm.value = false
+  newTopicName.value = ""
+  studyStore.clearError()
 }
 
 async function syncActiveNote() {
@@ -240,5 +308,105 @@ async function syncActiveNote() {
 
 .empty-state {
   color: var(--text-muted);
+}
+
+.dashboard__add-btn {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  cursor: pointer;
+  font-size: 1.1rem;
+  font-weight: 600;
+  line-height: 1;
+  transition: background-color 0.15s ease;
+}
+
+.dashboard__add-btn:hover {
+  background: var(--background-modifier-hover);
+}
+
+.dashboard__new-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+}
+
+.dashboard__new-input {
+  min-height: 44px;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 0.85rem;
+  font-family: inherit;
+}
+
+.dashboard__new-input:focus {
+  outline: none;
+  border-color: var(--interactive-accent);
+}
+
+.dashboard__new-input:disabled {
+  opacity: 0.5;
+}
+
+.dashboard__new-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.dashboard__new-submit {
+  min-height: 44px;
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 6px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent, #fff);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: opacity 0.15s ease;
+}
+
+.dashboard__new-submit:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.dashboard__new-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.dashboard__new-cancel {
+  min-height: 44px;
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: background-color 0.15s ease;
+}
+
+.dashboard__new-cancel:hover:not(:disabled) {
+  background: var(--background-modifier-hover);
+}
+
+.dashboard__new-cancel:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>
