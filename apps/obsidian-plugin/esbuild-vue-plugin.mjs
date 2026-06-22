@@ -29,6 +29,19 @@ export const vuePlugin = () => ({
 
       let code = script.content;
 
+      // Inject __scopeId when scoped styles are present.
+      // compileScript with inlineTemplate does NOT add __scopeId automatically,
+      // so the rendered elements never get data-v-* attributes and scoped CSS
+      // selectors never match. We must inject it into defineComponent({}).
+      const hasScoped = descriptor.styles.some((s) => s.scoped);
+      if (hasScoped) {
+        const scopeId = `data-v-${id}`;
+        code = code.replace(
+          /defineComponent\(\{/,
+          `defineComponent({\n  __scopeId: "${scopeId}",`,
+        );
+      }
+
       // Strip TypeScript type annotations via esbuild transform
       if (scriptBlock && scriptBlock.lang === "ts") {
         const transformed = await esbuild.transform(code, {
