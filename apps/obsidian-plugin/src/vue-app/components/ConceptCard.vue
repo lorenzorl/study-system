@@ -1,25 +1,34 @@
 <template>
   <button class="concept-card" @click="$emit('select', concept.id)">
     <div class="concept-card__content">
-      <h3 class="concept-card__name">{{ concept.name }}</h3>
-      <p class="concept-card__summary">{{ concept.summary }}</p>
+      <h3 class="concept-card__title">{{ concept.title }}</h3>
+      <p class="concept-card__path">{{ concept.file_path }}</p>
     </div>
     <span class="concept-card__count">
-      {{ concept.flashcards.length }} tarjetas
+      {{ flashcardCount }} tarjeta{{ flashcardCount === 1 ? '' : 's' }}
     </span>
   </button>
 </template>
 
 <script setup lang="ts">
-import type { Concept } from "../../types";
+import { computed } from "vue"
+import type { ConceptSummary } from "../../types"
+import { useStudyStore } from "../stores/study-store"
 
-defineProps<{
-  concept: Concept;
-}>();
+const props = defineProps<{
+  concept: ConceptSummary
+}>()
 
 defineEmits<{
-  select: [id: string];
-}>();
+  select: [id: string]
+}>()
+
+const store = useStudyStore()
+
+const flashcardCount = computed(() => {
+  const cached = store.getCachedFlashcards(props.concept.id)
+  return cached.length
+})
 </script>
 
 <style scoped>
@@ -49,21 +58,17 @@ defineEmits<{
   min-width: 0;
 }
 
-.concept-card__name {
+.concept-card__title {
   margin: 0 0 0.25rem;
   font-size: 0.9rem;
   font-weight: 600;
 }
 
-.concept-card__summary {
+.concept-card__path {
   margin: 0;
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   color: var(--text-muted);
-  line-height: 1.4;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  line-height: 1.3;
 }
 
 .concept-card__count {

@@ -2,8 +2,7 @@
   <div class="feynman">
     <div v-if="concept" class="feynman__content">
       <div class="feynman__header">
-        <h2 class="feynman__name">{{ concept.name }}</h2>
-        <p class="feynman__summary">{{ concept.summary }}</p>
+        <h2 class="feynman__name">{{ concept.title }}</h2>
       </div>
 
       <div class="feynman__instructions">
@@ -18,7 +17,7 @@
         class="feynman__textarea"
         placeholder="Escribe tu explicación aquí..."
         rows="6"
-        :aria-label="'Explicá ' + concept.name + ' con tus propias palabras'"
+        :aria-label="'Explicá ' + concept.title + ' con tus propias palabras'"
       ></textarea>
 
       <button
@@ -42,38 +41,38 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
-import { useStudyStore } from "../stores/study-store";
-import { storeToRefs } from "pinia";
+import { ref, onMounted } from "vue"
+import { useStudyStore } from "../stores/study-store"
+import { storeToRefs } from "pinia"
 
 const props = defineProps<{
-  domainId: string;
-  conceptId: string;
-}>();
+  topicId: string
+  conceptId: string
+}>()
 
-const studyStore = useStudyStore();
-const { currentConcept: concept } = storeToRefs(studyStore);
+const studyStore = useStudyStore()
+const { currentConcept: concept } = storeToRefs(studyStore)
 
-const userExplanation = ref("");
-const response = ref("");
+const userExplanation = ref("")
+const response = ref("")
 
 onMounted(() => {
-  studyStore.selectDomain(props.domainId);
-  studyStore.selectConcept(props.conceptId);
-});
+  studyStore.selectTopic(props.topicId)
+  studyStore.selectConcept(props.conceptId)
+})
 
 function explain() {
-  if (!userExplanation.value.trim() || !concept.value) return;
+  if (!userExplanation.value.trim() || !concept.value) return
 
   // Mock response — real RAG-powered analysis coming in v2.1
   response.value = [
-    `Great explanation! Here's a summary of what you covered about "${concept.value.name}":`,
+    `Great explanation! Here's a summary of what you covered about "${concept.value.title}":`,
     "",
     "✓ You engaged with the concept in your own words — this strengthens neural pathways.",
     "✓ Self-explanation is one of the most effective study techniques (meta-analysis by Dunlosky et al., 2013).",
     "",
     "[This is a placeholder response. RAG-powered analysis with gap detection and guided follow-up is planned for v2.1.]",
-  ].join("\n");
+  ].join("\n")
 }
 </script>
 
@@ -89,19 +88,12 @@ function explain() {
 }
 
 .feynman__name {
-  margin: 0 0 0.25rem;
+  margin: 0;
   font-size: 1.1rem;
   font-weight: 600;
   min-height: 44px;
   display: flex;
   align-items: center;
-}
-
-.feynman__summary {
-  margin: 0;
-  font-size: 0.85rem;
-  color: var(--text-muted);
-  line-height: 1.5;
 }
 
 .feynman__instructions {
