@@ -16,12 +16,20 @@ const routes = [
   { path: "/domain/:domainId/concept/:conceptId/feynman", name: "feynman", component: FeynmanModule, props: true },
 ];
 
-const router = createRouter({
-  history: createWebHistory(),
-  routes,
-});
+function init() {
+  const router = createRouter({
+    history: createWebHistory("/"),
+    routes,
+  });
 
-const app = createApp(App);
-app.use(createPinia());
-app.use(router);
-app.mount("#app");
+  const app = createApp(App);
+  app.use(createPinia());
+  app.use(router);
+  app.mount("#app");
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", init);
+} else {
+  init();
+}
