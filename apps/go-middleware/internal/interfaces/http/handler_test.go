@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -44,6 +45,24 @@ type mockListConceptsUseCase struct {
 
 func (m *mockListConceptsUseCase) Execute(ctx context.Context) ([]application.TopicWithConcepts, error) {
 	return m.topics, m.err
+}
+
+type mockCreateTopicUseCase struct {
+	topic *domain.Topic
+	err   error
+}
+
+func (m *mockCreateTopicUseCase) Execute(ctx context.Context, name string) (*domain.Topic, error) {
+	return m.topic, m.err
+}
+
+type mockCreateConceptUseCase struct {
+	concept *domain.Concept
+	err     error
+}
+
+func (m *mockCreateConceptUseCase) Execute(ctx context.Context, topicID, title string) (*domain.Concept, error) {
+	return m.concept, m.err
 }
 
 func TestHandleSyncConcept_Success(t *testing.T) {
@@ -199,6 +218,177 @@ func TestHandleListConcepts_InternalError(t *testing.T) {
 	handler := httppkg.NewListConceptsHandler(&mockListConceptsUseCase{err: errors.New("db down")})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/concepts", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+}
+
+// --- CreateTopicHandler tests ---
+
+func TestHandleCreateTopic_Success(t *testing.T) {
+	now := time.Now().UTC()
+	topic := &domain.Topic{ID: "uuid-1", Name: "DDD", CreatedAt: now}
+	handler := httppkg.NewCreateTopicHandler(&mockCreateTopicUseCase{topic: topic})
+
+	body := `{"name":"DDD"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/topics", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusCreated, rec.Code)
+
+	var resp httppkg.CreateTopicResponse
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
+	assert.Equal(t, "uuid-1", resp.ID)
+	assert.Equal(t, "DDD", resp.Name)
+	assert.NotEmpty(t, resp.CreatedAt)
+}
+
+func TestHandleCreateTopic_EmptyName(t *testing.T) {
+	handler := httppkg.NewCreateTopicHandler(&mockCreateTopicUseCase{err: domain.ErrInvalidInput})
+
+	body := `{"name":""}`
+	req := httptest.NewRequest(http.MethodPost, "/api/topics", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+
+	var errResp httppkg.ErrorResponse
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&errResp))
+	assert.Equal(t, "invalid input", errResp.Error)
+}
+
+func TestHandleCreateTopic_Conflict(t *testing.T) {
+	handler := httppkg.NewCreateTopicHandler(&mockCreateTopicUseCase{err: domain.ErrConflict})
+
+	body := `{"name":"DDD"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/topics", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusConflict, rec.Code)
+
+	var errResp httppkg.ErrorResponse
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&errResp))
+	assert.Equal(t, "conflict", errResp.Error)
+}
+
+func TestHandleCreateTopic_InvalidJSON(t *testing.T) {
+	handler := httppkg.NewCreateTopicHandler(&mockCreateTopicUseCase{topic: &domain.Topic{}})
+
+	body := `not json`
+	req := httptest.NewRequest(http.MethodPost, "/api/topics", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestHandleCreateTopic_InternalError(t *testing.T) {
+	handler := httppkg.NewCreateTopicHandler(&mockCreateTopicUseCase{err: errors.New("db down")})
+
+	body := `{"name":"DDD"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/topics", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+}
+
+// --- CreateConceptHandler tests ---
+
+func TestHandleCreateConcept_Success(t *testing.T) {
+	now := time.Now().UTC()
+	concept := &domain.Concept{
+		ID: "c-uuid", TopicID: "t1", Title: "Aggregates",
+		FilePath: "manual/DDD/Aggregates.md", CreatedAt: now,
+	}
+	handler := httppkg.NewCreateConceptHandler(&mockCreateConceptUseCase{concept: concept})
+
+	body := `{"topic_id":"t1","title":"Aggregates"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/concepts", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusCreated, rec.Code)
+
+	var resp httppkg.CreateConceptResponse
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
+	assert.Equal(t, "c-uuid", resp.ID)
+	assert.Equal(t, "t1", resp.TopicID)
+	assert.Equal(t, "Aggregates", resp.Title)
+	assert.Equal(t, "manual/DDD/Aggregates.md", resp.FilePath)
+	assert.NotEmpty(t, resp.CreatedAt)
+}
+
+func TestHandleCreateConcept_EmptyTitle(t *testing.T) {
+	handler := httppkg.NewCreateConceptHandler(&mockCreateConceptUseCase{err: domain.ErrInvalidInput})
+
+	body := `{"topic_id":"t1","title":""}`
+	req := httptest.NewRequest(http.MethodPost, "/api/concepts", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+
+	var errResp httppkg.ErrorResponse
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&errResp))
+	assert.Equal(t, "invalid input", errResp.Error)
+}
+
+func TestHandleCreateConcept_TopicNotFound(t *testing.T) {
+	handler := httppkg.NewCreateConceptHandler(&mockCreateConceptUseCase{err: domain.ErrNotFound})
+
+	body := `{"topic_id":"t99","title":"X"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/concepts", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+
+	var errResp httppkg.ErrorResponse
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&errResp))
+	assert.Equal(t, "not found", errResp.Error)
+}
+
+func TestHandleCreateConcept_InvalidJSON(t *testing.T) {
+	handler := httppkg.NewCreateConceptHandler(&mockCreateConceptUseCase{concept: &domain.Concept{}})
+
+	body := `{broken`
+	req := httptest.NewRequest(http.MethodPost, "/api/concepts", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestHandleCreateConcept_InternalError(t *testing.T) {
+	handler := httppkg.NewCreateConceptHandler(&mockCreateConceptUseCase{err: errors.New("db down")})
+
+	body := `{"topic_id":"t1","title":"Aggregates"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/concepts", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)

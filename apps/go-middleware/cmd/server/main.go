@@ -36,8 +36,10 @@ func main() {
 	syncConceptUC := application.NewSyncConceptUseCase(topicRepo, conceptRepo)
 	syncFlashcardsUC := application.NewSyncFlashcardsUseCase(conceptRepo, flashcardRepo)
 	listConceptsUC := application.NewListConceptsUseCase(topicRepo, conceptRepo)
+	createTopicUC := application.NewCreateTopicUseCase(topicRepo)
+	createConceptUC := application.NewCreateConceptUseCase(topicRepo, conceptRepo)
 
-	router := httppkg.NewRouter(syncConceptUC, syncFlashcardsUC, listConceptsUC)
+	router := httppkg.NewRouter(syncConceptUC, syncFlashcardsUC, listConceptsUC, createTopicUC, createConceptUC)
 
 	server := &http.Server{
 		Addr:    ":" + *port,

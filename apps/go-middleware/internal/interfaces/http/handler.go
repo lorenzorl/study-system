@@ -26,6 +26,16 @@ type ListConceptsUseCase interface {
 	Execute(ctx context.Context) ([]application.TopicWithConcepts, error)
 }
 
+// CreateTopicUseCase defines the interface for creating a topic.
+type CreateTopicUseCase interface {
+	Execute(ctx context.Context, name string) (*domain.Topic, error)
+}
+
+// CreateConceptUseCase defines the interface for creating a concept.
+type CreateConceptUseCase interface {
+	Execute(ctx context.Context, topicID, title string) (*domain.Concept, error)
+}
+
 // SyncConceptHandler handles POST /api/sync/concept requests.
 type SyncConceptHandler struct {
 	useCase SyncConceptUseCase
@@ -132,6 +142,68 @@ func (h *ListConceptsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	}
 
 	writeJSON(w, http.StatusOK, response)
+}
+
+// CreateTopicHandler handles POST /api/topics requests.
+type CreateTopicHandler struct {
+	useCase CreateTopicUseCase
+}
+
+// NewCreateTopicHandler creates a new CreateTopicHandler.
+func NewCreateTopicHandler(uc CreateTopicUseCase) *CreateTopicHandler {
+	return &CreateTopicHandler{useCase: uc}
+}
+
+func (h *CreateTopicHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	var req CreateTopicRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	topic, err := h.useCase.Execute(r.Context(), req.Name)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, CreateTopicResponse{
+		ID:        topic.ID,
+		Name:      topic.Name,
+		CreatedAt: topic.CreatedAt.Format("2006-01-02T15:04:05Z"),
+	})
+}
+
+// CreateConceptHandler handles POST /api/concepts requests.
+type CreateConceptHandler struct {
+	useCase CreateConceptUseCase
+}
+
+// NewCreateConceptHandler creates a new CreateConceptHandler.
+func NewCreateConceptHandler(uc CreateConceptUseCase) *CreateConceptHandler {
+	return &CreateConceptHandler{useCase: uc}
+}
+
+func (h *CreateConceptHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	var req CreateConceptRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	concept, err := h.useCase.Execute(r.Context(), req.TopicID, req.Title)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, CreateConceptResponse{
+		ID:        concept.ID,
+		TopicID:   concept.TopicID,
+		Title:     concept.Title,
+		FilePath:  concept.FilePath,
+		CreatedAt: concept.CreatedAt.Format("2006-01-02T15:04:05Z"),
+	})
 }
 
 // --- helpers ---

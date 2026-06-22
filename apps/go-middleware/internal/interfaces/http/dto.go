@@ -48,3 +48,30 @@ type ConceptDTO struct {
 type ErrorResponse struct {
 	Error string `json:"error"`
 }
+
+// CreateTopicRequest is the JSON body for POST /api/topics.
+type CreateTopicRequest struct {
+	Name string `json:"name"`
+}
+
+// CreateTopicResponse is the JSON body returned by POST /api/topics.
+type CreateTopicResponse struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	CreatedAt string `json:"created_at"`
+}
+
+// CreateConceptRequest is the JSON body for POST /api/concepts.
+type CreateConceptRequest struct {
+	TopicID string `json:"topic_id"`
+	Title   string `json:"title"`
+}
+
+// CreateConceptResponse is the JSON body returned by POST /api/concepts.
+type CreateConceptResponse struct {
+	ID        string `json:"id"`
+	TopicID   string `json:"topic_id"`
+	Title     string `json:"title"`
+	FilePath  string `json:"file_path"`
+	CreatedAt string `json:"created_at"`
+}
