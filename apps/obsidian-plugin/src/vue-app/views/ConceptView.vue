@@ -14,9 +14,9 @@
         >
           <span class="concept-view__action-icon">🃏</span>
           <span class="concept-view__action-text">
-            Flashcards
+            Tarjetas
             <small class="concept-view__action-meta">
-              {{ concept.flashcards.length }} cards
+              {{ concept.flashcards.length }} tarjetas
             </small>
           </span>
         </button>
@@ -24,9 +24,9 @@
         <button class="concept-view__action" @click="navigateTo('feynman')">
           <span class="concept-view__action-icon">📝</span>
           <span class="concept-view__action-text">
-            Feynman Technique
+            Técnica Feynman
             <small class="concept-view__action-meta">
-              Explain in your own words
+              Explícalo con tus propias palabras
             </small>
           </span>
         </button>
@@ -34,12 +34,12 @@
     </div>
 
     <div v-else class="concept-view__empty">
-      <p>Concept not found.</p>
+      <p>Concepto no encontrado.</p>
       <button
         class="concept-view__back-btn"
         @click="router.push({ name: 'domain', params: { domainId: props.domainId } })"
       >
-        ← Back to Domain
+        ← Volver al Tema
       </button>
     </div>
   </div>

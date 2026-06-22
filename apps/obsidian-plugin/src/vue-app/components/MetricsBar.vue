@@ -1,7 +1,7 @@
 <template>
   <div class="metrics-bar">
     <div class="metrics-bar__item">
-      <span class="metrics-bar__label">Retention</span>
+      <span class="metrics-bar__label">Retención</span>
       <div
         class="metrics-bar__bar"
         role="progressbar"
@@ -17,11 +17,11 @@
       <span class="metrics-bar__value">{{ displayPercentage }}%</span>
     </div>
     <div class="metrics-bar__item">
-      <span class="metrics-bar__label">Streak</span>
-      <span class="metrics-bar__streak">{{ streak }} {{ streak === 1 ? 'day' : 'days' }}</span>
+      <span class="metrics-bar__label">Racha</span>
+      <span class="metrics-bar__streak">{{ streak }} {{ streak === 1 ? 'día' : 'días' }}</span>
     </div>
     <div class="metrics-bar__item">
-      <span class="metrics-bar__label">Reviewed</span>
+      <span class="metrics-bar__label">Repasadas</span>
       <span class="metrics-bar__value">{{ total }}</span>
     </div>
   </div>

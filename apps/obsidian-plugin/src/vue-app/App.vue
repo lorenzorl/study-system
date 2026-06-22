@@ -5,11 +5,11 @@
         class="study-dashboard__back"
         v-if="showBack"
         @click="goBack"
-        :aria-label="'Go back'"
+        :aria-label="'Volver'"
       >
-        ← Back
+        ← Volver
       </button>
-      <h1 class="study-dashboard__title">Study Dashboard</h1>
+      <h1 class="study-dashboard__title">Panel de Estudio</h1>
     </header>
     <main class="study-dashboard__main">
       <router-view />

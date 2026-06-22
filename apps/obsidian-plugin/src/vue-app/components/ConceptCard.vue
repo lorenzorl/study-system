@@ -5,7 +5,7 @@
       <p class="concept-card__summary">{{ concept.summary }}</p>
     </div>
     <span class="concept-card__count">
-      {{ concept.flashcards.length }} cards
+      {{ concept.flashcards.length }} tarjetas
     </span>
   </button>
 </template>

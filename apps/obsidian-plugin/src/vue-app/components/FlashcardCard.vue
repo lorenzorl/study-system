@@ -3,16 +3,16 @@
     class="flashcard-card"
     :class="{ 'flashcard-card--flipped': isFlipped }"
     @click="toggle"
-    :aria-label="isFlipped ? 'Show question' : 'Show answer'"
+    :aria-label="isFlipped ? 'Mostrar pregunta' : 'Mostrar respuesta'"
   >
     <div class="flashcard-card__inner">
       <div class="flashcard-card__face flashcard-card__front">
         <p class="flashcard-card__text">{{ card.question }}</p>
-        <span class="flashcard-card__hint">Tap to reveal</span>
+        <span class="flashcard-card__hint">Tocá para revelar</span>
       </div>
       <div class="flashcard-card__face flashcard-card__back">
         <p class="flashcard-card__text">{{ card.answer }}</p>
-        <span class="flashcard-card__hint">Tap to hide</span>
+        <span class="flashcard-card__hint">Tocá para ocultar</span>
       </div>
     </div>
   </button>

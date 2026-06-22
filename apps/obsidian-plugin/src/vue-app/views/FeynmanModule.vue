@@ -8,17 +8,17 @@
 
       <div class="feynman__instructions">
         <p>
-          Explain this concept in your own words, as if teaching it to someone
-          new. This reveals gaps in your understanding.
+          Explicá este concepto con tus propias palabras, como si se lo enseñaras a
+          alguien nuevo. Esto revela lagunas en tu comprensión.
         </p>
       </div>
 
       <textarea
         v-model="userExplanation"
         class="feynman__textarea"
-        placeholder="Write your explanation here..."
+        placeholder="Escribe tu explicación aquí..."
         rows="6"
-        :aria-label="'Explain ' + concept.name + ' in your own words'"
+        :aria-label="'Explicá ' + concept.name + ' con tus propias palabras'"
       ></textarea>
 
       <button
@@ -26,17 +26,17 @@
         @click="explain"
         :disabled="!userExplanation.trim()"
       >
-        Explain this concept
+        Explicar este concepto
       </button>
 
       <div v-if="response" class="feynman__response">
-        <h3 class="feynman__response-title">Feedback</h3>
+        <h3 class="feynman__response-title">Retroalimentación</h3>
         <p class="feynman__response-text">{{ response }}</p>
       </div>
     </div>
 
     <div v-else class="feynman__empty">
-      <p>Concept not found.</p>
+      <p>Concepto no encontrado.</p>
     </div>
   </div>
 </template>

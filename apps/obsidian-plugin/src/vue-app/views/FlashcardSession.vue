@@ -2,40 +2,40 @@
   <div class="flashcard-session" ref="sessionEl">
     <!-- Loading / empty concept -->
     <div v-if="!concept" class="flashcard-session__empty">
-      <p>Concept not found.</p>
+      <p>Concepto no encontrado.</p>
       <button
         class="flashcard-session__back-btn"
         @click="goBackToConcept"
       >
-        ← Back
+        ← Volver
       </button>
     </div>
 
     <!-- No flashcards for this concept -->
     <div v-else-if="flashcards.length === 0" class="flashcard-session__empty">
-      <p>No flashcards for this concept yet.</p>
+      <p>No hay tarjetas para este concepto aún.</p>
       <button
         class="flashcard-session__back-btn"
         @click="goBackToConcept"
       >
-        ← Back to Command Center
+        ← Volver al Panel
       </button>
     </div>
 
     <!-- Completion state -->
     <div v-else-if="isComplete" class="flashcard-session__complete">
       <div class="flashcard-session__complete-icon">✅</div>
-      <h2 class="flashcard-session__complete-title">Session Complete!</h2>
+      <h2 class="flashcard-session__complete-title">¡Sesión Completada!</h2>
       <p class="flashcard-session__complete-text">
-        You reviewed all {{ flashcards.length }} flashcard{{ flashcards.length === 1 ? '' : 's' }}
-        for {{ concept.name }}.
+        Revisaste las {{ flashcards.length }} tarjeta{{ flashcards.length === 1 ? '' : 's' }}
+        de {{ concept.name }}.
       </p>
       <div class="flashcard-session__complete-actions">
         <button class="flashcard-session__btn" @click="restartSession">
-          Study Again
+          Estudiar de nuevo
         </button>
         <button class="flashcard-session__btn flashcard-session__btn--secondary" @click="goBackToConcept">
-          Back to Command Center
+          Volver al Panel
         </button>
       </div>
     </div>
@@ -53,21 +53,21 @@
           class="flashcard-session__nav-btn"
           @click="prevCard"
           :disabled="currentIndex === 0"
-          :aria-label="'Previous card'"
+          :aria-label="'Tarjeta anterior'"
         >
-          ← Prev
+          ← Anterior
         </button>
         <button
           class="flashcard-session__nav-btn"
           @click="nextCard"
-          :aria-label="'Next card'"
+          :aria-label="'Siguiente tarjeta'"
         >
-          {{ currentIndex === flashcards.length - 1 ? 'Finish →' : 'Next →' }}
+          {{ currentIndex === flashcards.length - 1 ? 'Finalizar →' : 'Siguiente →' }}
         </button>
       </div>
 
       <div class="flashcard-session__keys" v-if="!hasTouch">
-        <span class="flashcard-session__key-hint">← → arrow keys to navigate</span>
+        <span class="flashcard-session__key-hint">Teclas ← → para navegar</span>
       </div>
     </template>
   </div>

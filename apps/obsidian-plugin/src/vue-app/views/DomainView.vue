@@ -7,7 +7,7 @@
       </div>
 
       <section class="domain-view__section">
-        <h3 class="domain-view__section-title">Concepts</h3>
+        <h3 class="domain-view__section-title">Conceptos</h3>
         <div class="domain-view__grid">
           <ConceptCard
             v-for="concept in domain.concepts"
@@ -20,9 +20,9 @@
     </div>
 
     <div v-else class="domain-view__empty">
-      <p>Domain not found.</p>
+      <p>Tema no encontrado.</p>
       <button class="domain-view__back-btn" @click="router.push({ name: 'dashboard' })">
-        ← Back to Dashboard
+        ← Volver
       </button>
     </div>
   </div>

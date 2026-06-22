@@ -36,6 +36,15 @@ export const useStudyStore = defineStore("study", () => {
     currentConceptId.value = id;
   }
 
+  function addDomain(name: string, description: string) {
+    domains.value.push({
+      id: crypto.randomUUID(),
+      name,
+      description,
+      concepts: [],
+    });
+  }
+
   return {
     domains,
     currentDomainId,
@@ -45,5 +54,6 @@ export const useStudyStore = defineStore("study", () => {
     currentFlashcards,
     selectDomain,
     selectConcept,
+    addDomain,
   };
 });

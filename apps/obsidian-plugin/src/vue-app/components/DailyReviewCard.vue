@@ -21,8 +21,8 @@ const { dailyCardCount } = storeToRefs(metricsStore);
 
 const label = computed(() => {
   const count = dailyCardCount.value;
-  if (count === 0) return "No cards to review";
-  return `Study ${count} card${count === 1 ? "" : "s"} today`;
+  if (count === 0) return "Sin tarjetas para repasar";
+  return `Estudiar ${count} tarjeta${count === 1 ? "" : "s"} hoy`;
 });
 </script>
 

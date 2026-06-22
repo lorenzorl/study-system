@@ -5,7 +5,7 @@
       <p class="domain-card__description">{{ domain.description }}</p>
     </div>
     <span class="domain-card__count">
-      {{ domain.concepts.length }} {{ domain.concepts.length === 1 ? 'concept' : 'concepts' }}
+      {{ domain.concepts.length }} {{ domain.concepts.length === 1 ? 'concepto' : 'conceptos' }}
     </span>
   </button>
 </template>
