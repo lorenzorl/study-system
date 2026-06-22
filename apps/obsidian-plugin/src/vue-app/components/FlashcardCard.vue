@@ -95,6 +95,7 @@ watch(
   font-size: 1rem;
   text-align: center;
   line-height: 1.6;
+  white-space: normal;
   user-select: none;
 }
 
