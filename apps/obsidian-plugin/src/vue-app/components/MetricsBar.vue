@@ -66,6 +66,11 @@ const total = computed(() => totalReviewed.value);
   flex: 1;
 }
 
+.metrics-bar__item:nth-child(2) {
+  border-left: 1px solid var(--background-modifier-border);
+  padding-left: 0.5rem;
+}
+
 .metrics-bar__label {
   font-size: 0.75rem;
   color: var(--text-muted);
@@ -110,6 +115,13 @@ const total = computed(() => totalReviewed.value);
 
   .metrics-bar__item:not(:first-child) {
     flex: 1;
+  }
+
+  .metrics-bar__item:nth-child(2) {
+    border-left: none;
+    border-top: 1px solid var(--background-modifier-border);
+    padding-left: 0;
+    padding-top: 0.5rem;
   }
 }
 </style>
