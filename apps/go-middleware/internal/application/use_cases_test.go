@@ -34,6 +34,19 @@ func (m *MockTopicRepository) ListAll(ctx context.Context) ([]domain.Topic, erro
 	return args.Get(0).([]domain.Topic), args.Error(1)
 }
 
+func (m *MockTopicRepository) Create(ctx context.Context, topic *domain.Topic) error {
+	args := m.Called(ctx, topic)
+	return args.Error(0)
+}
+
+func (m *MockTopicRepository) FindByID(ctx context.Context, id string) (*domain.Topic, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.Topic), args.Error(1)
+}
+
 // MockConceptRepository mocks domain.ConceptRepository.
 type MockConceptRepository struct {
 	mock.Mock
@@ -53,6 +66,11 @@ func (m *MockConceptRepository) ListByTopicID(ctx context.Context, topicID strin
 		return nil, args.Error(1)
 	}
 	return args.Get(0).([]domain.Concept), args.Error(1)
+}
+
+func (m *MockConceptRepository) Create(ctx context.Context, concept *domain.Concept) error {
+	args := m.Called(ctx, concept)
+	return args.Error(0)
 }
 
 // MockFlashcardRepository mocks domain.FlashcardRepository.
@@ -233,4 +251,106 @@ func TestListConceptsUseCase_TopicsError(t *testing.T) {
 	_, err := uc.Execute(ctx)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "list topics")
+}
+
+// --- CreateTopicUseCase tests ---
+
+func TestCreateTopicUseCase_Success(t *testing.T) {
+	topicRepo := new(MockTopicRepository)
+	uc := application.NewCreateTopicUseCase(topicRepo)
+
+	ctx := context.Background()
+	topicRepo.On("Create", ctx, mock.MatchedBy(func(t *domain.Topic) bool {
+		return t.Name == "DDD" && t.ID != "" && !t.CreatedAt.IsZero()
+	})).Return(nil)
+
+	topic, err := uc.Execute(ctx, "DDD")
+	require.NoError(t, err)
+	assert.NotEmpty(t, topic.ID)
+	assert.Equal(t, "DDD", topic.Name)
+	assert.False(t, topic.CreatedAt.IsZero())
+	topicRepo.AssertExpectations(t)
+}
+
+func TestCreateTopicUseCase_EmptyName(t *testing.T) {
+	topicRepo := new(MockTopicRepository)
+	uc := application.NewCreateTopicUseCase(topicRepo)
+
+	ctx := context.Background()
+	_, err := uc.Execute(ctx, "")
+	assert.ErrorIs(t, err, domain.ErrInvalidInput)
+}
+
+func TestCreateTopicUseCase_Duplicate(t *testing.T) {
+	topicRepo := new(MockTopicRepository)
+	uc := application.NewCreateTopicUseCase(topicRepo)
+
+	ctx := context.Background()
+	topicRepo.On("Create", ctx, mock.AnythingOfType("*domain.Topic")).Return(domain.ErrConflict)
+
+	_, err := uc.Execute(ctx, "Physics")
+	assert.ErrorIs(t, err, domain.ErrConflict)
+}
+
+// --- CreateConceptUseCase tests ---
+
+func TestCreateConceptUseCase_Success(t *testing.T) {
+	topicRepo := new(MockTopicRepository)
+	conceptRepo := new(MockConceptRepository)
+	uc := application.NewCreateConceptUseCase(topicRepo, conceptRepo)
+
+	ctx := context.Background()
+
+	topic := &domain.Topic{ID: "t1", Name: "DDD"}
+	topicRepo.On("FindByID", ctx, "t1").Return(topic, nil)
+
+	conceptRepo.On("Create", ctx, mock.MatchedBy(func(c *domain.Concept) bool {
+		return c.TopicID == "t1" && c.Title == "Aggregates" &&
+			c.FilePath == "manual/DDD/Aggregates.md" && c.ID != ""
+	})).Return(nil)
+
+	concept, err := uc.Execute(ctx, "t1", "Aggregates")
+	require.NoError(t, err)
+	assert.NotEmpty(t, concept.ID)
+	assert.Equal(t, "t1", concept.TopicID)
+	assert.Equal(t, "Aggregates", concept.Title)
+	assert.Equal(t, "manual/DDD/Aggregates.md", concept.FilePath)
+	assert.False(t, concept.CreatedAt.IsZero())
+}
+
+func TestCreateConceptUseCase_EmptyTitle(t *testing.T) {
+	topicRepo := new(MockTopicRepository)
+	conceptRepo := new(MockConceptRepository)
+	uc := application.NewCreateConceptUseCase(topicRepo, conceptRepo)
+
+	ctx := context.Background()
+	_, err := uc.Execute(ctx, "t1", "")
+	assert.ErrorIs(t, err, domain.ErrInvalidInput)
+}
+
+func TestCreateConceptUseCase_TopicNotFound(t *testing.T) {
+	topicRepo := new(MockTopicRepository)
+	conceptRepo := new(MockConceptRepository)
+	uc := application.NewCreateConceptUseCase(topicRepo, conceptRepo)
+
+	ctx := context.Background()
+	topicRepo.On("FindByID", ctx, "t99").Return(nil, domain.ErrNotFound)
+
+	_, err := uc.Execute(ctx, "t99", "Some Title")
+	assert.ErrorIs(t, err, domain.ErrNotFound)
+}
+
+func TestCreateConceptUseCase_Duplicate(t *testing.T) {
+	topicRepo := new(MockTopicRepository)
+	conceptRepo := new(MockConceptRepository)
+	uc := application.NewCreateConceptUseCase(topicRepo, conceptRepo)
+
+	ctx := context.Background()
+
+	topic := &domain.Topic{ID: "t1", Name: "DDD"}
+	topicRepo.On("FindByID", ctx, "t1").Return(topic, nil)
+	conceptRepo.On("Create", ctx, mock.AnythingOfType("*domain.Concept")).Return(domain.ErrConflict)
+
+	_, err := uc.Execute(ctx, "t1", "Aggregates")
+	assert.ErrorIs(t, err, domain.ErrConflict)
 }
