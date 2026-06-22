@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
-    "dev:browser": "node dev/esbuild-dev.mjs",
+    "dev:browser": "vite",
     "test": "vitest run"
   },
   "keywords": [],
@@ -18,10 +18,12 @@
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
+    "@vitejs/plugin-vue": "^5.2.4",
     "@vue/compiler-sfc": "^3.4.0",
     "esbuild": "^0.20.0",
     "obsidian": "^1.5.7",
     "typescript": "^5.3.3",
+    "vite": "^5.4.21",
     "vitest": "^2.1.0"
   }
 }
