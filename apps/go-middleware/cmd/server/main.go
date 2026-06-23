@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/application"
+	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/domain"
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/infrastructure/sqlite"
 	httppkg "github.com/lorenzorangel/study-system/apps/go-middleware/internal/interfaces/http"
 )
@@ -32,14 +33,21 @@ func main() {
 	topicRepo := sqlite.NewTopicRepository(db)
 	conceptRepo := sqlite.NewConceptRepository(db)
 	flashcardRepo := sqlite.NewFlashcardRepository(db)
+	resourceRepo := sqlite.NewResourceRepository(db)
+	cardStateRepo := sqlite.NewCardStateRepository(db)
+	reviewLogRepo := sqlite.NewReviewLogRepository(db)
 
 	syncConceptUC := application.NewSyncConceptUseCase(topicRepo, conceptRepo)
-	syncFlashcardsUC := application.NewSyncFlashcardsUseCase(conceptRepo, flashcardRepo)
+	syncFlashcardsUC := application.NewSyncFlashcardsUseCase(conceptRepo, flashcardRepo, cardStateRepo)
 	listConceptsUC := application.NewListConceptsUseCase(topicRepo, conceptRepo)
 	createTopicUC := application.NewCreateTopicUseCase(topicRepo)
 	createConceptUC := application.NewCreateConceptUseCase(topicRepo, conceptRepo)
+	syncResourceUC := application.NewSyncResourceUseCase(topicRepo, resourceRepo)
+	getDueCardsUC := application.NewGetDueCardsUseCase(flashcardRepo)
+	dummyFSRS := domain.DummyFSRS{}
+	submitReviewUC := application.NewSubmitReviewUseCase(cardStateRepo, reviewLogRepo, dummyFSRS)
 
-	router := httppkg.NewRouter(syncConceptUC, syncFlashcardsUC, listConceptsUC, createTopicUC, createConceptUC)
+	router := httppkg.NewRouter(syncConceptUC, syncFlashcardsUC, listConceptsUC, createTopicUC, createConceptUC, syncResourceUC, getDueCardsUC, submitReviewUC)
 
 	server := &http.Server{
 		Addr:    ":" + *port,

@@ -20,13 +20,16 @@ func corsMiddleware(next http.Handler) http.Handler {
 }
 
 // NewRouter creates an http.Handler with all API routes registered.
-// It accepts the five use case implementations which are wired in main.go.
+// It accepts the eight use case implementations which are wired in main.go.
 func NewRouter(
 	syncConcept SyncConceptUseCase,
 	syncFlashcards SyncFlashcardsUseCase,
 	listConcepts ListConceptsUseCase,
 	createTopic CreateTopicUseCase,
 	createConcept CreateConceptUseCase,
+	syncResource SyncResourceUseCase,
+	getDueCards GetDueCardsUseCase,
+	submitReview SubmitReviewUseCase,
 ) http.Handler {
 	mux := http.NewServeMux()
 
@@ -35,6 +38,9 @@ func NewRouter(
 	mux.Handle("GET /api/concepts", NewListConceptsHandler(listConcepts))
 	mux.Handle("POST /api/topics", NewCreateTopicHandler(createTopic))
 	mux.Handle("POST /api/concepts", NewCreateConceptHandler(createConcept))
+	mux.Handle("POST /api/sync/resource", NewSyncResourceHandler(syncResource))
+	mux.Handle("GET /api/study/due", NewDueCardsHandler(getDueCards))
+	mux.Handle("POST /api/study/review", NewReviewHandler(submitReview))
 
 	return corsMiddleware(mux)
 }
