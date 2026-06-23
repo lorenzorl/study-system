@@ -93,3 +93,42 @@ export interface CreateConceptResponse {
   file_path: string
   created_at: string
 }
+
+// ─── RAG Resource Sync Types ──────────────────────────────────────────────────
+
+export type ResourceType = "book" | "note" | "article" | "video"
+
+export interface SyncResourceRequest {
+  topic_name: string
+  resource_title: string
+  type: ResourceType
+  source_uri: string
+  dify_document_id?: string
+}
+
+export interface SyncResourceResponse {
+  resource_id: string
+}
+
+// ─── FSRS Review Types ────────────────────────────────────────────────────────
+
+export interface DueCard {
+  flashcard_id: string
+  question: string
+  answer: string
+  concept_title: string
+  topic_name: string
+  next_review: string // ISO 8601
+}
+
+export interface ReviewRequest {
+  flashcard_id: string
+  grade: number // 1-4
+  duration_ms: number
+}
+
+export interface ReviewResponse {
+  next_review: string
+  stability: number
+  difficulty: number
+}

@@ -6,6 +6,11 @@ import type {
   SyncFlashcardsResponse,
   CreateTopicResponse,
   CreateConceptResponse,
+  SyncResourceRequest,
+  SyncResourceResponse,
+  DueCard,
+  ReviewRequest,
+  ReviewResponse,
 } from "../../types"
 
 const API_BASE = "http://localhost:8080"
@@ -119,5 +124,27 @@ export async function createConcept(
       }
     }
     throw e
+  })
+}
+
+export async function syncResource(
+  req: SyncResourceRequest,
+): Promise<SyncResourceResponse> {
+  return request<SyncResourceResponse>("/api/sync/resource", {
+    method: "POST",
+    body: JSON.stringify(req),
+  })
+}
+
+export async function fetchDueCards(): Promise<DueCard[]> {
+  return request<DueCard[]>("/api/study/due")
+}
+
+export async function submitReview(
+  req: ReviewRequest,
+): Promise<ReviewResponse> {
+  return request<ReviewResponse>("/api/study/review", {
+    method: "POST",
+    body: JSON.stringify(req),
   })
 }
