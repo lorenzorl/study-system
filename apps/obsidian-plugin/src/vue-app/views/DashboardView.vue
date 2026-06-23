@@ -3,7 +3,8 @@
     <MetricsBar />
     <DailyReviewCard
       v-if="showCTA"
-      @start="handleDailyReview"
+      :due-count="dueCards.length"
+      @click="goToDueCards"
     />
 
     <div v-if="loading" class="dashboard__state loading-state">
@@ -89,6 +90,7 @@
 import { computed, onMounted, ref } from "vue"
 import { useRouter } from "vue-router"
 import { useStudyStore } from "../stores/study-store"
+import { useReviewStore } from "../stores/review-store"
 import { useMetricsStore } from "../stores/metrics-store"
 import { storeToRefs } from "pinia"
 import { syncConcept, syncFlashcards } from "../services/api"
@@ -99,12 +101,13 @@ import TopicCard from "../components/TopicCard.vue"
 
 const router = useRouter()
 const studyStore = useStudyStore()
+const reviewStore = useReviewStore()
 const metricsStore = useMetricsStore()
 
 const { topics, loading, error } = storeToRefs(studyStore)
-const { dailyCardCount } = storeToRefs(metricsStore)
+const { dueCards, loading: dueLoading } = storeToRefs(reviewStore)
 
-const showCTA = computed(() => dailyCardCount.value > 0)
+const showCTA = computed(() => dueCards.value.length > 0)
 
 const showNewTopicForm = ref(false)
 const newTopicName = ref("")
@@ -113,6 +116,7 @@ const formSubmitting = ref(false)
 
 onMounted(() => {
   studyStore.loadTopics()
+  reviewStore.fetchDueCards()
 })
 
 function retry() {
@@ -125,17 +129,8 @@ function goToTopic(id: string) {
   router.push({ name: "topic", params: { topicId: id } })
 }
 
-function handleDailyReview() {
-  if (topics.value.length > 0 && topics.value[0].concepts.length > 0) {
-    const topic = topics.value[0]
-    const concept = topic.concepts[0]
-    studyStore.selectTopic(topic.id)
-    studyStore.selectConcept(concept.id)
-    router.push({
-      name: "flashcards",
-      params: { topicId: topic.id, conceptId: concept.id },
-    })
-  }
+function goToDueCards() {
+  router.push({ name: "due-cards" })
 }
 
 async function handleCreateTopic() {

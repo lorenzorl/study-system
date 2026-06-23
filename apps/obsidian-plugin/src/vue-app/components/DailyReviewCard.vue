@@ -1,5 +1,5 @@
 <template>
-  <button class="daily-review" @click="$emit('start')">
+  <button class="daily-review" @click="goToDueCards">
     <span class="daily-review__text">
       {{ label }}
     </span>
@@ -8,22 +8,26 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
-import { useMetricsStore } from "../stores/metrics-store";
-import { storeToRefs } from "pinia";
+import { computed } from "vue"
+import { useRouter } from "vue-router"
 
-defineEmits<{
-  start: [];
-}>();
+const props = defineProps<{
+  dueCount: number
+  loading?: boolean
+}>()
 
-const metricsStore = useMetricsStore();
-const { dailyCardCount } = storeToRefs(metricsStore);
+const router = useRouter()
 
 const label = computed(() => {
-  const count = dailyCardCount.value;
-  if (count === 0) return "Sin tarjetas para repasar";
-  return `Estudiar ${count} tarjeta${count === 1 ? "" : "s"} hoy`;
-});
+  if (props.loading) return "Cargando..."
+  const count = props.dueCount
+  if (count === 0) return "Sin tarjetas para repasar"
+  return `Estudiar ${count} tarjeta${count === 1 ? "" : "s"} hoy`
+})
+
+function goToDueCards() {
+  router.push({ name: "due-cards" })
+}
 </script>
 
 <style scoped>

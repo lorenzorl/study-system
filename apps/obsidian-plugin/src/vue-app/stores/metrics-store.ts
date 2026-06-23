@@ -3,7 +3,7 @@ import { reactive, computed, toRefs } from "vue"
 import type { StudyMetrics } from "../../types"
 
 const MOCK_METRICS: StudyMetrics = {
-  dailyCardCount: 45,
+  dailyCardCount: 0,
   retentionRate: 0.78,
   currentStreak: 12,
   totalReviewed: 280,
