@@ -100,6 +100,80 @@ func (m *MockFlashcardRepository) FindDueWithContext(ctx context.Context, now ti
 	return args.Get(0).([]domain.DueCardResult), args.Error(1)
 }
 
+// MockResourceRepository mocks domain.ResourceRepository.
+type MockResourceRepository struct {
+	mock.Mock
+}
+
+func (m *MockResourceRepository) FindBySourceURI(ctx context.Context, sourceURI string) (*domain.Resource, error) {
+	args := m.Called(ctx, sourceURI)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.Resource), args.Error(1)
+}
+
+func (m *MockResourceRepository) Create(ctx context.Context, resource *domain.Resource) error {
+	args := m.Called(ctx, resource)
+	return args.Error(0)
+}
+
+func (m *MockResourceRepository) UpdateDifyDocumentID(ctx context.Context, id, difyDocumentID string) error {
+	args := m.Called(ctx, id, difyDocumentID)
+	return args.Error(0)
+}
+
+// MockCardStateRepository mocks domain.CardStateRepository.
+type MockCardStateRepository struct {
+	mock.Mock
+}
+
+func (m *MockCardStateRepository) Create(ctx context.Context, state *domain.CardState) error {
+	args := m.Called(ctx, state)
+	return args.Error(0)
+}
+
+func (m *MockCardStateRepository) FindByFlashcardID(ctx context.Context, flashcardID string) (*domain.CardState, error) {
+	args := m.Called(ctx, flashcardID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.CardState), args.Error(1)
+}
+
+func (m *MockCardStateRepository) Update(ctx context.Context, state *domain.CardState) error {
+	args := m.Called(ctx, state)
+	return args.Error(0)
+}
+
+// MockReviewLogRepository mocks domain.ReviewLogRepository.
+type MockReviewLogRepository struct {
+	mock.Mock
+}
+
+func (m *MockReviewLogRepository) Create(ctx context.Context, log *domain.ReviewLog) error {
+	args := m.Called(ctx, log)
+	return args.Error(0)
+}
+
+func (m *MockReviewLogRepository) FindByFlashcardID(ctx context.Context, flashcardID string) ([]domain.ReviewLog, error) {
+	args := m.Called(ctx, flashcardID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]domain.ReviewLog), args.Error(1)
+}
+
+// MockFSRSAlgorithm mocks domain.FSRSAlgorithm.
+type MockFSRSAlgorithm struct {
+	mock.Mock
+}
+
+func (m *MockFSRSAlgorithm) CalculateNextState(current domain.CardState, grade int) domain.CardState {
+	args := m.Called(current, grade)
+	return args.Get(0).(domain.CardState)
+}
+
 func TestSyncConceptUseCase_AutoCreateTopic(t *testing.T) {
 	// R5: SyncConcept auto-creates topic and concept
 	topicRepo := new(MockTopicRepository)
@@ -175,7 +249,8 @@ func TestSyncFlashcardsUseCase_BatchCreate(t *testing.T) {
 	// R6: batch create
 	conceptRepo := new(MockConceptRepository)
 	flashcardRepo := new(MockFlashcardRepository)
-	uc := application.NewSyncFlashcardsUseCase(conceptRepo, flashcardRepo)
+	cardStateRepo := new(MockCardStateRepository)
+	uc := application.NewSyncFlashcardsUseCase(conceptRepo, flashcardRepo, cardStateRepo)
 
 	ctx := context.Background()
 
@@ -184,6 +259,15 @@ func TestSyncFlashcardsUseCase_BatchCreate(t *testing.T) {
 
 	conceptRepo.On("UpsertByPath", ctx, mock.Anything, mock.Anything, mock.Anything).Return(concept, nil)
 	flashcardRepo.On("UpsertByObsidianID", ctx, "concept-uuid", mock.Anything).Return(2, nil)
+
+	cardA := &domain.Flashcard{ID: "f-a", ObsidianID: "a"}
+	cardB := &domain.Flashcard{ID: "f-b", ObsidianID: "b"}
+	flashcardRepo.On("FindByObsidianID", ctx, "a").Return(cardA, nil)
+	flashcardRepo.On("FindByObsidianID", ctx, "b").Return(cardB, nil)
+	cardStateRepo.On("FindByFlashcardID", ctx, "f-a").Return(nil, domain.ErrNotFound)
+	cardStateRepo.On("FindByFlashcardID", ctx, "f-b").Return(nil, domain.ErrNotFound)
+	cardStateRepo.On("Create", ctx, mock.AnythingOfType("*domain.CardState")).Return(nil)
+	cardStateRepo.On("Create", ctx, mock.AnythingOfType("*domain.CardState")).Return(nil)
 
 	count, err := uc.Execute(ctx, "concept-uuid", []domain.Flashcard{
 		{ObsidianID: "a", Question: "Q1", Answer: "A1"},
@@ -196,10 +280,21 @@ func TestSyncFlashcardsUseCase_BatchCreate(t *testing.T) {
 func TestSyncFlashcardsUseCase_MixedInsertUpdate(t *testing.T) {
 	flashcardRepo := new(MockFlashcardRepository)
 	conceptRepo := new(MockConceptRepository)
-	uc := application.NewSyncFlashcardsUseCase(conceptRepo, flashcardRepo)
+	cardStateRepo := new(MockCardStateRepository)
+	uc := application.NewSyncFlashcardsUseCase(conceptRepo, flashcardRepo, cardStateRepo)
 
 	ctx := context.Background()
 	flashcardRepo.On("UpsertByObsidianID", ctx, "concept-uuid", mock.Anything).Return(2, nil)
+
+	existingCard := &domain.Flashcard{ID: "f-existing", ObsidianID: "existing"}
+	newCard := &domain.Flashcard{ID: "f-new", ObsidianID: "new-one"}
+	flashcardRepo.On("FindByObsidianID", ctx, "existing").Return(existingCard, nil)
+	flashcardRepo.On("FindByObsidianID", ctx, "new-one").Return(newCard, nil)
+
+	existingState := &domain.CardState{ID: "cs-existing", FlashcardID: "f-existing"}
+	cardStateRepo.On("FindByFlashcardID", ctx, "f-existing").Return(existingState, nil)
+	cardStateRepo.On("FindByFlashcardID", ctx, "f-new").Return(nil, domain.ErrNotFound)
+	cardStateRepo.On("Create", ctx, mock.AnythingOfType("*domain.CardState")).Return(nil)
 
 	count, err := uc.Execute(ctx, "concept-uuid", []domain.Flashcard{
 		{ObsidianID: "existing", Question: "new q", Answer: "new a"},
@@ -370,4 +465,207 @@ func TestCreateConceptUseCase_Duplicate(t *testing.T) {
 
 	_, err := uc.Execute(ctx, "t1", "Aggregates")
 	assert.ErrorIs(t, err, domain.ErrConflict)
+}
+
+// --- SyncResourceUseCase tests ---
+
+func TestSyncResourceUseCase_NewTopicAndResource(t *testing.T) {
+	topicRepo := new(MockTopicRepository)
+	resourceRepo := new(MockResourceRepository)
+	uc := application.NewSyncResourceUseCase(topicRepo, resourceRepo)
+
+	ctx := context.Background()
+
+	topic := &domain.Topic{ID: "t-ddd", Name: "DDD"}
+	topicRepo.On("UpsertByName", ctx, "DDD").Return(topic, nil)
+
+	resourceRepo.On("FindBySourceURI", ctx, "obsidian://ddd.md").Return(nil, nil)
+	resourceRepo.On("Create", ctx, mock.MatchedBy(func(r *domain.Resource) bool {
+		return r.TopicID == "t-ddd" && r.Title == "DDD Book" &&
+			r.Type == domain.ResourceTypeBook && r.SourceURI == "obsidian://ddd.md"
+	})).Return(nil)
+
+	id, err := uc.Execute(ctx, "DDD", "DDD Book", "book", "obsidian://ddd.md", "doc-123")
+	require.NoError(t, err)
+	assert.NotEmpty(t, id)
+}
+
+func TestSyncResourceUseCase_ExistingTopic(t *testing.T) {
+	topicRepo := new(MockTopicRepository)
+	resourceRepo := new(MockResourceRepository)
+	uc := application.NewSyncResourceUseCase(topicRepo, resourceRepo)
+
+	ctx := context.Background()
+
+	topic := &domain.Topic{ID: "t-math", Name: "Math"}
+	topicRepo.On("UpsertByName", ctx, "Math").Return(topic, nil)
+
+	resourceRepo.On("FindBySourceURI", ctx, "obsidian://math.md").Return(nil, nil)
+	resourceRepo.On("Create", ctx, mock.MatchedBy(func(r *domain.Resource) bool {
+		return r.TopicID == "t-math"
+	})).Return(nil)
+
+	id, err := uc.Execute(ctx, "Math", "Math Notes", "note", "obsidian://math.md", "")
+	require.NoError(t, err)
+	assert.NotEmpty(t, id)
+}
+
+func TestSyncResourceUseCase_UpdateExistingResource(t *testing.T) {
+	topicRepo := new(MockTopicRepository)
+	resourceRepo := new(MockResourceRepository)
+	uc := application.NewSyncResourceUseCase(topicRepo, resourceRepo)
+
+	ctx := context.Background()
+
+	topic := &domain.Topic{ID: "t-ddd", Name: "DDD"}
+	topicRepo.On("UpsertByName", ctx, "DDD").Return(topic, nil)
+
+	existing := &domain.Resource{ID: "r-existing", TopicID: "t-ddd", SourceURI: "obsidian://ddd.md"}
+	resourceRepo.On("FindBySourceURI", ctx, "obsidian://ddd.md").Return(existing, nil)
+	resourceRepo.On("UpdateDifyDocumentID", ctx, "r-existing", "doc-new").Return(nil)
+
+	id, err := uc.Execute(ctx, "DDD", "DDD Book", "book", "obsidian://ddd.md", "doc-new")
+	require.NoError(t, err)
+	assert.Equal(t, "r-existing", id)
+}
+
+func TestSyncResourceUseCase_InvalidType(t *testing.T) {
+	topicRepo := new(MockTopicRepository)
+	resourceRepo := new(MockResourceRepository)
+	uc := application.NewSyncResourceUseCase(topicRepo, resourceRepo)
+
+	ctx := context.Background()
+
+	_, err := uc.Execute(ctx, "DDD", "Title", "podcast", "obsidian://x.md", "")
+	assert.ErrorIs(t, err, domain.ErrInvalidInput)
+}
+
+// --- GetDueCardsUseCase tests ---
+
+func TestGetDueCardsUseCase_HasDueCards(t *testing.T) {
+	flashcardRepo := new(MockFlashcardRepository)
+	uc := application.NewGetDueCardsUseCase(flashcardRepo)
+
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	results := []domain.DueCardResult{
+		{
+			FlashcardID:  "f1",
+			Front:        "What is DDD?",
+			Back:         "Domain-Driven Design",
+			ConceptTitle: "DDD Intro",
+			TopicName:    "Architecture",
+			NextReview:   now,
+		},
+	}
+	flashcardRepo.On("FindDueWithContext", ctx, mock.AnythingOfType("time.Time")).Return(results, nil)
+
+	cards, err := uc.Execute(ctx)
+	require.NoError(t, err)
+	assert.Len(t, cards, 1)
+	assert.Equal(t, "f1", cards[0].FlashcardID)
+	assert.Equal(t, "What is DDD?", cards[0].Front)
+	assert.Equal(t, "Domain-Driven Design", cards[0].Back)
+	assert.Equal(t, "DDD Intro", cards[0].ConceptTitle)
+	assert.Equal(t, "Architecture", cards[0].TopicName)
+}
+
+func TestGetDueCardsUseCase_NoDueCards(t *testing.T) {
+	flashcardRepo := new(MockFlashcardRepository)
+	uc := application.NewGetDueCardsUseCase(flashcardRepo)
+
+	ctx := context.Background()
+
+	flashcardRepo.On("FindDueWithContext", ctx, mock.AnythingOfType("time.Time")).Return([]domain.DueCardResult{}, nil)
+
+	cards, err := uc.Execute(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, cards)
+}
+
+// --- SubmitReviewUseCase tests ---
+
+func TestSubmitReviewUseCase_ValidReview(t *testing.T) {
+	cardStateRepo := new(MockCardStateRepository)
+	reviewLogRepo := new(MockReviewLogRepository)
+	fsrsMock := new(MockFSRSAlgorithm)
+	uc := application.NewSubmitReviewUseCase(cardStateRepo, reviewLogRepo, fsrsMock)
+
+	ctx := context.Background()
+	now := time.Now().UTC()
+	nextReview := now.AddDate(0, 0, 3)
+
+	current := &domain.CardState{
+		ID:          "cs-1",
+		FlashcardID: "f1",
+		Stability:   1.0,
+		Difficulty:  0.5,
+		NextReview:  now,
+		LastReview:  now.AddDate(0, 0, -1),
+	}
+	cardStateRepo.On("FindByFlashcardID", ctx, "f1").Return(current, nil)
+
+	nextState := domain.CardState{
+		ID:          "cs-1",
+		FlashcardID: "f1",
+		Stability:   1.1,
+		Difficulty:  0.5,
+		NextReview:  nextReview,
+		LastReview:  now,
+	}
+	fsrsMock.On("CalculateNextState", *current, 3).Return(nextState)
+
+	cardStateRepo.On("Update", ctx, mock.MatchedBy(func(cs *domain.CardState) bool {
+		return cs.ID == "cs-1" && cs.Stability == 1.1 && !cs.NextReview.IsZero()
+	})).Return(nil)
+
+	reviewLogRepo.On("Create", ctx, mock.MatchedBy(func(rl *domain.ReviewLog) bool {
+		return rl.FlashcardID == "f1" && rl.Grade == 3 && rl.DurationMs == 5000
+	})).Return(nil)
+
+	result, err := uc.Execute(ctx, "f1", 3, 5000)
+	require.NoError(t, err)
+	assert.Equal(t, 1.1, result.Stability)
+	assert.Equal(t, 0.5, result.Difficulty)
+	assert.False(t, result.NextReview.IsZero())
+}
+
+func TestSubmitReviewUseCase_NoCardState(t *testing.T) {
+	cardStateRepo := new(MockCardStateRepository)
+	reviewLogRepo := new(MockReviewLogRepository)
+	fsrsMock := new(MockFSRSAlgorithm)
+	uc := application.NewSubmitReviewUseCase(cardStateRepo, reviewLogRepo, fsrsMock)
+
+	ctx := context.Background()
+
+	cardStateRepo.On("FindByFlashcardID", ctx, "f-missing").Return(nil, domain.ErrNotFound)
+
+	_, err := uc.Execute(ctx, "f-missing", 3, 2000)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, domain.ErrNotFound)
+}
+
+func TestSubmitReviewUseCase_InvalidGrade(t *testing.T) {
+	cardStateRepo := new(MockCardStateRepository)
+	reviewLogRepo := new(MockReviewLogRepository)
+	fsrsMock := new(MockFSRSAlgorithm)
+	uc := application.NewSubmitReviewUseCase(cardStateRepo, reviewLogRepo, fsrsMock)
+
+	ctx := context.Background()
+
+	_, err := uc.Execute(ctx, "f1", 0, 1000)
+	assert.ErrorIs(t, err, domain.ErrInvalidInput)
+}
+
+func TestSubmitReviewUseCase_GradeTooHigh(t *testing.T) {
+	cardStateRepo := new(MockCardStateRepository)
+	reviewLogRepo := new(MockReviewLogRepository)
+	fsrsMock := new(MockFSRSAlgorithm)
+	uc := application.NewSubmitReviewUseCase(cardStateRepo, reviewLogRepo, fsrsMock)
+
+	ctx := context.Background()
+
+	_, err := uc.Execute(ctx, "f1", 5, 1000)
+	assert.ErrorIs(t, err, domain.ErrInvalidInput)
 }
