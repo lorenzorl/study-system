@@ -20,16 +20,20 @@
 
 <script setup lang="ts">
 import { ref, watch } from "vue";
-import type { Flashcard } from "../../types";
 
 const props = defineProps<{
-  card: Flashcard;
+  card: { id: string; question: string; answer: string };
+}>();
+
+const emit = defineEmits<{
+  flip: [flipped: boolean];
 }>();
 
 const isFlipped = ref(false);
 
 function toggle() {
   isFlipped.value = !isFlipped.value;
+  emit("flip", isFlipped.value);
 }
 
 // Reset flip state when card changes
