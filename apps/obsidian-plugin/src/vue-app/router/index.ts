@@ -4,12 +4,23 @@ import TopicView from "../views/TopicView.vue"
 import ConceptView from "../views/ConceptView.vue"
 import FlashcardSession from "../views/FlashcardSession.vue"
 import FeynmanModule from "../views/FeynmanModule.vue"
+import DueCardsView from "../views/DueCardsView.vue"
 
 const routes = [
   {
     path: "/",
     name: "dashboard",
     component: DashboardView,
+  },
+  {
+    path: "/study/due",
+    name: "due-cards",
+    component: DueCardsView,
+  },
+  {
+    path: "/study/review",
+    name: "review",
+    component: FlashcardSession,
   },
   {
     path: "/topic/:topicId",
