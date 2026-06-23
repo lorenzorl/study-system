@@ -319,6 +319,8 @@ func (h *ReviewHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, ReviewResponse{
 		NextReview: newState.NextReview.Format("2006-01-02T15:04:05Z"),
+		Stability:  newState.Stability,
+		Difficulty: newState.Difficulty,
 	})
 }
 

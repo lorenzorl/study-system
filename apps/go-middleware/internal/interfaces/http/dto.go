@@ -92,16 +92,12 @@ type SyncResourceResponse struct {
 
 // DueCardResponse is the JSON body returned by GET /api/study/due.
 type DueCardResponse struct {
-	ID           string `json:"id"`
+	ID           string `json:"flashcard_id"`
 	Question     string `json:"question"`
 	Answer       string `json:"answer"`
-	ConceptID    string `json:"concept_id"`
 	ConceptTitle string `json:"concept_title"`
 	TopicName    string `json:"topic_name"`
-	Stability    float64 `json:"stability"`
-	Difficulty   float64 `json:"difficulty"`
 	NextReview   string `json:"next_review"`
-	LastReview   string `json:"last_review"`
 }
 
 // ReviewRequest is the JSON body for POST /api/study/review.
@@ -113,5 +109,7 @@ type ReviewRequest struct {
 
 // ReviewResponse is the JSON body returned by POST /api/study/review.
 type ReviewResponse struct {
-	NextReview string `json:"next_review"`
+	NextReview string  `json:"next_review"`
+	Stability  float64 `json:"stability"`
+	Difficulty float64 `json:"difficulty"`
 }

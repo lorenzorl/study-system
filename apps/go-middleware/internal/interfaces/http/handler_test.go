@@ -588,6 +588,8 @@ func TestHandleReview_Success(t *testing.T) {
 	var resp httppkg.ReviewResponse
 	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
 	assert.NotEmpty(t, resp.NextReview)
+	assert.Equal(t, 1.1, resp.Stability)
+	assert.Equal(t, 0.5, resp.Difficulty)
 }
 
 func TestHandleReview_MissingFlashcardID(t *testing.T) {
