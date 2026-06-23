@@ -36,6 +36,21 @@ type CreateConceptUseCase interface {
 	Execute(ctx context.Context, topicID, title string) (*domain.Concept, error)
 }
 
+// SyncResourceUseCase defines the interface for syncing a resource.
+type SyncResourceUseCase interface {
+	Execute(ctx context.Context, topicName, title, resourceType, sourceURI, difyDocumentID string) (string, error)
+}
+
+// GetDueCardsUseCase defines the interface for retrieving due flashcards.
+type GetDueCardsUseCase interface {
+	Execute(ctx context.Context) ([]application.DueCard, error)
+}
+
+// SubmitReviewUseCase defines the interface for submitting a flashcard review.
+type SubmitReviewUseCase interface {
+	Execute(ctx context.Context, flashcardID string, grade, durationMs int) (domain.CardState, error)
+}
+
 // SyncConceptHandler handles POST /api/sync/concept requests.
 type SyncConceptHandler struct {
 	useCase SyncConceptUseCase
@@ -203,6 +218,107 @@ func (h *CreateConceptHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		Title:     concept.Title,
 		FilePath:  concept.FilePath,
 		CreatedAt: concept.CreatedAt.Format("2006-01-02T15:04:05Z"),
+	})
+}
+
+// SyncResourceHandler handles POST /api/sync/resource requests.
+type SyncResourceHandler struct {
+	useCase SyncResourceUseCase
+}
+
+// NewSyncResourceHandler creates a new SyncResourceHandler.
+func NewSyncResourceHandler(uc SyncResourceUseCase) *SyncResourceHandler {
+	return &SyncResourceHandler{useCase: uc}
+}
+
+func (h *SyncResourceHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	var req SyncResourceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.TopicName == "" || req.ResourceTitle == "" || req.Type == "" || req.SourceURI == "" {
+		writeError(w, http.StatusBadRequest, "topic_name, resource_title, type, and source_uri are required")
+		return
+	}
+
+	resourceID, err := h.useCase.Execute(r.Context(), req.TopicName, req.ResourceTitle, req.Type, req.SourceURI, req.DifyDocumentID)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, SyncResourceResponse{ResourceID: resourceID})
+}
+
+// DueCardsHandler handles GET /api/study/due requests.
+type DueCardsHandler struct {
+	useCase GetDueCardsUseCase
+}
+
+// NewDueCardsHandler creates a new DueCardsHandler.
+func NewDueCardsHandler(uc GetDueCardsUseCase) *DueCardsHandler {
+	return &DueCardsHandler{useCase: uc}
+}
+
+func (h *DueCardsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	cards, err := h.useCase.Execute(r.Context())
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	response := make([]DueCardResponse, 0, len(cards))
+	for _, c := range cards {
+		response = append(response, DueCardResponse{
+			ID:           c.FlashcardID,
+			Question:     c.Front,
+			Answer:       c.Back,
+			ConceptTitle: c.ConceptTitle,
+			TopicName:    c.TopicName,
+			NextReview:   c.NextReview.Format("2006-01-02T15:04:05Z"),
+		})
+	}
+
+	writeJSON(w, http.StatusOK, response)
+}
+
+// ReviewHandler handles POST /api/study/review requests.
+type ReviewHandler struct {
+	useCase SubmitReviewUseCase
+}
+
+// NewReviewHandler creates a new ReviewHandler.
+func NewReviewHandler(uc SubmitReviewUseCase) *ReviewHandler {
+	return &ReviewHandler{useCase: uc}
+}
+
+func (h *ReviewHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	var req ReviewRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.FlashcardID == "" {
+		writeError(w, http.StatusBadRequest, "flashcard_id is required")
+		return
+	}
+
+	if req.Grade < 1 || req.Grade > 4 {
+		writeError(w, http.StatusBadRequest, "grade must be between 1 and 4")
+		return
+	}
+
+	newState, err := h.useCase.Execute(r.Context(), req.FlashcardID, req.Grade, req.DurationMs)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, ReviewResponse{
+		NextReview: newState.NextReview.Format("2006-01-02T15:04:05Z"),
 	})
 }
 

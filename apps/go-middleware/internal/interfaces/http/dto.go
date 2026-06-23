@@ -75,3 +75,43 @@ type CreateConceptResponse struct {
 	FilePath  string `json:"file_path"`
 	CreatedAt string `json:"created_at"`
 }
+
+// SyncResourceRequest is the JSON body for POST /api/sync/resource.
+type SyncResourceRequest struct {
+	TopicName      string `json:"topic_name"`
+	ResourceTitle  string `json:"resource_title"`
+	Type           string `json:"type"`
+	SourceURI      string `json:"source_uri"`
+	DifyDocumentID string `json:"dify_document_id"`
+}
+
+// SyncResourceResponse is the JSON body returned by POST /api/sync/resource.
+type SyncResourceResponse struct {
+	ResourceID string `json:"resource_id"`
+}
+
+// DueCardResponse is the JSON body returned by GET /api/study/due.
+type DueCardResponse struct {
+	ID           string `json:"id"`
+	Question     string `json:"question"`
+	Answer       string `json:"answer"`
+	ConceptID    string `json:"concept_id"`
+	ConceptTitle string `json:"concept_title"`
+	TopicName    string `json:"topic_name"`
+	Stability    float64 `json:"stability"`
+	Difficulty   float64 `json:"difficulty"`
+	NextReview   string `json:"next_review"`
+	LastReview   string `json:"last_review"`
+}
+
+// ReviewRequest is the JSON body for POST /api/study/review.
+type ReviewRequest struct {
+	FlashcardID string `json:"flashcard_id"`
+	Grade       int    `json:"grade"`
+	DurationMs  int    `json:"duration_ms"`
+}
+
+// ReviewResponse is the JSON body returned by POST /api/study/review.
+type ReviewResponse struct {
+	NextReview string `json:"next_review"`
+}

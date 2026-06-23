@@ -65,6 +65,33 @@ func (m *mockCreateConceptUseCase) Execute(ctx context.Context, topicID, title s
 	return m.concept, m.err
 }
 
+type mockSyncResourceUseCase struct {
+	resourceID string
+	err        error
+}
+
+func (m *mockSyncResourceUseCase) Execute(ctx context.Context, topicName, title, resourceType, sourceURI, difyDocumentID string) (string, error) {
+	return m.resourceID, m.err
+}
+
+type mockGetDueCardsUseCase struct {
+	cards []application.DueCard
+	err   error
+}
+
+func (m *mockGetDueCardsUseCase) Execute(ctx context.Context) ([]application.DueCard, error) {
+	return m.cards, m.err
+}
+
+type mockSubmitReviewUseCase struct {
+	state domain.CardState
+	err   error
+}
+
+func (m *mockSubmitReviewUseCase) Execute(ctx context.Context, flashcardID string, grade, durationMs int) (domain.CardState, error) {
+	return m.state, m.err
+}
+
 func TestHandleSyncConcept_Success(t *testing.T) {
 	handler := httppkg.NewSyncConceptHandler(&mockSyncConceptUseCase{id: "concept-uuid-123"})
 
@@ -388,6 +415,256 @@ func TestHandleCreateConcept_InternalError(t *testing.T) {
 
 	body := `{"topic_id":"t1","title":"Aggregates"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/concepts", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+}
+
+// --- SyncResourceHandler tests ---
+
+func TestHandleSyncResource_Success(t *testing.T) {
+	handler := httppkg.NewSyncResourceHandler(&mockSyncResourceUseCase{resourceID: "r-uuid-123"})
+
+	body := `{"topic_name":"DDD","resource_title":"DDD Book","type":"book","source_uri":"obsidian://ddd.md","dify_document_id":"doc-123"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/sync/resource", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusCreated, rec.Code)
+
+	var resp httppkg.SyncResourceResponse
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
+	assert.Equal(t, "r-uuid-123", resp.ResourceID)
+}
+
+func TestHandleSyncResource_MissingTopicName(t *testing.T) {
+	handler := httppkg.NewSyncResourceHandler(&mockSyncResourceUseCase{resourceID: "x"})
+
+	body := `{"resource_title":"Book","type":"book","source_uri":"obsidian://x.md"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/sync/resource", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+
+	var errResp httppkg.ErrorResponse
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&errResp))
+	assert.Contains(t, errResp.Error, "topic_name")
+}
+
+func TestHandleSyncResource_InvalidType(t *testing.T) {
+	handler := httppkg.NewSyncResourceHandler(&mockSyncResourceUseCase{err: domain.ErrInvalidInput})
+
+	body := `{"topic_name":"DDD","resource_title":"Podcast","type":"podcast","source_uri":"obsidian://x.md"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/sync/resource", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+
+	var errResp httppkg.ErrorResponse
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&errResp))
+	assert.Equal(t, "invalid input", errResp.Error)
+}
+
+func TestHandleSyncResource_InvalidJSON(t *testing.T) {
+	handler := httppkg.NewSyncResourceHandler(&mockSyncResourceUseCase{resourceID: "x"})
+
+	body := `{broken`
+	req := httptest.NewRequest(http.MethodPost, "/api/sync/resource", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestHandleSyncResource_InternalError(t *testing.T) {
+	handler := httppkg.NewSyncResourceHandler(&mockSyncResourceUseCase{err: errors.New("db down")})
+
+	body := `{"topic_name":"DDD","resource_title":"Book","type":"book","source_uri":"obsidian://x.md"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/sync/resource", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+}
+
+// --- DueCardsHandler tests ---
+
+func TestHandleDueCards_Success(t *testing.T) {
+	cards := []application.DueCard{
+		{
+			FlashcardID:  "f1",
+			Front:        "What is DDD?",
+			Back:         "Domain-Driven Design",
+			ConceptTitle: "DDD Intro",
+			TopicName:    "Architecture",
+			NextReview:   time.Now().UTC(),
+		},
+	}
+	handler := httppkg.NewDueCardsHandler(&mockGetDueCardsUseCase{cards: cards})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/study/due", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var resp []httppkg.DueCardResponse
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
+	assert.Len(t, resp, 1)
+	assert.Equal(t, "f1", resp[0].ID)
+	assert.Equal(t, "What is DDD?", resp[0].Question)
+	assert.Equal(t, "Domain-Driven Design", resp[0].Answer)
+	assert.Equal(t, "DDD Intro", resp[0].ConceptTitle)
+	assert.Equal(t, "Architecture", resp[0].TopicName)
+	assert.NotEmpty(t, resp[0].NextReview)
+}
+
+func TestHandleDueCards_Empty(t *testing.T) {
+	handler := httppkg.NewDueCardsHandler(&mockGetDueCardsUseCase{cards: []application.DueCard{}})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/study/due", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var resp []httppkg.DueCardResponse
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
+	assert.Empty(t, resp)
+}
+
+func TestHandleDueCards_InternalError(t *testing.T) {
+	handler := httppkg.NewDueCardsHandler(&mockGetDueCardsUseCase{err: errors.New("db down")})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/study/due", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+}
+
+// --- ReviewHandler tests ---
+
+func TestHandleReview_Success(t *testing.T) {
+	now := time.Now().UTC()
+	nextReview := now.AddDate(0, 0, 3)
+	state := domain.CardState{
+		ID:          "cs-1",
+		FlashcardID: "f1",
+		Stability:   1.1,
+		Difficulty:  0.5,
+		NextReview:  nextReview,
+		LastReview:  now,
+	}
+	handler := httppkg.NewReviewHandler(&mockSubmitReviewUseCase{state: state})
+
+	body := `{"flashcard_id":"f1","grade":3,"duration_ms":5000}`
+	req := httptest.NewRequest(http.MethodPost, "/api/study/review", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var resp httppkg.ReviewResponse
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
+	assert.NotEmpty(t, resp.NextReview)
+}
+
+func TestHandleReview_MissingFlashcardID(t *testing.T) {
+	handler := httppkg.NewReviewHandler(&mockSubmitReviewUseCase{
+		state: domain.CardState{FlashcardID: "f1"},
+	})
+
+	body := `{"flashcard_id":"","grade":3,"duration_ms":5000}`
+	req := httptest.NewRequest(http.MethodPost, "/api/study/review", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+
+	var errResp httppkg.ErrorResponse
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&errResp))
+	assert.Contains(t, errResp.Error, "flashcard_id")
+}
+
+func TestHandleReview_InvalidGrade(t *testing.T) {
+	handler := httppkg.NewReviewHandler(&mockSubmitReviewUseCase{
+		state: domain.CardState{FlashcardID: "f1"},
+	})
+
+	body := `{"flashcard_id":"f1","grade":5,"duration_ms":5000}`
+	req := httptest.NewRequest(http.MethodPost, "/api/study/review", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+
+	var errResp httppkg.ErrorResponse
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&errResp))
+	assert.Contains(t, errResp.Error, "grade")
+}
+
+func TestHandleReview_NotFound(t *testing.T) {
+	handler := httppkg.NewReviewHandler(&mockSubmitReviewUseCase{err: domain.ErrNotFound})
+
+	body := `{"flashcard_id":"f-missing","grade":3,"duration_ms":5000}`
+	req := httptest.NewRequest(http.MethodPost, "/api/study/review", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+
+	var errResp httppkg.ErrorResponse
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&errResp))
+	assert.Equal(t, "not found", errResp.Error)
+}
+
+func TestHandleReview_InvalidJSON(t *testing.T) {
+	handler := httppkg.NewReviewHandler(&mockSubmitReviewUseCase{
+		state: domain.CardState{FlashcardID: "f1"},
+	})
+
+	body := `{broken`
+	req := httptest.NewRequest(http.MethodPost, "/api/study/review", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestHandleReview_InternalError(t *testing.T) {
+	handler := httppkg.NewReviewHandler(&mockSubmitReviewUseCase{err: errors.New("db down")})
+
+	body := `{"flashcard_id":"f1","grade":3,"duration_ms":5000}`
+	req := httptest.NewRequest(http.MethodPost, "/api/study/review", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
