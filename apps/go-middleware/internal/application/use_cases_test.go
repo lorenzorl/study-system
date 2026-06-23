@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -81,6 +82,22 @@ type MockFlashcardRepository struct {
 func (m *MockFlashcardRepository) UpsertByObsidianID(ctx context.Context, conceptID string, cards []domain.Flashcard) (int, error) {
 	args := m.Called(ctx, conceptID, cards)
 	return args.Int(0), args.Error(1)
+}
+
+func (m *MockFlashcardRepository) FindByObsidianID(ctx context.Context, obsidianID string) (*domain.Flashcard, error) {
+	args := m.Called(ctx, obsidianID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.Flashcard), args.Error(1)
+}
+
+func (m *MockFlashcardRepository) FindDueWithContext(ctx context.Context, now time.Time) ([]domain.DueCardResult, error) {
+	args := m.Called(ctx, now)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]domain.DueCardResult), args.Error(1)
 }
 
 func TestSyncConceptUseCase_AutoCreateTopic(t *testing.T) {
