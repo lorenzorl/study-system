@@ -1,9 +1,9 @@
-import { Plugin, Notice } from "obsidian"
+import { Plugin, Notice, normalizePath } from "obsidian"
 import { StudyView, STUDY_VIEW_TYPE } from "./study-view"
 import { setObsidianApp, useObsidian } from "./vue-app/composables/useObsidian"
 
 export default class FlashcardPlugin extends Plugin {
-  onload(): void {
+  async onload(): Promise<void> {
     // Set the app singleton early so commands can access it
     setObsidianApp(this.app)
 
@@ -28,6 +28,18 @@ export default class FlashcardPlugin extends Plugin {
         this.syncActiveNote()
       },
     })
+
+    // Ensure the plugin root folder exists in the vault
+    const vault = this.app.vault
+    const normalized = normalizePath("Study Dashboard")
+    if (!vault.getFolderByPath(normalized)) {
+      try {
+        await vault.createFolder(normalized)
+        console.log("[Study Dashboard] Root folder created")
+      } catch (err) {
+        console.error("[Study Dashboard] Failed to create root folder:", err)
+      }
+    }
   }
 
   onunload(): void {
