@@ -17,7 +17,7 @@ export function useObsidian() {
     if (!file) {
       throw new Error("No hay nota activa. Abrí una nota primero.")
     }
-    return await _app.vault.read(file)
+    return await _app!.vault.read(file)
   }
 
   function getTopicNameFromPath(path: string): string {
