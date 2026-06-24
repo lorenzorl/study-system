@@ -123,6 +123,14 @@ func (m *MockResourceRepository) UpdateDifyDocumentID(ctx context.Context, id, d
 	return args.Error(0)
 }
 
+func (m *MockResourceRepository) FindAllDifyDocumentIDs(ctx context.Context) ([]string, error) {
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]string), args.Error(1)
+}
+
 // MockCardStateRepository mocks domain.CardStateRepository.
 type MockCardStateRepository struct {
 	mock.Mock

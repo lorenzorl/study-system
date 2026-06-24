@@ -836,6 +836,133 @@ func TestFlashcardRepository_FindByObsidianID_Found(t *testing.T) {
 	assert.Equal(t, "A", card.Answer)
 }
 
+// --- ResourceRepository FindAllDifyDocumentIDs tests ---
+
+func TestResourceRepository_FindAllDifyDocumentIDs_Empty(t *testing.T) {
+	_, _, _, resourceRepo, _, _, cleanup := openTestDBFull(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	ids, err := resourceRepo.FindAllDifyDocumentIDs(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, ids)
+}
+
+func TestResourceRepository_FindAllDifyDocumentIDs_PartialNulls(t *testing.T) {
+	topicRepo, _, _, resourceRepo, _, _, cleanup := openTestDBFull(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	topic := &domain.Topic{
+		ID:        uuid.New().String(),
+		Name:      "Science",
+		CreatedAt: time.Now().UTC(),
+	}
+	err := topicRepo.Create(ctx, topic)
+	require.NoError(t, err)
+
+	// Resource with Dify ID
+	err = resourceRepo.Create(ctx, &domain.Resource{
+		ID:             uuid.New().String(),
+		TopicID:        topic.ID,
+		Title:          "Book A",
+		Type:           domain.ResourceTypeBook,
+		SourceURI:      "obsidian://a.md",
+		DifyDocumentID: "dify-1",
+		CreatedAt:      time.Now().UTC(),
+	})
+	require.NoError(t, err)
+
+	// Resource without Dify ID (empty string)
+	err = resourceRepo.Create(ctx, &domain.Resource{
+		ID:        uuid.New().String(),
+		TopicID:   topic.ID,
+		Title:     "Book B",
+		Type:      domain.ResourceTypeBook,
+		SourceURI: "obsidian://b.md",
+		CreatedAt: time.Now().UTC(),
+	})
+	require.NoError(t, err)
+
+	ids, err := resourceRepo.FindAllDifyDocumentIDs(ctx)
+	require.NoError(t, err)
+	assert.Len(t, ids, 1)
+	assert.Equal(t, "dify-1", ids[0])
+}
+
+func TestResourceRepository_FindAllDifyDocumentIDs_MultipleDistinct(t *testing.T) {
+	topicRepo, _, _, resourceRepo, _, _, cleanup := openTestDBFull(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	topic := &domain.Topic{
+		ID:        uuid.New().String(),
+		Name:      "Math",
+		CreatedAt: time.Now().UTC(),
+	}
+	err := topicRepo.Create(ctx, topic)
+	require.NoError(t, err)
+
+	// Three resources: two with distinct Dify IDs, one without
+	difyIDs := []string{"dify-alpha", "dify-beta", ""}
+	for i, difyID := range difyIDs {
+		err = resourceRepo.Create(ctx, &domain.Resource{
+			ID:             uuid.New().String(),
+			TopicID:        topic.ID,
+			Title:          "Resource " + string(rune('A'+i)),
+			Type:           domain.ResourceTypeBook,
+			SourceURI:      "obsidian://" + string(rune('a'+i)) + ".md",
+			DifyDocumentID: difyID,
+			CreatedAt:      time.Now().UTC(),
+		})
+		require.NoError(t, err)
+	}
+
+	ids, err := resourceRepo.FindAllDifyDocumentIDs(ctx)
+	require.NoError(t, err)
+	assert.Len(t, ids, 2, "should only return non-empty Dify IDs")
+
+	idSet := make(map[string]bool)
+	for _, id := range ids {
+		idSet[id] = true
+	}
+	assert.True(t, idSet["dify-alpha"])
+	assert.True(t, idSet["dify-beta"])
+}
+
+func TestResourceRepository_FindAllDifyDocumentIDs_DeduplicatesDuplicates(t *testing.T) {
+	topicRepo, _, _, resourceRepo, _, _, cleanup := openTestDBFull(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	topic := &domain.Topic{
+		ID:        uuid.New().String(),
+		Name:      "History",
+		CreatedAt: time.Now().UTC(),
+	}
+	err := topicRepo.Create(ctx, topic)
+	require.NoError(t, err)
+
+	// Two resources with the same Dify ID
+	for i := 0; i < 2; i++ {
+		err = resourceRepo.Create(ctx, &domain.Resource{
+			ID:             uuid.New().String(),
+			TopicID:        topic.ID,
+			Title:          "Resource " + string(rune('A'+i)),
+			Type:           domain.ResourceTypeBook,
+			SourceURI:      "obsidian://dup" + string(rune('a'+i)) + ".md",
+			DifyDocumentID: "dify-same",
+			CreatedAt:      time.Now().UTC(),
+		})
+		require.NoError(t, err)
+	}
+
+	ids, err := resourceRepo.FindAllDifyDocumentIDs(ctx)
+	require.NoError(t, err)
+	assert.Len(t, ids, 1, "duplicate Dify IDs should be deduplicated")
+	assert.Equal(t, "dify-same", ids[0])
+}
+
 func TestFlashcardRepository_FindByObsidianID_NotFound(t *testing.T) {
 	_, _, flashcardRepo, _, _, _, cleanup := openTestDBFull(t)
 	defer cleanup()

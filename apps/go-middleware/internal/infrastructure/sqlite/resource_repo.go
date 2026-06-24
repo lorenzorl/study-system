@@ -58,6 +58,32 @@ func (r *ResourceRepository) Create(ctx context.Context, resource *domain.Resour
 	return nil
 }
 
+// FindAllDifyDocumentIDs returns all distinct non-empty DifyDocumentIDs from the resources table.
+// Returns an empty slice when no rows match.
+func (r *ResourceRepository) FindAllDifyDocumentIDs(ctx context.Context) ([]string, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT DISTINCT dify_document_id FROM resources WHERE dify_document_id IS NOT NULL AND dify_document_id != ''`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query distinct dify_document_id: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan dify_document_id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate dify_document_id rows: %w", err)
+	}
+
+	return ids, nil
+}
+
 // UpdateDifyDocumentID updates the DifyDocumentID field for an existing resource.
 func (r *ResourceRepository) UpdateDifyDocumentID(ctx context.Context, id, difyDocID string) error {
 	result, err := r.db.ExecContext(ctx,

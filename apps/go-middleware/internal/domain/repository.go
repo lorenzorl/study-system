@@ -43,6 +43,7 @@ type ResourceRepository interface {
 	FindBySourceURI(ctx context.Context, sourceURI string) (*Resource, error) // nil,nil on miss
 	Create(ctx context.Context, resource *Resource) error
 	UpdateDifyDocumentID(ctx context.Context, id, difyDocumentID string) error
+	FindAllDifyDocumentIDs(ctx context.Context) ([]string, error)
 }
 
 // CardStateRepository manages persistence of CardState entities.
