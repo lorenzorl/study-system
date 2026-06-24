@@ -12,6 +12,7 @@ import (
 
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/application"
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/domain"
+	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/infrastructure/dify"
 )
 
 // MockTopicRepository mocks domain.TopicRepository.
@@ -129,6 +130,19 @@ func (m *MockResourceRepository) FindAllDifyDocumentIDs(ctx context.Context) ([]
 		return nil, args.Error(1)
 	}
 	return args.Get(0).([]string), args.Error(1)
+}
+
+// MockDifyClient mocks dify.DifyClient.
+type MockDifyClient struct {
+	mock.Mock
+}
+
+func (m *MockDifyClient) FetchAllDocuments(ctx context.Context) ([]dify.DifyDocument, error) {
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]dify.DifyDocument), args.Error(1)
 }
 
 // MockCardStateRepository mocks domain.CardStateRepository.
@@ -676,4 +690,101 @@ func TestSubmitReviewUseCase_GradeTooHigh(t *testing.T) {
 
 	_, err := uc.Execute(ctx, "f1", 5, 1000)
 	assert.ErrorIs(t, err, domain.ErrInvalidInput)
+}
+
+// --- GetPendingDifyDocumentsUseCase tests ---
+
+func TestGetPendingDifyDocumentsUseCase_ReturnsDiff(t *testing.T) {
+	difyClient := new(MockDifyClient)
+	resourceRepo := new(MockResourceRepository)
+	uc := application.NewGetPendingDifyDocumentsUseCase(difyClient, resourceRepo)
+
+	ctx := context.Background()
+
+	difyClient.On("FetchAllDocuments", ctx).Return([]dify.DifyDocument{
+		{ID: "doc-1", Name: "Doc One"},
+		{ID: "doc-2", Name: "Doc Two"},
+		{ID: "doc-3", Name: "Doc Three"},
+	}, nil)
+
+	resourceRepo.On("FindAllDifyDocumentIDs", ctx).Return([]string{"doc-1"}, nil)
+
+	pending, err := uc.Execute(ctx)
+	require.NoError(t, err)
+	assert.Len(t, pending, 2)
+	assert.Equal(t, "doc-2", pending[0].ID)
+	assert.Equal(t, "Doc Two", pending[0].Name)
+	assert.Equal(t, "doc-3", pending[1].ID)
+	assert.Equal(t, "Doc Three", pending[1].Name)
+}
+
+func TestGetPendingDifyDocumentsUseCase_AllAlreadySynced(t *testing.T) {
+	difyClient := new(MockDifyClient)
+	resourceRepo := new(MockResourceRepository)
+	uc := application.NewGetPendingDifyDocumentsUseCase(difyClient, resourceRepo)
+
+	ctx := context.Background()
+
+	difyClient.On("FetchAllDocuments", ctx).Return([]dify.DifyDocument{
+		{ID: "doc-1", Name: "Doc One"},
+		{ID: "doc-2", Name: "Doc Two"},
+	}, nil)
+
+	resourceRepo.On("FindAllDifyDocumentIDs", ctx).Return([]string{"doc-1", "doc-2"}, nil)
+
+	pending, err := uc.Execute(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, pending)
+}
+
+func TestGetPendingDifyDocumentsUseCase_DifyErrorSwallowed(t *testing.T) {
+	// Spec R1: Dify API unreachable → empty array, no error
+	difyClient := new(MockDifyClient)
+	resourceRepo := new(MockResourceRepository)
+	uc := application.NewGetPendingDifyDocumentsUseCase(difyClient, resourceRepo)
+
+	ctx := context.Background()
+
+	difyClient.On("FetchAllDocuments", ctx).Return(nil, errors.New("connection refused"))
+
+	pending, err := uc.Execute(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, pending)
+
+	// resourceRepo should NOT have been called
+	resourceRepo.AssertNotCalled(t, "FindAllDifyDocumentIDs")
+}
+
+func TestGetPendingDifyDocumentsUseCase_RepoErrorPropagated(t *testing.T) {
+	difyClient := new(MockDifyClient)
+	resourceRepo := new(MockResourceRepository)
+	uc := application.NewGetPendingDifyDocumentsUseCase(difyClient, resourceRepo)
+
+	ctx := context.Background()
+
+	difyClient.On("FetchAllDocuments", ctx).Return([]dify.DifyDocument{
+		{ID: "doc-1", Name: "Doc One"},
+	}, nil)
+
+	resourceRepo.On("FindAllDifyDocumentIDs", ctx).Return(nil, errors.New("db connection lost"))
+
+	pending, err := uc.Execute(ctx)
+	require.Error(t, err)
+	assert.Nil(t, pending)
+	assert.Contains(t, err.Error(), "find local dify document ids")
+}
+
+func TestGetPendingDifyDocumentsUseCase_EmptyDifyDataset(t *testing.T) {
+	difyClient := new(MockDifyClient)
+	resourceRepo := new(MockResourceRepository)
+	uc := application.NewGetPendingDifyDocumentsUseCase(difyClient, resourceRepo)
+
+	ctx := context.Background()
+
+	difyClient.On("FetchAllDocuments", ctx).Return([]dify.DifyDocument{}, nil)
+	resourceRepo.On("FindAllDifyDocumentIDs", ctx).Return([]string{"doc-1"}, nil)
+
+	pending, err := uc.Execute(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, pending)
 }
