@@ -3,6 +3,7 @@ import { ref, computed } from "vue"
 import type { Topic, ConceptSummary, Flashcard } from "../../types"
 import { fetchTopics, syncConcept, syncFlashcards, createTopic, createConcept } from "../services/api"
 import { parseFlashcards } from "../services/markdown-parser"
+import { ensureFolder, topicFolderPath, conceptFolderPath } from "../composables/useObsidian"
 
 export const useStudyStore = defineStore("study", () => {
   const topics = ref<Topic[]>([])
@@ -145,6 +146,10 @@ export const useStudyStore = defineStore("study", () => {
     error.value = null
     try {
       await createTopic(name)
+      // Create vault folder for the new topic
+      ensureFolder(topicFolderPath(name)).catch((err) => {
+        console.error("[Study Dashboard] Topic folder creation failed:", err)
+      })
       await loadTopics()
     } catch (e) {
       if (e instanceof Error) {
@@ -165,6 +170,13 @@ export const useStudyStore = defineStore("study", () => {
     error.value = null
     try {
       await createConcept(topicId, title)
+      // Find the topic name from the store to build the folder path
+      const topic = topics.value.find((t) => t.id === topicId)
+      if (topic) {
+        ensureFolder(conceptFolderPath(topic.name, title)).catch((err) => {
+          console.error("[Study Dashboard] Concept folder creation failed:", err)
+        })
+      }
       await loadTopics()
     } catch (e) {
       if (e instanceof Error) {
