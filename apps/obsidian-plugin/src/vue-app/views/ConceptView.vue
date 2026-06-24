@@ -9,7 +9,7 @@
       <button class="concept-view__retry-btn" @click="retry">Reintentar</button>
     </div>
 
-    <div v-else-if="!concept" class="concept-view__state empty-state">
+    <div v-else-if="!concept" class="concept-view__state">
       <p>Concepto no encontrado.</p>
       <button
         class="concept-view__back-btn"
@@ -54,7 +54,7 @@
 
       <div
         v-if="flashcardCount === 0 && !loading && !error"
-        class="concept-view__state empty-state"
+        class="concept-view__state"
       >
         <p>Este concepto no tiene tarjetas. Sincronizá la nota para generarlas.</p>
       </div>

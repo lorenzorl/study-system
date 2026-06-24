@@ -70,7 +70,7 @@
         </div>
       </form>
 
-      <div v-if="topics.length === 0" class="dashboard__state empty-state">
+      <div v-if="topics.length === 0" class="dashboard__state">
         <p>No hay temas todavía. Sincronizá una nota para crear el primero.</p>
       </div>
 
@@ -336,10 +336,6 @@ async function syncActiveNote() {
 
 .error-state {
   color: var(--text-error);
-}
-
-.empty-state {
-  color: var(--text-muted);
 }
 
 .dashboard__add-btn {

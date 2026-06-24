@@ -12,7 +12,7 @@
     </div>
 
     <!-- Empty -->
-    <div v-else-if="!hasCards" class="due-cards-view__state empty-state">
+    <div v-else-if="!hasCards" class="due-cards-view__state">
       <p>No hay tarjetas para repasar hoy.</p>
     </div>
 
@@ -144,10 +144,6 @@ function startReview() {
 
 .error-state {
   color: var(--text-error);
-}
-
-.empty-state {
-  color: var(--text-muted);
 }
 
 .spinner {

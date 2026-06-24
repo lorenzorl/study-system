@@ -9,7 +9,7 @@
       <button class="topic-view__retry-btn" @click="retry">Reintentar</button>
     </div>
 
-    <div v-else-if="!currentTopic" class="topic-view__state empty-state">
+    <div v-else-if="!currentTopic" class="topic-view__state">
       <p>Tema no encontrado.</p>
       <button
         class="topic-view__back-btn"
@@ -70,7 +70,7 @@
           </div>
         </form>
 
-        <div v-if="currentTopic.concepts.length === 0" class="topic-view__state empty-state">
+        <div v-if="currentTopic.concepts.length === 0" class="topic-view__state">
           <p>
             Este tema no tiene conceptos. Abrí una nota en esta carpeta y
             sincronizala.
