@@ -5,6 +5,7 @@ import ConceptView from "../views/ConceptView.vue"
 import FlashcardSession from "../views/FlashcardSession.vue"
 import FeynmanModule from "../views/FeynmanModule.vue"
 import DueCardsView from "../views/DueCardsView.vue"
+import PendingResourcesView from "../views/PendingResourcesView.vue"
 
 const routes = [
   {
@@ -45,6 +46,11 @@ const routes = [
     name: "feynman",
     component: FeynmanModule,
     props: true,
+  },
+  {
+    path: "/resources/pending-dify",
+    name: "pending-dify",
+    component: PendingResourcesView,
   },
 ]
 
