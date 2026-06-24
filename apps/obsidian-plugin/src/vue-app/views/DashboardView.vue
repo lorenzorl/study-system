@@ -83,6 +83,34 @@
         />
       </div>
     </section>
+
+    <details class="dashboard__settings">
+      <summary class="dashboard__settings-toggle">⚙️ Configuración</summary>
+      <form class="dashboard__settings-form" @submit.prevent="saveApiBase">
+        <label class="dashboard__settings-label" for="api-base-input">
+          URL del servidor Go
+        </label>
+        <input
+          id="api-base-input"
+          v-model="apiBaseUrl"
+          type="text"
+          class="dashboard__new-input"
+          placeholder="http://192.168.1.50:8080"
+        />
+        <div class="dashboard__new-actions">
+          <button type="submit" class="dashboard__new-submit">
+            Guardar
+          </button>
+          <button
+            type="button"
+            class="dashboard__new-cancel"
+            @click="resetApiBaseUrl"
+          >
+            Restablecer
+          </button>
+        </div>
+      </form>
+    </details>
   </div>
 </template>
 
@@ -93,7 +121,7 @@ import { useStudyStore } from "../stores/study-store"
 import { useReviewStore } from "../stores/review-store"
 import { useMetricsStore } from "../stores/metrics-store"
 import { storeToRefs } from "pinia"
-import { syncConcept, syncFlashcards } from "../services/api"
+import { syncConcept, syncFlashcards, setApiBase, resetApiBase, getApiBase } from "../services/api"
 import { parseFlashcards } from "../services/markdown-parser"
 import MetricsBar from "../components/MetricsBar.vue"
 import DailyReviewCard from "../components/DailyReviewCard.vue"
@@ -113,6 +141,20 @@ const showNewTopicForm = ref(false)
 const newTopicName = ref("")
 const newTopicInputRef = ref<HTMLInputElement | null>(null)
 const formSubmitting = ref(false)
+
+const apiBaseUrl = ref(getApiBase())
+
+function saveApiBase() {
+  const url = apiBaseUrl.value.trim()
+  if (url) {
+    setApiBase(url)
+  }
+}
+
+function resetApiBaseUrl() {
+  resetApiBase()
+  apiBaseUrl.value = getApiBase()
+}
 
 onMounted(() => {
   studyStore.loadTopics()
@@ -403,5 +445,40 @@ async function syncActiveNote() {
 .dashboard__new-cancel:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.dashboard__settings {
+  margin-top: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+}
+
+.dashboard__settings-toggle {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.dashboard__settings-toggle::marker {
+  font-size: 0.8rem;
+}
+
+.dashboard__settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+}
+
+.dashboard__settings-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: -0.25rem;
 }
 </style>

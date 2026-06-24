@@ -15,7 +15,8 @@ import type {
 
 const DEFAULT_API_BASE = "http://localhost:8080"
 
-function getApiBase(): string {
+/** Get the current API base URL. */
+export function getApiBase(): string {
   return localStorage.getItem("study-api-base") || DEFAULT_API_BASE
 }
 
