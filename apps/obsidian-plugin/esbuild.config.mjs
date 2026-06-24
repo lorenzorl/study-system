@@ -10,6 +10,12 @@ If you want to view the source, please visit the github repository of this plugi
 
 const isProduction = process.argv[2] === "production";
 
+const vueFeatureFlags = {
+  __VUE_OPTIONS_API__: "true",
+  __VUE_PROD_DEVTOOLS__: "false",
+  __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: "false",
+};
+
 const ctx = await esbuild.context({
   banner: {
     js: banner,
@@ -26,6 +32,7 @@ const ctx = await esbuild.context({
   alias: {
     vue: "vue/dist/vue.runtime.esm-bundler.js",
   },
+  define: vueFeatureFlags,
 });
 
 if (isProduction) {
