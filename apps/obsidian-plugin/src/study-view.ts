@@ -30,7 +30,7 @@ export class StudyView extends ItemView {
     // Allow network requests to the Go middleware running on localhost.
     const cspMeta = document.createElement("meta")
     cspMeta.httpEquiv = "Content-Security-Policy"
-    cspMeta.content = "connect-src http://localhost:8080 http://127.0.0.1:8080"
+    cspMeta.content = "connect-src http://*:8080"
     document.head.appendChild(cspMeta)
 
     // Set the Obsidian app singleton before mounting Vue

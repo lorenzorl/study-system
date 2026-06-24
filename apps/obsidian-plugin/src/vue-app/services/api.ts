@@ -13,7 +13,21 @@ import type {
   ReviewResponse,
 } from "../../types"
 
-const API_BASE = "http://localhost:8080"
+const DEFAULT_API_BASE = "http://localhost:8080"
+
+function getApiBase(): string {
+  return localStorage.getItem("study-api-base") || DEFAULT_API_BASE
+}
+
+/** Override the API base URL at runtime (e.g., for mobile: "http://192.168.1.50:8080"). */
+export function setApiBase(url: string): void {
+  localStorage.setItem("study-api-base", url)
+}
+
+/** Reset to default localhost. */
+export function resetApiBase(): void {
+  localStorage.removeItem("study-api-base")
+}
 
 export class NetworkError extends Error {
   constructor() {
@@ -39,7 +53,7 @@ async function request<T>(
   let response: Response
 
   try {
-    response = await fetch(`${API_BASE}${path}`, {
+    response = await fetch(`${getApiBase()}${path}`, {
       headers: {
         "Content-Type": "application/json",
         ...options?.headers,
