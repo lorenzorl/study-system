@@ -188,10 +188,6 @@ function navigateTo(module: "flashcards" | "feynman") {
   text-align: center;
   color: var(--text-muted);
   min-height: 44px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.75rem;
 }
 
 .concept-view__back-btn,
