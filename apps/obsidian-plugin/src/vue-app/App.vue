@@ -27,7 +27,23 @@ const route = useRoute();
 const showBack = computed(() => route.path !== "/");
 
 function goBack() {
-  router.back();
+  const path = route.path;
+
+  // /topic/:topicId/concept/:conceptId/* → /topic/:topicId
+  const conceptMatch = path.match(/^(\/topic\/[^/]+)\/concept\/[^/]+/);
+  if (conceptMatch) {
+    router.push(conceptMatch[1]);
+    return;
+  }
+
+  // /topic/:topicId → /
+  if (path.startsWith("/topic/")) {
+    router.push({ name: "dashboard" });
+    return;
+  }
+
+  // /study/* → /
+  router.push({ name: "dashboard" });
 }
 </script>
 
