@@ -12,6 +12,7 @@ import (
 
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/application"
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/domain"
+	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/infrastructure/dify"
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/infrastructure/sqlite"
 	httppkg "github.com/lorenzorangel/study-system/apps/go-middleware/internal/interfaces/http"
 )
@@ -47,7 +48,15 @@ func main() {
 	dummyFSRS := domain.DummyFSRS{}
 	submitReviewUC := application.NewSubmitReviewUseCase(cardStateRepo, reviewLogRepo, dummyFSRS)
 
-	router := httppkg.NewRouter(syncConceptUC, syncFlashcardsUC, listConceptsUC, createTopicUC, createConceptUC, syncResourceUC, getDueCardsUC, submitReviewUC)
+	difyBaseURL := os.Getenv("DIFY_API_BASE_URL")
+	if difyBaseURL == "" {
+		difyBaseURL = "http://localhost:5001"
+	}
+	difyDatasetID := os.Getenv("DIFY_DATASET_ID")
+	difyClient := dify.NewClient(difyBaseURL, difyDatasetID)
+	getPendingDifyUC := application.NewGetPendingDifyDocumentsUseCase(difyClient, resourceRepo)
+
+	router := httppkg.NewRouter(syncConceptUC, syncFlashcardsUC, listConceptsUC, createTopicUC, createConceptUC, syncResourceUC, getDueCardsUC, submitReviewUC, getPendingDifyUC)
 
 	server := &http.Server{
 		Addr:    ":" + *port,

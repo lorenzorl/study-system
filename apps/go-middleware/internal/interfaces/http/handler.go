@@ -53,7 +53,7 @@ type SubmitReviewUseCase interface {
 
 // GetPendingDifyDocumentsUseCase defines the interface for fetching pending Dify documents.
 type GetPendingDifyDocumentsUseCase interface {
-	Execute(ctx context.Context) ([]PendingDifyDocument, error)
+	Execute(ctx context.Context) ([]application.PendingDifyDocument, error)
 }
 
 // SyncConceptHandler handles POST /api/sync/concept requests.
@@ -346,11 +346,15 @@ func (h *PendingDifyDocumentsHandler) ServeHTTP(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	if docs == nil {
-		docs = []PendingDifyDocument{}
+	response := make([]PendingDifyDocument, 0, len(docs))
+	for _, d := range docs {
+		response = append(response, PendingDifyDocument{
+			ID:   d.ID,
+			Name: d.Name,
+		})
 	}
 
-	writeJSON(w, http.StatusOK, docs)
+	writeJSON(w, http.StatusOK, response)
 }
 
 // --- helpers ---

@@ -93,11 +93,11 @@ func (m *mockSubmitReviewUseCase) Execute(ctx context.Context, flashcardID strin
 }
 
 type mockGetPendingDifyDocumentsUseCase struct {
-	docs []httppkg.PendingDifyDocument
+	docs []application.PendingDifyDocument
 	err  error
 }
 
-func (m *mockGetPendingDifyDocumentsUseCase) Execute(ctx context.Context) ([]httppkg.PendingDifyDocument, error) {
+func (m *mockGetPendingDifyDocumentsUseCase) Execute(ctx context.Context) ([]application.PendingDifyDocument, error) {
 	return m.docs, m.err
 }
 
@@ -687,7 +687,7 @@ func TestHandleReview_InternalError(t *testing.T) {
 // --- PendingDifyDocumentsHandler tests ---
 
 func TestHandlePendingDifyDocuments_Success(t *testing.T) {
-	docs := []httppkg.PendingDifyDocument{
+	docs := []application.PendingDifyDocument{
 		{ID: "doc-2", Name: "Document Two"},
 		{ID: "doc-3", Name: "Document Three"},
 	}
@@ -713,7 +713,7 @@ func TestHandlePendingDifyDocuments_Success(t *testing.T) {
 
 func TestHandlePendingDifyDocuments_Empty(t *testing.T) {
 	handler := httppkg.NewPendingDifyDocumentsHandler(
-		&mockGetPendingDifyDocumentsUseCase{docs: []httppkg.PendingDifyDocument{}},
+		&mockGetPendingDifyDocumentsUseCase{docs: []application.PendingDifyDocument{}},
 	)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/resources/pending-dify", nil)
