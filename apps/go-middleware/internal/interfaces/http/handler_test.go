@@ -92,6 +92,15 @@ func (m *mockSubmitReviewUseCase) Execute(ctx context.Context, flashcardID strin
 	return m.state, m.err
 }
 
+type mockGetPendingDifyDocumentsUseCase struct {
+	docs []httppkg.PendingDifyDocument
+	err  error
+}
+
+func (m *mockGetPendingDifyDocumentsUseCase) Execute(ctx context.Context) ([]httppkg.PendingDifyDocument, error) {
+	return m.docs, m.err
+}
+
 func TestHandleSyncConcept_Success(t *testing.T) {
 	handler := httppkg.NewSyncConceptHandler(&mockSyncConceptUseCase{id: "concept-uuid-123"})
 
@@ -673,4 +682,83 @@ func TestHandleReview_InternalError(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+}
+
+// --- PendingDifyDocumentsHandler tests ---
+
+func TestHandlePendingDifyDocuments_Success(t *testing.T) {
+	docs := []httppkg.PendingDifyDocument{
+		{ID: "doc-2", Name: "Document Two"},
+		{ID: "doc-3", Name: "Document Three"},
+	}
+	handler := httppkg.NewPendingDifyDocumentsHandler(
+		&mockGetPendingDifyDocumentsUseCase{docs: docs},
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/resources/pending-dify", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var resp []httppkg.PendingDifyDocument
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
+	assert.Len(t, resp, 2)
+	assert.Equal(t, "doc-2", resp[0].ID)
+	assert.Equal(t, "Document Two", resp[0].Name)
+	assert.Equal(t, "doc-3", resp[1].ID)
+	assert.Equal(t, "Document Three", resp[1].Name)
+}
+
+func TestHandlePendingDifyDocuments_Empty(t *testing.T) {
+	handler := httppkg.NewPendingDifyDocumentsHandler(
+		&mockGetPendingDifyDocumentsUseCase{docs: []httppkg.PendingDifyDocument{}},
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/resources/pending-dify", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var resp []httppkg.PendingDifyDocument
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
+	assert.Empty(t, resp)
+}
+
+func TestHandlePendingDifyDocuments_NilSlice(t *testing.T) {
+	// Use case may return nil,nil (Dify error swallowed) — handler should return empty JSON array
+	handler := httppkg.NewPendingDifyDocumentsHandler(
+		&mockGetPendingDifyDocumentsUseCase{docs: nil, err: nil},
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/resources/pending-dify", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var resp []httppkg.PendingDifyDocument
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
+	assert.Empty(t, resp)
+}
+
+func TestHandlePendingDifyDocuments_InternalError(t *testing.T) {
+	handler := httppkg.NewPendingDifyDocumentsHandler(
+		&mockGetPendingDifyDocumentsUseCase{err: errors.New("db down")},
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/resources/pending-dify", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+
+	var errResp httppkg.ErrorResponse
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&errResp))
+	assert.Equal(t, "internal server error", errResp.Error)
 }

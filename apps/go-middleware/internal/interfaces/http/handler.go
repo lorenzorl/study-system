@@ -51,6 +51,11 @@ type SubmitReviewUseCase interface {
 	Execute(ctx context.Context, flashcardID string, grade, durationMs int) (domain.CardState, error)
 }
 
+// GetPendingDifyDocumentsUseCase defines the interface for fetching pending Dify documents.
+type GetPendingDifyDocumentsUseCase interface {
+	Execute(ctx context.Context) ([]PendingDifyDocument, error)
+}
+
 // SyncConceptHandler handles POST /api/sync/concept requests.
 type SyncConceptHandler struct {
 	useCase SyncConceptUseCase
@@ -322,6 +327,30 @@ func (h *ReviewHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Stability:  newState.Stability,
 		Difficulty: newState.Difficulty,
 	})
+}
+
+// PendingDifyDocumentsHandler handles GET /api/resources/pending-dify requests.
+type PendingDifyDocumentsHandler struct {
+	useCase GetPendingDifyDocumentsUseCase
+}
+
+// NewPendingDifyDocumentsHandler creates a new PendingDifyDocumentsHandler.
+func NewPendingDifyDocumentsHandler(uc GetPendingDifyDocumentsUseCase) *PendingDifyDocumentsHandler {
+	return &PendingDifyDocumentsHandler{useCase: uc}
+}
+
+func (h *PendingDifyDocumentsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	docs, err := h.useCase.Execute(r.Context())
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	if docs == nil {
+		docs = []PendingDifyDocument{}
+	}
+
+	writeJSON(w, http.StatusOK, docs)
 }
 
 // --- helpers ---

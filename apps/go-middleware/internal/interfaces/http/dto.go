@@ -113,3 +113,9 @@ type ReviewResponse struct {
 	Stability  float64 `json:"stability"`
 	Difficulty float64 `json:"difficulty"`
 }
+
+// PendingDifyDocument represents a Dify document not yet assigned to any local resource.
+type PendingDifyDocument struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}

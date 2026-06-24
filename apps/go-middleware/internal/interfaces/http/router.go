@@ -30,6 +30,7 @@ func NewRouter(
 	syncResource SyncResourceUseCase,
 	getDueCards GetDueCardsUseCase,
 	submitReview SubmitReviewUseCase,
+	getPendingDifyDocs GetPendingDifyDocumentsUseCase,
 ) http.Handler {
 	mux := http.NewServeMux()
 
@@ -41,6 +42,7 @@ func NewRouter(
 	mux.Handle("POST /api/sync/resource", NewSyncResourceHandler(syncResource))
 	mux.Handle("GET /api/study/due", NewDueCardsHandler(getDueCards))
 	mux.Handle("POST /api/study/review", NewReviewHandler(submitReview))
+	mux.Handle("GET /api/resources/pending-dify", NewPendingDifyDocumentsHandler(getPendingDifyDocs))
 
 	return corsMiddleware(mux)
 }
