@@ -96,6 +96,11 @@ export interface CreateConceptResponse {
 
 // ─── RAG Resource Sync Types ──────────────────────────────────────────────────
 
+export interface PendingDifyDocument {
+  id: string
+  name: string
+}
+
 export type ResourceType = "book" | "note" | "article" | "video"
 
 export interface SyncResourceRequest {
