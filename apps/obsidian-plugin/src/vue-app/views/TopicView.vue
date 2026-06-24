@@ -205,10 +205,6 @@ function cancelNewConcept() {
   text-align: center;
   color: var(--text-muted);
   min-height: 44px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.75rem;
 }
 
 .topic-view__back-btn,
