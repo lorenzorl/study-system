@@ -277,11 +277,6 @@ async function syncActiveNote() {
   text-align: center;
   color: var(--text-muted);
   min-height: 44px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.75rem;
 }
 
 .dashboard__retry-btn {

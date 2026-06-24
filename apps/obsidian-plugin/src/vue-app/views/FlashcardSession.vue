@@ -479,10 +479,6 @@ function formatNextReview(isoDate: string): string {
 .flashcard-session__state {
   padding: 2rem 1rem;
   text-align: center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.75rem;
 }
 
 .flashcard-session__complete-icon {

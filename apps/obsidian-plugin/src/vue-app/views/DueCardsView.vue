@@ -136,10 +136,6 @@ function startReview() {
 .due-cards-view__state {
   padding: 2rem 1rem;
   text-align: center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.75rem;
 }
 
 .loading-state {
