@@ -28,7 +28,8 @@ internal/
 │   ├── sqlite/               repository adapters + the study schema migrations
 │   └── http/                 contracts, DTOs, one handler file per resource, router
 └── rag/                    bounded context: documents, ingestion jobs, page outcomes
-    ├── domain/               entities, repository ports, resumability invariants
+    ├── domain/               entities, ports, resumability invariants, page heuristic
+    ├── infra/pdf/            poppler adapters: page count, text, figures, renders
     └── sqlite/               repository adapters + the ingestion schema migrations
 ```
 
@@ -149,6 +150,45 @@ Layout on disk:
 `Artifact.OriginalName` carries the format hint. The store is format-agnostic on
 purpose: a tool that needs an extension should ask for the original name rather
 than infer one from a filename.
+
+## Page extraction
+
+`rag/infra/pdf` drives the poppler command-line tools: `pdfinfo` for the page
+count, `pdftotext` for the text layer, `pdfimages -list` for the image
+inventory, and `pdftoppm` for page renders. All four sit behind the ports in
+`rag/domain` (`TextExtractor`, `FigureIndex`, `PageRenderer`), so the pipeline is
+testable with no binary installed and with no network access.
+
+Install them with `brew install poppler`. A constructor that needs a missing
+tool fails on the spot, naming the binary, instead of failing hundreds of pages
+into a run.
+
+The text path is the default and the vision model is rationed
+(`domain.NeedsModel`): a page goes to the model only when its extracted text is
+shorter than `domain.MinExtractableText` or when the page carries an image.
+Extraction is exact and free; a model that is unsure invents confidently, and a
+confident invention matches queries and answers them wrongly. Rationing is what
+limits how much of the corpus can be confidently wrong.
+
+Three properties of these adapters are deliberate:
+
+- **`pdfimages -list` is parsed header-driven**, using the column positions the
+  header declares rather than fixed offsets. A row that cannot be parsed is an
+  error, never a silent skip: counting zero images looks exactly like a book with
+  no diagrams, and the vision path would stop running with no symptom at all.
+- **Renders are transient.** `RenderPage` renders into a fresh temporary
+  directory under the artifact workspace, returns the PNG bytes, and removes that
+  directory on every path. A 359-page book leaves no orphan images behind, which
+  matters because artifact retention (`P1`) does not exist yet. A render is
+  reproducible from the stored PDF, so there is nothing worth persisting.
+- **Render resolution is a constant**, 150 dpi, not a config knob: the vision
+  path needs one legible resolution, and nothing measures an alternative. PNG at
+  that resolution is the current choice; JPEG is the lever if request payloads
+  ever become the limiting factor.
+
+The only PDF in the repository is the test fixture at
+`internal/rag/infra/pdf/testdata/three-pages.pdf`: three pages, being text-only,
+text plus a 2x2 image, and image-only. `testdata/make_fixture.go` regenerates it.
 
 ## Schema migrations
 

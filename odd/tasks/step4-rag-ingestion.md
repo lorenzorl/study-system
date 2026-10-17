@@ -51,10 +51,10 @@ A job with persisted per-page state makes a re-run continue instead of restart.
 - [x] T2 — `rag/domain`: `Document`, `IngestionJob`, `PageOutcome`, statuses, ports
 - [x] T3 — Migration: `documents` and `ingestion_jobs`, versioned
 - [x] T4 — `rag/sqlite`: repositories for documents and jobs
-- [ ] T5 — `rag/infra/extract`: `pdftotext` behind a port, plus page count
-- [ ] T6 — "Needs the model" heuristic (sparse text, or a figure on the page)
+- [x] T5 — `rag/infra/pdf`: `pdfinfo` page count and `pdftotext` behind a port
+- [x] T6 — "Needs the model" heuristic (sparse text, or a figure on the page)
 - [ ] T7 — `platform/llm`: OpenRouter client behind a port, key from config
-- [ ] T8 — `rag/infra/render`: `pdftoppm` behind a port
+- [x] T8 — `rag/infra/pdf`: `pdftoppm` behind a port
 - [ ] T9 — `rag/app`: `IngestDocumentUseCase`, resumable per page
 - [ ] T10 — `cmd/ingest`: run the pipeline, write the `.md` to `--out`
 - [ ] T11 — Verify against a real book, twice, to prove resumability
@@ -79,6 +79,29 @@ Decisions locked by the user (2026-10-17):
 - [x] S2.4 `cmd/server`: apply both contexts' migration lists
 - [x] S2.5 Tests: adoption of an existing study database, one outcome per page, resume after interruption
 - [x] S2.6 README + backlog, then commit the slice
+
+## Slice 3 — extraction, heuristic, render (in progress)
+
+The four poppler tools live in ONE package, `internal/rag/infra/pdf`, not in the
+`infra/extract` and `infra/render` split this document originally suggested: they
+are the same tool family, they share one injectable `Runner` and one error style,
+and a two-package split would have duplicated both or needed a third package for
+the runner. The ports they implement are still separate in `rag/domain`.
+
+- [x] S3.1 `rag/domain`: `TextExtractor`, `FigureIndex`, `PageRenderer`, `NeedsModel`, `MinExtractableText`
+- [x] S3.2 `rag/infra/pdf`: header-driven `pdfimages` parse, form-feed-stripping `pdftotext`, `pdfinfo` page count, transient `pdftoppm` renders
+- [x] S3.3 A committed three-page fixture plus the generator that reproduces it (`testdata/make_fixture.go`)
+- [x] S3.4 Tests: fake-runner parsers, process failures, fail-fast when poppler is absent, real-binary integration (skipped only when a tool is missing)
+- [x] S3.5 README section, then commit the slice
+
+Decisions taken while implementing, not asked about again:
+
+| Question | Choice | Why |
+| --- | --- | --- |
+| Sparse-text threshold | **200 runes** (`MinExtractableText`) | The real test book yields roughly 2,400 characters per page, so 200 is an order of magnitude below a normal page. It catches headings and captions; it does not try to detect *garbled* text, which would need the model it is trying to ration. |
+| Figure signal | **`pdfimages -list`, parsed header-driven** | It is the tool that knows which pages carry a raster image. A header-driven parse survives a column reorder; an unparseable row is an error, because a silent zero is indistinguishable from a book with no diagrams. |
+| Render format and size | **PNG at 150 dpi, constant** | One legible resolution, no config knob. Renders are transient: written to a temp directory under the workspace and removed on every path, since retention (`P1`) does not exist. |
+| Blank page | **Reaches the model** | Its text is under the threshold, so it is sent. Accepted waste (a handful of calls per book) instead of a third rule that special-cases a page carrying no signal. |
 
 ## Acceptance criteria
 
