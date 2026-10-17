@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -25,6 +26,21 @@ const (
 	// EnvCORSOrigins sets the comma-separated list of origins allowed to read
 	// API responses. The literal "*" restores a permissive wildcard policy.
 	EnvCORSOrigins = "STUDY_CORS_ORIGINS"
+
+	// EnvOpenRouterAPIKey holds the bearer token the ingestion pipeline uses.
+	//
+	// It is read here but required only by the ingestion command, not by Load:
+	// the API server never transcribes anything, and requiring the key here would
+	// stop the server booting for a credential it does not use. The command fails
+	// before page 1 when the key is missing.
+	EnvOpenRouterAPIKey = "STUDY_OPENROUTER_API_KEY"
+
+	// EnvLLMModel selects the model the ingestion pipeline transcribes with.
+	EnvLLMModel = "STUDY_LLM_MODEL"
+
+	// EnvOpenRouterBaseURL overrides the API root. It is the only way to point a
+	// run at a proxy, a gateway, or a test double.
+	EnvOpenRouterBaseURL = "STUDY_OPENROUTER_BASE_URL"
 )
 
 // DotEnvFile is the file Load reads before falling back to the process
@@ -42,6 +58,13 @@ const (
 	// DefaultMaxUploadBytes bounds a single artifact at 100 MiB. The largest real
 	// book on hand is 14 MiB, so this leaves room while still bounding disk use.
 	DefaultMaxUploadBytes = 100 << 20
+
+	// DefaultLLMModel is the vision-capable model verified against the live
+	// models API: it is present, and its input_modalities include image.
+	DefaultLLMModel = "qwen/qwen3.5-flash-02-23"
+
+	// DefaultOpenRouterBaseURL is the public OpenRouter API root.
+	DefaultOpenRouterBaseURL = "https://openrouter.ai/api/v1"
 )
 
 // DefaultCORSOrigins covers the clients this API is built to serve:
@@ -80,6 +103,18 @@ type Config struct {
 	// CORSAllowedOrigins is the origin allowlist. It contains at least one
 	// entry, and a single "*" entry means permissive.
 	CORSAllowedOrigins []string
+
+	// OpenRouterAPIKey is the bearer token for the ingestion model. Empty is a
+	// valid configuration: only the ingestion command requires it.
+	OpenRouterAPIKey string
+
+	// LLMModel is the model identifier sent with every transcription request.
+	LLMModel string
+
+	// OpenRouterBaseURL is the API root. It has an http or https scheme and a
+	// host, both checked at load time so a typo aborts the run instead of
+	// failing at page 200.
+	OpenRouterBaseURL string
 }
 
 // Load resolves configuration from the process environment.
@@ -142,13 +177,57 @@ func load(dotEnvPath string, lookup EnvLookup) (*Config, error) {
 		return nil, fmt.Errorf("cors origins: %w", err)
 	}
 
+	// The key stays optional here; the ingestion command is what requires it.
+	apiKey := strings.TrimSpace(resolve(EnvOpenRouterAPIKey))
+
+	model := strings.TrimSpace(resolve(EnvLLMModel))
+	if model == "" {
+		model = DefaultLLMModel
+	}
+
+	baseURL, err := ParseOpenRouterBaseURL(resolve(EnvOpenRouterBaseURL))
+	if err != nil {
+		return nil, err
+	}
+
 	return &Config{
 		Port:               port,
 		DatabaseDSN:        dsn,
 		StorageRoot:        storageRoot,
 		MaxUploadBytes:     maxUploadBytes,
 		CORSAllowedOrigins: origins,
+		OpenRouterAPIKey:   apiKey,
+		LLMModel:           model,
+		OpenRouterBaseURL:  baseURL,
 	}, nil
+}
+
+// ParseOpenRouterBaseURL validates the API root. An empty string yields
+// DefaultOpenRouterBaseURL and trailing slashes are removed, so a caller never
+// has to decide whether a path join needs one.
+//
+// The check is deliberately early: a malformed URL is otherwise discovered only
+// when the first page is transcribed, which on a long book is hundreds of pages
+// into a run. Every rejection names the variable, because that is the thing the
+// user has to edit.
+func ParseOpenRouterBaseURL(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return DefaultOpenRouterBaseURL, nil
+	}
+
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("%s: %q is not a URL", EnvOpenRouterBaseURL, raw)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", fmt.Errorf("%s: %q must use the http or https scheme", EnvOpenRouterBaseURL, raw)
+	}
+	if parsed.Host == "" {
+		return "", fmt.Errorf("%s: %q has no host", EnvOpenRouterBaseURL, raw)
+	}
+
+	return strings.TrimRight(raw, "/"), nil
 }
 
 // ParsePort validates and converts a port string. An empty string yields

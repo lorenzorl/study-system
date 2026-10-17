@@ -53,10 +53,10 @@ A job with persisted per-page state makes a re-run continue instead of restart.
 - [x] T4 — `rag/sqlite`: repositories for documents and jobs
 - [x] T5 — `rag/infra/pdf`: `pdfinfo` page count and `pdftotext` behind a port
 - [x] T6 — "Needs the model" heuristic (sparse text, or a figure on the page)
-- [ ] T7 — `platform/llm`: OpenRouter client behind a port, key from config
+- [x] T7 — `platform/llm`: OpenRouter client behind a port, key from config
 - [x] T8 — `rag/infra/pdf`: `pdftoppm` behind a port
-- [ ] T9 — `rag/app`: `IngestDocumentUseCase`, resumable per page
-- [ ] T10 — `cmd/ingest`: run the pipeline, write the `.md` to `--out`
+- [x] T9 — `rag/app`: `IngestDocumentUseCase`, resumable per page
+- [x] T10 — `cmd/ingest`: run the pipeline, write the `.md` to `--out`
 - [ ] T11 — Verify against a real book, twice, to prove resumability
 - [ ] T12 — README + backlog
 
@@ -103,6 +103,120 @@ Decisions taken while implementing, not asked about again:
 | Render format and size | **PNG at 150 dpi, constant** | One legible resolution, no config knob. Renders are transient: written to a temp directory under the workspace and removed on every path, since retention (`P1`) does not exist. |
 | Blank page | **Reaches the model** | Its text is under the threshold, so it is sent. Accepted waste (a handful of calls per book) instead of a third rule that special-cases a page carrying no signal. |
 
+## Slice 4 — model client and pipeline (in progress)
+
+Decisions taken here. An implementer must not re-decide them.
+
+| Question | Choice | Why |
+| --- | --- | --- |
+| Where the key is required | `config.Load` reads `STUDY_OPENROUTER_API_KEY` as **optional**; `cmd/ingest` requires it and fails before page 1, naming the variable | The server never ingests. Requiring it in `Load` would stop the server booting for a key it does not use. "A missing key fails loudly at startup, not at page 200" is about the ingestion run. |
+| Base URL | `STUDY_OPENROUTER_BASE_URL`, default `https://openrouter.ai/api/v1` | Read and used. It is the only way to point a run at a proxy, a gateway, or a test double, and the end-to-end verification needs it. |
+| Model | `STUDY_LLM_MODEL`, default `qwen/qwen3.5-flash-02-23` | Verified against the live models API: present, `input_modalities` includes `image`. |
+| Jobs per document | **One job per document, continued across runs.** A new job is created only when the document has none | The per-page outcomes are the single source of truth for that document's conversion and `job_pages` is keyed `(job_id, page_number)`. A job per run would re-extract every page of a book to resume one. |
+| When the `.md` is written | **Only once every page has a terminal outcome** | A partial file whose header claims the full range is exactly the retired script's bug: `DDD-full.md` carries two headers. An interrupted run writes nothing, so the previous complete file stays valid. |
+| Page failure | Recorded as a failed outcome with its reason, and the run continues | Acceptance criterion 4. A failed page is owed again by the next run, which is the domain rule. |
+| Image inventory failure | **Aborts the run** | `pdfimages` failing means we do not know which pages carry figures. Treating it as zero images is the silent degradation the header-driven parse exists to prevent. |
+| Transient failures | The model client retries 429 and 5xx up to 3 attempts with exponential backoff, never other 4xx | A rate limit in the middle of a 359-page run must not cost a page a manual re-run. A 400/401/402 is not transient and retrying it only wastes the run. |
+| Output write | Temp file in the target directory, then rename | The vault file must never be observed half-written. |
+| Text structure | **No passes, no cleanup, no heading inference in step 4.** Text is stored verbatim | It is what makes the output match `pdftotext` (criterion 7) and lets any later transformation run over stored text without re-extracting. |
+
+Verified OpenRouter facts (measured; do not re-derive):
+
+- `POST https://openrouter.ai/api/v1/chat/completions` with `Authorization: Bearer <key>` and `Content-Type: application/json`.
+- Body: `{"model": "...", "messages": [{"role": "user", "content": [{"type": "text", "text": "..."}, {"type": "image_url", "image_url": {"url": "data:image/png;base64,<...>"}}]}]}`. `messages` is the only required field; `model` is always sent.
+- Response text: `choices[0].message.content`. An empty `choices` array is an error, never an empty page.
+- Errors: `{"error": {"message": "...", "code": 401}}`. Measured live (401 without a key). The returned error must carry the status and that message.
+- Optional app-identity headers exist (`HTTP-Referer`, `X-OpenRouter-Title`); not sent in v1.
+
+- [x] S4.1 `platform/config`: the three variables, defaults, and URL validation that names the variable
+- [x] S4.2 `platform/llm`: OpenRouter client behind a one-method port, bounded retry, error mapping
+- [x] S4.3 `rag/domain`: the transcriber port and `RenderMarkdown`
+- [x] S4.4 `rag/infra/pdf`: a `Source` factory opening the three page ports over one file, with a nil runner so the fail-fast check stays
+- [x] S4.5 `rag/app`: `IngestDocumentUseCase` — hash, find-or-create the document, find-or-continue the job, process the owed pages, settle, materialize
+- [x] S4.6 `cmd/ingest`: `-out`, one progress line per page, summary, exit codes
+- [x] S4.7 README + backlog, then commit the slice
+
+### Contracts
+
+`rag/domain` gains, alongside the existing ports:
+
+```go
+type PageTranscriber interface {
+	Transcribe(ctx context.Context, prompt string, imagePNG []byte) (string, error)
+}
+```
+
+`platform/llm.Client` satisfies it implicitly: the port is declared by the context that needs it, and the platform package knows nothing about `rag`. One method, no shared types, no import in either direction.
+
+`rag/domain.RenderMarkdown(header, outcomes) string` is the only place the output document's shape is decided:
+
+```md
+# Processed Book for RAG
+
+- source: <title>
+- pages: 1-<total> (<recorded> recorded, <failed> failed)
+- generated: <RFC3339 UTC>
+
+<!-- page 1 -->
+<verbatim text>
+
+<!-- page 2 (failed) -->
+```
+
+Exactly one `# ` header; exactly one `<!-- page N -->` marker per page from 1 to the job's total, ascending; a failed page is marked `(failed)` and carries no text; page text is emitted verbatim (trailing whitespace trimmed) so it still matches `pdftotext`.
+
+The prompt lives in `rag/app`, because what to ask the model is domain knowledge, while how to reach it is transport:
+
+```text
+You are converting ONE page of a book into Markdown for a retrieval index.
+
+Transcribe the page's text exactly as printed: same wording, same order. Do not
+summarise, do not paraphrase, do not explain, do not add commentary.
+Do not reproduce running headers, footers, or page numbers.
+For every diagram, figure, chart, or image, add a short factual description as a
+blockquote line starting with "> Figure:".
+Reproduce tables as Markdown tables.
+Never invent content you cannot read. If a region is illegible, write [illegible]
+instead of guessing.
+This is page %d of %d. Output only the Markdown for the page, with no preamble.
+```
+
+The last paragraph is the whole point of the hybrid design: a confident invention matches queries and answers them wrongly, so the model is told to mark what it cannot read rather than fill it in.
+
+`IngestDocumentUseCase`:
+
+```go
+type IngestRequest struct {
+	PDFPath   string // the local file to convert
+	Title     string
+	SourceURI string // informational, recorded on first sight of the bytes
+	OutPath   string // where the Markdown goes; the vault, never guessed by the backend
+}
+
+type PageEvent struct {
+	Page, Total int
+	Status      domain.PageStatus
+	Method      domain.PageMethod
+	Chars       int
+	Elapsed     time.Duration
+	Err         string
+}
+
+type Report struct {
+	DocumentID, JobID, OutPath         string
+	TotalPages, Extracted, Transcribed int
+	Failed, Skipped                    int
+	Settled                            bool
+	Duration                           time.Duration
+}
+```
+
+Flow, in order: hash the file (sha256, streamed) → `FindByContentHash` → on a miss, `store.Put` and `Create` the document, on a hit reuse the existing document and **do not store the bytes again** → `store.Path`/`Workspace` for the payload and the render scratch → `source.Open(payloadPath, workDir)` → `FindLatestByDocumentID`, continuing an existing job and creating one only when there is none (`MarkRunning` only from `pending`: a settled job is continued without it, because the domain refuses to move a finished job back to running) → `ListOutcomes` and `PendingPages` → fetch `ImageCounts` once, before the loop → for each owed page: extract, decide with `NeedsModel`, render and transcribe when it says so, `SaveOutcome`, report through the callback → re-read outcomes, `ProgressOf`, `Settle` when settled → materialize and write the file only when settled.
+
+The use case takes `*storage.Store` directly rather than a new port: `app` is allowed to import `platform`, the store is the real thing in tests too (rooted at a temp dir), and inventing an `ArtifactLocator` interface to hide two method calls would add a seam nothing needs.
+
+`cmd/ingest` requires `-out` for a conversion run, prints one line per page (`page 90/359  vision  3.2s`), then a summary with the counts, and exits non-zero when the run aborts or when nothing succeeded. The key is validated before the database is opened or the first page is read.
+
 ## Acceptance criteria
 
 1. `gofmt`, `go vet`, all tests green; frontend untouched.
@@ -134,3 +248,44 @@ verifiable:
 2. **Extraction + heuristic + renderer** — needs `pdftotext`/`pdftoppm`, no network.
 3. **LLM client + orchestration + `cmd/ingest`** — first end-to-end run.
 4. **Resumability verification on a real book + docs.**
+
+## Log
+
+**L1 (2026-10-17, request summary; the verbatim text lives in the Engram mirror
+under `odd/step4-rag-ingestion/tasks`)** — hybrid conversion (`pdftotext` for the
+text, the model only on difficult or illustrated pages), model
+`qwen/qwen3.5-flash-02-23` through OpenRouter with the key in
+`STUDY_OPENROUTER_API_KEY`, and the generated `.md` written into the Obsidian
+vault through `--out`, never guessed by the backend. End goal: ingest and search.
+
+**L2 (2026-10-17, corrections found while verifying slice 4)** — two real defects,
+each fixed with a failing test observed first:
+
+- `failedOutcome` left `UpdatedAt` at the zero value, so a failed page was
+  persisted with the year-0001 instant in the audit column.
+- A freshly created job was persisted as `pending` and stayed pending while its
+  pages were being processed. It is now created already `running`, because the
+  domain defines `pending` as "no page has been attempted".
+
+Two findings of mine were withdrawn after measuring, and both are worth keeping:
+a page-count check that compared a per-document count against a global one, and a
+claimed vector-figure defect that rendering the page disproved (backlog A2).
+
+**L3 (2026-10-17, end-to-end evidence, with no real key needed)** — the command was
+run against three real downloaded PDFs using a local double of the
+chat-completions endpoint:
+
+- A text-only paper of 19 pages made 0 model calls, and the emitted page text is
+  byte-identical to `pdftotext` (acceptance criterion 7).
+- The same input twice created no second document and no second job, reported 19
+  pages already recorded, and produced an identical body — only the `generated:`
+  line differs.
+- A SIGKILL four seconds into the book with figures left **no** output file, with
+  `job_pages` holding only the finished pages and the job in `running`; the re-run
+  continued it, recorded the rest, and wrote one header with one marker per page.
+- A page whose provider failed three times was recorded failed with the reason,
+  the run continued and settled anyway, and the next run retried only that page,
+  whose success replaced the failure.
+
+Still unproven: a run against the real API (needs the key) and the real 359-page
+book (T11).

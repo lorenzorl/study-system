@@ -21,6 +21,7 @@ internal/
 │   ├── config/               env + .env resolution, defaults, validation
 │   ├── db/                   SQLite connection setup, PRAGMAs, migration runner
 │   ├── httpx/                JSON/error writers, CORS middleware
+│   ├── llm/                  OpenRouter chat-completions client
 │   └── storage/              artifact store: atomic writes, size ceiling
 ├── study/                  bounded context: topics, concepts, flashcards, reviews
 │   ├── domain/               entities, repository ports, FSRS, no external imports
@@ -29,6 +30,7 @@ internal/
 │   └── http/                 contracts, DTOs, one handler file per resource, router
 └── rag/                    bounded context: documents, ingestion jobs, page outcomes
     ├── domain/               entities, ports, resumability invariants, page heuristic
+    ├── app/                  the conversion run: acquire, resume, materialize
     ├── infra/pdf/            poppler adapters: page count, text, figures, renders
     └── sqlite/               repository adapters + the ingestion schema migrations
 ```
@@ -55,9 +57,9 @@ change to reason about both.
 
 ```bash
 cd apps/go-middleware
-go run ./cmd/server              # listens on :8080, override with -port
-go run ./cmd/ingest -pdf book.pdf  # acquire and persist a document
-go run ./cmd/ingest -list          # list stored artifacts
+go run ./cmd/server                            # listens on :8080, override with -port
+go run ./cmd/ingest -pdf book.pdf --out ~/vault/book.md   # convert a book to Markdown
+go run ./cmd/ingest -list                        # list stored artifacts
 go test ./...
 go vet ./...
 ```
@@ -95,6 +97,9 @@ variable is not listed here, nothing reads it.
 | `STUDY_STORAGE_ROOT` | `data/artifacts` | Directory holding stored artifacts. |
 | `STUDY_MAX_UPLOAD_BYTES` | `104857600` (100 MiB) | Largest single artifact accepted. The largest real book on hand is 14 MiB. |
 | `STUDY_CORS_ORIGINS` | Obsidian + localhost origins | Comma-separated allowlist of origins that may read API responses. |
+| `STUDY_OPENROUTER_API_KEY` | unset | OpenRouter key used by ingestion. Read as optional so the server keeps booting without it; `cmd/ingest` requires it and aborts before page 1 when it is missing. |
+| `STUDY_LLM_MODEL` | `qwen/qwen3.5-flash-02-23` | Model slug used for the pages that need the model. |
+| `STUDY_OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | Base URL of the chat-completions API. Override it for a proxy, a gateway, or a test double; a malformed value aborts the boot. |
 
 Invalid values fail at startup with a message naming the variable. A port
 outside 1-65535, a non-numeric port, or an origin list made only of separators
@@ -189,6 +194,45 @@ Three properties of these adapters are deliberate:
 The only PDF in the repository is the test fixture at
 `internal/rag/infra/pdf/testdata/three-pages.pdf`: three pages, being text-only,
 text plus a 2x2 image, and image-only. `testdata/make_fixture.go` regenerates it.
+
+## Ingestion
+
+`go run ./cmd/ingest -pdf book.pdf --out <path>.md` converts a PDF to Markdown, one
+page at a time. The output path is supplied by the caller: the backend never
+guesses where a vault is.
+
+The pipeline acquires the bytes, identifies the document by their content hash,
+continues that document's job, processes only the pages that still owe an outcome,
+and materializes the Markdown from everything recorded. Nothing is written until
+every page reached a terminal outcome, so an interrupted run leaves the previous
+complete file in place instead of a partial one. That is the retired
+`optimizebooks` script's defect stated as a property: its output carried two
+headers because it wrote a range before processing it.
+
+**One job per document, continued rather than restarted.** The per-page outcomes
+are the single source of truth for that document's conversion, and the schema
+keeps exactly one row per page, so a re-run after a kill redoes only the pages
+that are still owed. A page that failed is owed again; a page that succeeded is
+never re-extracted, and its stored text is what appears in the output.
+
+Which pages reach the model is decided by the same rule as the extractor path:
+text shorter than `domain.MinExtractableText`, or a page carrying an image. A
+typical 15-page paper sends 2 to 5 pages to the model; a born-digital text-only
+document sends none. The model is asked to transcribe faithfully, describe
+figures and tables, and mark what it cannot read rather than invent it.
+
+Also deliberate:
+
+- **The output is committed atomically**: a temporary file in the target
+directory is renamed into place, so a vault file is never observed half-written.
+- **A failed page does not fail the run.** It is recorded with its reason, the
+  rest of the book continues, and the run reports how many succeeded. The command
+  exits non-zero only when the run aborts or when nothing succeeded.
+- **429 and 5xx are retried three times with backoff**, because a rate limit in
+  the middle of a 359-page book must not cost a page a manual re-run. Other 4xx
+  responses are not retried: they are request or account defects.
+- **`-list` needs no key, no database, and no PDF.** It exists to inspect the
+  store and returns before anything else is opened.
 
 ## Schema migrations
 

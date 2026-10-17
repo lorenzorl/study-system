@@ -1,7 +1,7 @@
 # Backlog — open findings
 
 **Single source of truth for everything deliberately not fixed yet.**
-Updated: 2026-10-17 (step 4 slice 2 — ingestion schema and repositories)
+Updated: 2026-10-17 (step 4 slice 4 — model client and pipeline)
 
 A follow-up is a finding that was real, but outside the scope of the step that
 found it. Fixing it mid-step would make that step unverifiable: you could no
@@ -36,6 +36,32 @@ return 200) precisely because it proxies. A real Obsidian client is the only way
 permissive behaviour with no code change.
 
 **This is the only assumption in the codebase with no evidence behind it.**
+
+---
+
+### A2 — The figure signal only sees raster images, and it was never tested against the real book
+
+`domain.NeedsModel` sends a page to the model when `pdfimages -list` reports an
+embedded image on it. On the three downloaded PDFs measured here the signal
+behaved correctly: a born-digital text-only paper sent 0 pages, the LaTeX paper
+sent exactly its two figure pages, the astrophysics paper sent its five.
+
+**What is not established:** a diagram drawn with vector operators (TikZ, Visio,
+a pgfplots chart) is not an embedded image, so a page whose only figure is vector
+and whose text is long enough never reaches the model. That matters, because
+describing diagrams is the main thing the model adds over `pdftotext`.
+
+**An earlier version of this entry claimed the defect was proven. It was not.**
+The `<path>` count used to prove it also counts text glyphs, and rendering the
+page in question showed plain text and no figure. The claim was withdrawn after
+looking at the page.
+
+**How to close:** measure the real 359-page book in step 5 — `pdfimages -list` per
+page, then render the pages `DDD-full.md` described as diagrams and look at them.
+If those figures turn out to be vector, extend the signal (count drawing
+operators per page, or compare rendered ink coverage) or accept that only raster
+figures are ever described. Do not extend it before measuring: a second signal
+would add cost to every page of every book.
 
 ---
 
@@ -95,6 +121,31 @@ no retention policy at all: not by age, not by count, and no delete command.
 Note that `storage.Store.Delete(id)` already exists. What is missing is the
 *policy*, not the tool.
 
+### P2 — An ingestion run has no cost ceiling
+Every page the heuristic sends to the model is billed and nothing bounds the
+total. On the PDFs measured here that was 0, 2, and 5 pages out of 15-19, but a
+scanned book inverts the ratio: every page carries a raster image, so every page
+is a vision call. A 359-page scan is therefore hundreds of model calls in one
+command, with no ceiling, no dry run, and no spend reported when it finishes.
+
+**How to close:** pick the policy first — a `-max-model-pages` flag, a
+confirmation above N calls, or simply a per-run report — then implement it. The
+report is the cheapest and is worth having regardless: the run knows how many
+pages it transcribed, but the client discards the token and cost fields the API
+returns, so nothing today says what a book cost.
+
+### P3 — `-out` overwrites whatever is at that path
+
+`cmd/ingest -out <path>` replaces the file at that path: atomically, but without
+asking and without a backup. Pointing it at a note that already exists in the
+vault destroys the note, and the command cannot tell a previously generated book
+from a chapter a human wrote, because both are Markdown files.
+
+**How to close:** choose one — refuse to overwrite a file that does not carry the
+generated header, require an explicit `-force` when the target exists, or write
+beside it with a suffix. The header check is the only one that distinguishes
+"ours" from "the user's", which is the distinction that actually matters.
+
 ---
 
 ## ⚪️ Not built by design, not debt
@@ -104,7 +155,6 @@ not run yet.
 
 | Item | Owner | Why open |
 | --- | --- | --- |
-| Read `STUDY_OPENROUTER_API_KEY` / `STUDY_LLM_MODEL` | step 4 (ingestion) | Documented in the README, deliberately not read yet so there is no dead config field. |
 | HTTP multipart upload endpoint + body-size middleware | step 4 (`rag/http`) | Uploads belong to the context that owns documents, together with `http.MaxBytesReader`. |
 | Conversation/retrieval surface | step 5+ | Nothing is designed for retrieval yet. |
 
@@ -125,6 +175,7 @@ Kept so the same work is not proposed twice.
 | `B1` — HTTP responses carried timestamps off by the machine's UTC offset | B1 close — see the corrected description below |
 | Instants did not survive a persist/read round trip | B1 close — `domain.Now()` truncates to `InstantPrecision` |
 | `documents`, `ingestion_jobs`, and `job_pages` did not exist | step 4 slice 2 — `rag/sqlite` migration 100, with `(job_id, page_number)` as the primary key |
+| `STUDY_OPENROUTER_API_KEY` and `STUDY_LLM_MODEL` were documented but unread | step 4 slice 4 — `platform/config` reads both, `platform/llm` consumes them, and `cmd/ingest` fails before page 1 when the key is missing |
 
 ### B1 (closed) — the original description was wrong, and that matters
 

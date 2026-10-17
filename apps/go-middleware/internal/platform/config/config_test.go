@@ -328,3 +328,122 @@ func TestParseDotEnv_EmptyInputYieldsEmptyMap(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, vars)
 }
+
+// --- Load: ingestion model settings ---
+
+// The key is optional at Load so the API server can boot without an ingestion
+// credential it never uses. The ingestion command is what requires it.
+func TestLoad_LLMSettingsDefaultWhenNothingIsSet(t *testing.T) {
+	cfg, err := config.LoadFrom(filepath.Join(t.TempDir(), "absent.env"), emptyEnv())
+	require.NoError(t, err)
+
+	assert.Empty(t, cfg.OpenRouterAPIKey, "a missing model key must not stop the server booting")
+	assert.Equal(t, config.DefaultLLMModel, cfg.LLMModel)
+	assert.Equal(t, config.DefaultOpenRouterBaseURL, cfg.OpenRouterBaseURL)
+}
+
+func TestLoad_OpenRouterAPIKeyFromEnvironment(t *testing.T) {
+	cfg, err := config.LoadFrom(filepath.Join(t.TempDir(), "absent.env"),
+		fakeEnv(map[string]string{config.EnvOpenRouterAPIKey: "sk-or-test"}))
+	require.NoError(t, err)
+
+	assert.Equal(t, "sk-or-test", cfg.OpenRouterAPIKey)
+}
+
+func TestLoad_LLMModelFromEnvironment(t *testing.T) {
+	cfg, err := config.LoadFrom(filepath.Join(t.TempDir(), "absent.env"),
+		fakeEnv(map[string]string{config.EnvLLMModel: "meta/llama-vision"}))
+	require.NoError(t, err)
+
+	assert.Equal(t, "meta/llama-vision", cfg.LLMModel)
+}
+
+func TestLoad_OpenRouterBaseURLFromEnvironment(t *testing.T) {
+	cfg, err := config.LoadFrom(filepath.Join(t.TempDir(), "absent.env"),
+		fakeEnv(map[string]string{config.EnvOpenRouterBaseURL: "http://127.0.0.1:9999/gateway"}))
+	require.NoError(t, err)
+
+	assert.Equal(t, "http://127.0.0.1:9999/gateway", cfg.OpenRouterBaseURL)
+}
+
+func TestLoad_LLMSettingsFromDotEnvFile(t *testing.T) {
+	path := writeDotEnv(t, `
+STUDY_OPENROUTER_API_KEY=sk-or-from-file
+STUDY_LLM_MODEL=file/model
+STUDY_OPENROUTER_BASE_URL=https://file.example/api/v1
+`)
+
+	cfg, err := config.LoadFrom(path, emptyEnv())
+	require.NoError(t, err)
+
+	assert.Equal(t, "sk-or-from-file", cfg.OpenRouterAPIKey)
+	assert.Equal(t, "file/model", cfg.LLMModel)
+	assert.Equal(t, "https://file.example/api/v1", cfg.OpenRouterBaseURL)
+}
+
+func TestLoad_EnvironmentBeatsDotEnvFileForLLMSettings(t *testing.T) {
+	path := writeDotEnv(t, `
+STUDY_LLM_MODEL=file/model
+STUDY_OPENROUTER_BASE_URL=https://file.example/api/v1
+`)
+
+	cfg, err := config.LoadFrom(path, fakeEnv(map[string]string{
+		config.EnvLLMModel:          "env/model",
+		config.EnvOpenRouterBaseURL: "https://env.example/api/v1",
+	}))
+	require.NoError(t, err)
+
+	assert.Equal(t, "env/model", cfg.LLMModel, "environment must win over the file")
+	assert.Equal(t, "https://env.example/api/v1", cfg.OpenRouterBaseURL)
+}
+
+// A malformed base URL is rejected at load time and names the variable, so a
+// typo aborts the run instead of failing hundreds of pages later.
+func TestLoad_RejectsMalformedBaseURL(t *testing.T) {
+	cases := []string{
+		"openrouter.ai/api/v1", // no scheme
+		"ftp://openrouter.ai/api/v1",
+		"https://", // no host
+		"/api/v1",
+		"://openrouter.ai",
+	}
+
+	for _, raw := range cases {
+		t.Run(raw, func(t *testing.T) {
+			_, err := config.LoadFrom(filepath.Join(t.TempDir(), "absent.env"),
+				fakeEnv(map[string]string{config.EnvOpenRouterBaseURL: raw}))
+
+			require.Error(t, err, "%q must be rejected", raw)
+			assert.Contains(t, err.Error(), config.EnvOpenRouterBaseURL,
+				"the message must name the variable the user has to edit")
+		})
+	}
+}
+
+func TestLoad_BlankLLMSettingsFallBackToDefaults(t *testing.T) {
+	cfg, err := config.LoadFrom(filepath.Join(t.TempDir(), "absent.env"), fakeEnv(map[string]string{
+		config.EnvLLMModel:          "   ",
+		config.EnvOpenRouterBaseURL: "  ",
+	}))
+	require.NoError(t, err)
+
+	assert.Equal(t, config.DefaultLLMModel, cfg.LLMModel)
+	assert.Equal(t, config.DefaultOpenRouterBaseURL, cfg.OpenRouterBaseURL)
+}
+
+// --- ParseOpenRouterBaseURL ---
+
+func TestParseOpenRouterBaseURL(t *testing.T) {
+	empty, err := config.ParseOpenRouterBaseURL("")
+	require.NoError(t, err)
+	assert.Equal(t, config.DefaultOpenRouterBaseURL, empty)
+
+	trimmed, err := config.ParseOpenRouterBaseURL("  https://openrouter.ai/api/v1/  ")
+	require.NoError(t, err)
+	assert.Equal(t, "https://openrouter.ai/api/v1", trimmed,
+		"a trailing slash would produce a doubled separator on the request path")
+
+	_, err = config.ParseOpenRouterBaseURL("not a url")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), config.EnvOpenRouterBaseURL)
+}
