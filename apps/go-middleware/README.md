@@ -32,6 +32,7 @@ internal/
     ├── domain/               entities, ports, resumability, page heuristic, chunker, cosine, RRF
     ├── app/                  the conversion run, the index rebuild, embedding, and hybrid search
     ├── infra/pdf/            poppler adapters: page count, text, figures, renders
+    ├── http/                 contracts, DTO, the search handler, and the RAG router
     └── sqlite/               repository adapters + the ingestion, chunk-index, and vector migrations
 ```
 
@@ -88,6 +89,7 @@ the variables, and create `.env` with the ones you need to override.
 | `POST` | `/api/sync/resource` | Upsert an external study resource by `source_uri` |
 | `GET` | `/api/study/due` | Flashcards whose next review is due |
 | `POST` | `/api/study/review` | Record a review, recompute the card state |
+| `GET` | `/api/rag/search` | Ranked chunks for a query (`q`, `limit`); no key required |
 
 ## Configuration
 
@@ -320,6 +322,36 @@ crosses the language boundary between a Spanish query and an English book (S1).
 - **`-search` prints** `MATCH` (the stage), `BM25` (the lexical score's magnitude,
   bigger is better) and `COSINE` (the semantic similarity, bigger is better). The
   score a stage did not produce reads 0.
+
+## Retrieval API
+
+`GET /api/rag/search` is the HTTP surface of the same search the CLI runs, and it
+adds no retrieval behaviour: it wraps `app.SearchUseCase`, so a search answers the
+same ranking the command prints. The intended consumer is the Obsidian plugin;
+there is no UI. The route is registered by `rag/http`, and the composition root
+mounts it under `/api/rag/` with `httpx.CORS` as the outermost wrapper.
+
+| Parameter | Required | Rule |
+| --- | --- | --- |
+| `q` | yes | Trimmed. An empty or whitespace-only value is `400 "q is required"`. |
+| `limit` | no | Absent or empty uses `app.DefaultSearchLimit` (10). A non-number, a value below 1, or a value above `MaxSearchLimit` (50) is `400` naming the bound. |
+
+- **Response.** `200` with a **bare JSON array** of result objects, never a
+  wrapper and never `null`: an empty result encodes as `[]`, which is why the
+  handler builds it with `make([]SearchResultResponse, 0, n)`. Fields:
+  `chunk_id`, `document_id`, `document_title`, `page_number`, `snippet`,
+  `stage`, `bm25`, `similarity`.
+- **Score direction.** `bm25` is the lexical score's **magnitude** (bigger is
+  better) and `similarity` is the cosine (bigger is better). A stage that did not
+  rank a chunk leaves its value `0`. The command prints the same directions, so
+  the two surfaces do not disagree about which way is better.
+- **Punctuation is not an error.** A `q` with no letter or digit (for example
+  `...`) returns `200` with `[]`, exactly as the CLI exits `0` with
+  `0 results`.
+- **No key required.** The lexical stage reads only the database. With
+  `STUDY_OPENROUTER_API_KEY` set the server upgrades to the hybrid use case, and
+  it still degrades to lexical-only when the configured model has no stored
+  vectors.
 
 ## Schema migrations
 

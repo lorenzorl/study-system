@@ -15,6 +15,9 @@ import (
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/platform/config"
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/platform/db"
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/platform/httpx"
+	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/platform/llm"
+	ragapp "github.com/lorenzorangel/study-system/apps/go-middleware/internal/rag/app"
+	raghttp "github.com/lorenzorangel/study-system/apps/go-middleware/internal/rag/http"
 	ragsqlite "github.com/lorenzorangel/study-system/apps/go-middleware/internal/rag/sqlite"
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/study/app"
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/study/domain"
@@ -90,9 +93,38 @@ func main() {
 		submitReviewUC,
 	)
 
+	// --- rag context: retrieval over the chunk index ---
+	//
+	// The HTTP surface wraps the search use case and adds no retrieval behaviour.
+	// The lexical stage needs only the database. The semantic stage is upgraded in
+	// when the key is set, and the use case still falls back to lexical-only when
+	// the configured model has no stored vectors, so the key stays optional: the
+	// server boots and answers without it.
+	chunks := ragsqlite.NewChunkRepository(sqlDB)
+
+	var searchUC *ragapp.SearchUseCase
+	if cfg.OpenRouterAPIKey == "" {
+		searchUC = ragapp.NewSearchUseCase(chunks)
+	} else {
+		client, err := llm.NewEmbeddingClient(
+			cfg.OpenRouterAPIKey, cfg.OpenRouterBaseURL, cfg.EmbeddingModel, llm.Options{})
+		if err != nil {
+			log.Fatalf("create embedding client: %v", err)
+		}
+		searchUC = ragapp.NewHybridSearchUseCase(
+			chunks, ragsqlite.NewEmbeddingRepository(sqlDB), client, cfg.EmbeddingModel)
+	}
+
+	// The RAG router is mounted under its prefix on a root mux, and the study
+	// router catches the rest. Each context is unchanged: neither knows it shares
+	// the process with the other, and CORS stays the outermost wrapper.
+	rootMux := http.NewServeMux()
+	rootMux.Handle("/api/rag/", raghttp.NewRouter(searchUC))
+	rootMux.Handle("/", studyRoutes)
+
 	server := &http.Server{
 		Addr:    ":" + strconv.Itoa(port),
-		Handler: httpx.CORS(cfg.CORSAllowedOrigins)(studyRoutes),
+		Handler: httpx.CORS(cfg.CORSAllowedOrigins)(rootMux),
 	}
 
 	go func() {

@@ -1,6 +1,7 @@
 # Step 5 — Search over the ingested corpus
 
-**Status:** in progress
+**Status:** done (slices 5.1, 5.2, 5.3 complete; RAG and the plugin UI remain out of
+scope)
 **Created:** 2026-10-17
 **Depends on:** step 4 (`documents`, `ingestion_jobs`, `job_pages`, and the page text
 they hold), `platform/db` migrations, `platform/llm` for the embedding stage.
@@ -76,7 +77,7 @@ never across a page boundary, so every chunk cites exactly one page.
 
 ### Slice 5.3 — the retrieval surface
 
-- [ ] T11 — `rag/http`: `GET /api/rag/search`, with the plugin as the intended
+- [x] T11 — `rag/http`: `GET /api/rag/search`, with the plugin as the intended
       consumer and no UI
 
 ## Contract of slice 5.1
@@ -214,6 +215,44 @@ it. The live measurement stays in L4.
    model is not mixed into a search.
 6. Embedding needs the API key and the network; search works without them once
    vectors are stored.
+
+## Contract of slice 5.3
+
+Decided 2026-10-17. The HTTP surface wraps the 5.1/5.2 search use case; it does
+not add retrieval behaviour.
+
+- **Route.** `GET /api/rag/search`, registered by `internal/rag/http` with the
+  stdlib method+path pattern the study context already uses.
+- **Query parameters.** `q` is required and trimmed; an empty or whitespace-only
+  `q` is `400 "q is required"`. `limit` is optional: absent or empty uses
+  `app.DefaultSearchLimit` (10); a non-number, a value below 1, or a value above
+  `MaxSearchLimit` (50) is `400` with a message naming the bound.
+- **Punctuation is not an error.** A `q` that holds no letter or digit (for
+  example `...`) returns `200` with an empty array, exactly as the CLI exits 0
+  with `0 results`.
+- **Response.** `200` with a **bare JSON array** of result objects, built with
+  `make([]SearchResultResponse, 0, n)` so an empty result encodes as `[]` and
+  never as `null`. Fields: `chunk_id`, `document_id`, `document_title`,
+  `page_number`, `snippet`, `stage`, `bm25`, `similarity`.
+- **Score direction.** `bm25` is the **magnitude** of the lexical score (bigger
+  is better) and `similarity` is the cosine (bigger is better); a stage that did
+  not rank the chunk leaves its value `0`. This matches what the command prints,
+  so the two surfaces do not disagree about which direction is better.
+- **Layering.** The handler declares its own `SearchUseCase` interface in
+  `contracts.go`, like `study/http`, so it is mockable and does not import the
+  concrete use case. `NewRouter(search SearchUseCase) http.Handler` registers the
+  one route and applies no CORS; the composition root wraps it, as it already
+  does for the study router.
+- **Composition root.** `cmd/server` builds a lexical `app.SearchUseCase` over
+  `ragsqlite.NewChunkRepository`, upgrades it to `NewHybridSearchUseCase` when
+  `cfg.OpenRouterAPIKey` is set, mounts the RAG router under `/api/rag/` on a
+  root mux, and keeps `httpx.CORS(cfg.CORSAllowedOrigins)` as the outermost
+  wrapper. The key stays optional: the server boots and answers lexical-only
+  without it.
+- **Tests** are `internal/rag/http/handler_test.go`, package `http_test`, with a
+  hand-written mock and `httptest`, covering success, empty, missing `q`, an
+  invalid `limit`, a punctuation-only `q`, and a use-case error. No UI and no
+  plugin code is touched.
 
 ## Acceptance criteria
 
@@ -359,3 +398,30 @@ RRF, so the tie-break decides. The cause is the 5.1 contract keeping every token
 as an `OR` term, stopwords included; dropping stopwords, weighting the semantic
 stage, or widening the candidate pool are changes the user decides, not this
 slice.
+
+**L6 (2026-10-17, slice 5.3 verified and committed)** — the HTTP surface was
+implemented by a bounded writer and then exercised live by the parent through the
+real server, not only through the writer's httptest cases. `gofmt -l`,
+`go build ./...`, `go vet ./...` clean; `go test ./... -count=1` ok in every
+package; `func Test` went from 435 at `4b7ba95` to 447 (+12, no existing test
+changed).
+
+Live runs (ports 8097-8099; 8080 belongs to another project and `-port 0` is
+rejected by design). With the key set, `GET /api/rag/search?q=attention&limit=3`
+returned `200` with a bare JSON array whose stages were `hybrid`, `lexical`, and
+`semantic`, and whose `bm25` was the magnitude and `similarity` the cosine. A
+missing `q` returned `400 {"error":"q is required"}`; `q=...` returned
+`200 []`; `limit` of `0`, `51`, or `abc` returned
+`400 {"error":"limit must be between 1 and 50"}`. A Spanish query returned the
+scaled dot-product chunk with `stage: semantic` and `similarity: 0.598` (the
+noisy lexical hit still ranked first, the residual finding recorded in L5). Run
+from a directory with no `.env` and no key, the server still answered `200`
+lexical-only. `GET /api/concepts` still returned `200` on the root mux, so
+mounting the RAG router under `/api/rag/` did not regress the study routes. The
+composition root (`package main`) has no committed unit test; the live run above
+is its evidence.
+
+Step 5 is complete: the lexical index (5.1), the semantic stage and its fusion
+(5.2), and the HTTP surface (5.3) are implemented, tested, and committed. The
+residual ranking finding in L5 is the only open quality item, and it is a user
+decision, not a defect.
