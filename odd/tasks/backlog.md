@@ -1,7 +1,7 @@
 # Backlog — open findings
 
 **Single source of truth for everything deliberately not fixed yet.**
-Updated: 2026-10-17 (step 4 slice 4 — model client and pipeline)
+Updated: 2026-10-17 (ingest hardening — run plan, model ceiling, output guard)
 
 A follow-up is a finding that was real, but outside the scope of the step that
 found it. Fixing it mid-step would make that step unverifiable: you could no
@@ -121,31 +121,6 @@ no retention policy at all: not by age, not by count, and no delete command.
 Note that `storage.Store.Delete(id)` already exists. What is missing is the
 *policy*, not the tool.
 
-### P2 — An ingestion run has no cost ceiling
-Every page the heuristic sends to the model is billed and nothing bounds the
-total. On the PDFs measured here that was 0, 2, and 5 pages out of 15-19, but a
-scanned book inverts the ratio: every page carries a raster image, so every page
-is a vision call. A 359-page scan is therefore hundreds of model calls in one
-command, with no ceiling, no dry run, and no spend reported when it finishes.
-
-**How to close:** pick the policy first — a `-max-model-pages` flag, a
-confirmation above N calls, or simply a per-run report — then implement it. The
-report is the cheapest and is worth having regardless: the run knows how many
-pages it transcribed, but the client discards the token and cost fields the API
-returns, so nothing today says what a book cost.
-
-### P3 — `-out` overwrites whatever is at that path
-
-`cmd/ingest -out <path>` replaces the file at that path: atomically, but without
-asking and without a backup. Pointing it at a note that already exists in the
-vault destroys the note, and the command cannot tell a previously generated book
-from a chapter a human wrote, because both are Markdown files.
-
-**How to close:** choose one — refuse to overwrite a file that does not carry the
-generated header, require an explicit `-force` when the target exists, or write
-beside it with a suffix. The header check is the only one that distinguishes
-"ours" from "the user's", which is the distinction that actually matters.
-
 ---
 
 ## ⚪️ Not built by design, not debt
@@ -176,6 +151,8 @@ Kept so the same work is not proposed twice.
 | Instants did not survive a persist/read round trip | B1 close — `domain.Now()` truncates to `InstantPrecision` |
 | `documents`, `ingestion_jobs`, and `job_pages` did not exist | step 4 slice 2 — `rag/sqlite` migration 100, with `(job_id, page_number)` as the primary key |
 | `STUDY_OPENROUTER_API_KEY` and `STUDY_LLM_MODEL` were documented but unread | step 4 slice 4 — `platform/config` reads both, `platform/llm` consumes them, and `cmd/ingest` fails before page 1 when the key is missing |
+| An ingestion run had no cost ceiling and no way to see the cost before paying it | ingest hardening — the run plans first and prints the plan, `-dry-run` stops there having written nothing, and `-max-model-pages N` refuses before anything is stored or created. The measured price of a real run (US$ 0,0013 per model page, 31s to 1m41s each) made time the real ceiling, which is why the plan reports counts and an estimate rather than only a cap |
+| `-out` overwrote whatever was at that path | ingest hardening — a target without the generated header is refused, `-force` replaces it deliberately, and the file is written 0644 because a vault is shared |
 
 ### B1 (closed) — the original description was wrong, and that matters
 

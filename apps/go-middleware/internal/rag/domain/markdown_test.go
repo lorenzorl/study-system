@@ -212,3 +212,42 @@ func TestRenderMarkdown_IgnoresOutcomesOutsideTheJobRange(t *testing.T) {
 		"<!-- page 2 -->",
 	}, linesStartingWith(document, "<!-- page"))
 }
+
+func TestRenderMarkdown_WritesTheExportedHeaderLine(t *testing.T) {
+	document := domain.RenderMarkdown(markdownHeader(1), nil)
+
+	first := strings.SplitN(document, "\n", 2)[0]
+	assert.Equal(t, domain.GeneratedHeaderLine, first,
+		"RenderMarkdown must write the exported constant, so the marker cannot drift")
+}
+
+func TestIsGeneratedMarkdown_AcceptsTheRenderedDocument(t *testing.T) {
+	document := domain.RenderMarkdown(markdownHeader(1),
+		[]domain.PageOutcome{markdownOutcome(1, domain.PageExtracted, "text")})
+
+	assert.True(t, domain.IsGeneratedMarkdown([]byte(document)),
+		"the writer's own output is the definition of generated Markdown")
+}
+
+func TestIsGeneratedMarkdown_RejectsAHandwrittenNote(t *testing.T) {
+	note := "# My own notes\n\nSomething I wrote by hand.\n"
+
+	assert.False(t, domain.IsGeneratedMarkdown([]byte(note)),
+		"a human's note is not ours to overwrite")
+}
+
+func TestIsGeneratedMarkdown_RejectsAnEmptyFile(t *testing.T) {
+	assert.False(t, domain.IsGeneratedMarkdown(nil))
+	assert.False(t, domain.IsGeneratedMarkdown([]byte("")))
+	assert.False(t, domain.IsGeneratedMarkdown([]byte("\n\n   \n")))
+}
+
+func TestIsGeneratedMarkdown_RejectsAGeneratedFileWithAPrependedLine(t *testing.T) {
+	document := domain.RenderMarkdown(markdownHeader(1),
+		[]domain.PageOutcome{markdownOutcome(1, domain.PageExtracted, "text")})
+
+	prepended := "a line a human put on top\n" + document
+
+	assert.False(t, domain.IsGeneratedMarkdown([]byte(prepended)),
+		"a file someone edited is no longer the pipeline's own output")
+}

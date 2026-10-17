@@ -287,5 +287,34 @@ chat-completions endpoint:
   the run continued and settled anyway, and the next run retried only that page,
   whose success replaced the failure.
 
-Still unproven: a run against the real API (needs the key) and the real 359-page
-book (T11).
+Still unproven after L3: the real 359-page book (T11).
+
+**L4 (2026-10-17, the real API run and the hardening it motivated)** — the two
+runs in L3 were repeated against the real OpenRouter API (no double, real key):
+15 pages (13 extracted, 2 to the model) in 1m51s and 18 pages (13 + 5) in 5m42s,
+both settled with zero failures. Measured: **US$ 0,0093 for the seven model
+calls** (US$ 0,0013 per page), and **31s to 1m41s per call**. The money is not
+the constraint; the time is, which is why the plan now reports an estimate.
+Quality spot-checked: 93% to 99% of each model page's vocabulary matches
+`pdftotext`, the missing words are the template boilerplate and running headers
+the prompt tells the model to drop, the added words are figure descriptions and
+text read from inside figures (which `pdftotext` cannot see at all), and the
+diagram description of *Attention Is All You Need*'s Figure 1 was verified
+against the rendered page and is accurate.
+
+Three decisions taken by the user, then implemented and verified at the command
+line against the real PDFs:
+
+| Question | Choice |
+| --- | --- |
+| Editing a generated `.md` by hand | Never assumed: a target carrying the generated header is rewritten as normal, one without it is refused, and `-force` replaces it deliberately |
+| Warning before paying for the model | A plan printed before anything is written, `-dry-run` that stops there, and `-max-model-pages N` that refuses on the plan |
+| Permissions of the output | 0644, because a vault may be synced by another user |
+
+The refusal had to be moved in front of acquisition: it originally happened after
+storing the artifact and creating the document and job, so "refuse before
+spending" still left a stored PDF and an empty job behind. Planning now reads the
+local file and the database only.
+
+Still unproven: the real 359-page book, killed and resumed (T11), and whether its
+155 diagrams are raster images the figure signal can see (backlog A2).

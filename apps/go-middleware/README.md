@@ -59,6 +59,7 @@ change to reason about both.
 cd apps/go-middleware
 go run ./cmd/server                            # listens on :8080, override with -port
 go run ./cmd/ingest -pdf book.pdf --out ~/vault/book.md   # convert a book to Markdown
+go run ./cmd/ingest -pdf book.pdf -dry-run                # what it would cost, without doing it
 go run ./cmd/ingest -list                        # list stored artifacts
 go test ./...
 go vet ./...
@@ -223,6 +224,18 @@ figures and tables, and mark what it cannot read rather than invent it.
 
 Also deliberate:
 
+- **A run says what it will cost before it does anything.** The plan reports how
+  many pages are already recorded, how many come from the text layer, how many
+  will reach the model, and a rough duration. `-dry-run` prints it and exits
+  without storing the bytes, creating the document or writing the file; it needs
+  no API key, because it never calls the model. `-max-model-pages N` refuses a
+  run whose plan exceeds N, and the refusal happens before anything is stored or
+  created, so a run that is refused leaves nothing behind.
+- **The output file is never someone else's.** A target that exists without the
+  generated header is refused, with `-force` as the way to replace it deliberately;
+  a target this pipeline generated is rewritten as normal. The file is written
+  0644, because a vault is shared and a sync process running as another user has
+  to be able to read it.
 - **The output is committed atomically**: a temporary file in the target
 directory is renamed into place, so a vault file is never observed half-written.
 - **A failed page does not fail the run.** It is recorded with its reason, the

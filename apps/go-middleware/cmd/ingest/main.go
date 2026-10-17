@@ -12,6 +12,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"flag"
 	"fmt"
@@ -19,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -28,6 +30,7 @@ import (
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/platform/llm"
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/platform/storage"
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/rag/app"
+	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/rag/domain"
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/rag/infra/pdf"
 	ragsqlite "github.com/lorenzorangel/study-system/apps/go-middleware/internal/rag/sqlite"
 	studysqlite "github.com/lorenzorangel/study-system/apps/go-middleware/internal/study/sqlite"
@@ -43,6 +46,9 @@ func run() error {
 	pdfPath := flag.String("pdf", "", "file to convert, by path on this machine")
 	outPath := flag.String("out", "", "path of the Markdown file to write; required unless -list is used")
 	list := flag.Bool("list", false, "list stored artifacts and exit")
+	dryRun := flag.Bool("dry-run", false, "print the plan and stop before any model work or write")
+	maxModelPages := flag.Int("max-model-pages", 0, "refuse the run when the plan would send more pages to the model than this (0 = no limit)")
+	force := flag.Bool("force", false, "replace the output file even when this pipeline did not generate it")
 	flag.Parse()
 
 	cfg, err := config.Load()
@@ -50,14 +56,13 @@ func run() error {
 		return fmt.Errorf("load configuration: %w", err)
 	}
 
-	store, err := storage.New(cfg.StorageRoot, cfg.MaxUploadBytes)
-	if err != nil {
-		return fmt.Errorf("open storage at %s: %w", cfg.StorageRoot, err)
-	}
-
 	// Listing reads the store and nothing else. It must keep working with no API
 	// key, no database, and no PDF, so it returns before any of them is opened.
 	if *list {
+		store, err := storage.New(cfg.StorageRoot, cfg.MaxUploadBytes)
+		if err != nil {
+			return fmt.Errorf("open storage at %s: %w", cfg.StorageRoot, err)
+		}
 		return listArtifacts(store)
 	}
 
@@ -71,31 +76,39 @@ func run() error {
 	}
 
 	// The key is checked before the database is opened and before the first page
-	// is read, so a missing key cannot cost hundreds of pages of work. config.Load
-	// keeps it optional because the API server never ingests.
-	if cfg.OpenRouterAPIKey == "" {
-		return fmt.Errorf("%s is not set: the ingestion run cannot transcribe pages without it",
-			config.EnvOpenRouterAPIKey)
-	}
+	// is read, so a missing key cannot cost hundreds of pages of work. A dry run
+	// is different: it plans without ever calling the model, so it needs no key,
+	// and a text-only book needs none either.
+	var transcriber domain.PageTranscriber
+	if !*dryRun {
+		if cfg.OpenRouterAPIKey == "" {
+			return fmt.Errorf("%s is not set: the ingestion run cannot transcribe pages without it",
+				config.EnvOpenRouterAPIKey)
+		}
 
-	client, err := llm.NewClient(cfg.OpenRouterAPIKey, cfg.OpenRouterBaseURL, cfg.LLMModel, llm.Options{})
-	if err != nil {
-		return fmt.Errorf("create model client: %w", err)
+		client, err := llm.NewClient(cfg.OpenRouterAPIKey, cfg.OpenRouterBaseURL, cfg.LLMModel, llm.Options{})
+		if err != nil {
+			return fmt.Errorf("create model client: %w", err)
+		}
+		transcriber = client
 	}
 
 	ctx := context.Background()
 
-	sqlDB, err := db.Open(ctx, cfg.DatabaseDSN)
+	sqlDB, err := openDatabase(ctx, cfg, *dryRun)
 	if err != nil {
-		return fmt.Errorf("open database: %w", err)
+		return err
 	}
 	defer sqlDB.Close()
 
-	// Each context owns its migration block; the composition root is what puts
-	// them in one database, in one run, exactly as the server does.
-	migrations := slices.Concat(studysqlite.Migrations(), ragsqlite.Migrations())
-	if err := db.Migrate(ctx, sqlDB, migrations); err != nil {
-		return fmt.Errorf("migrate database: %w", err)
+	// A dry run must not create the storage tree either; it reads the local PDF
+	// and the database only.
+	var store *storage.Store
+	if !*dryRun {
+		store, err = storage.New(cfg.StorageRoot, cfg.MaxUploadBytes)
+		if err != nil {
+			return fmt.Errorf("open storage at %s: %w", cfg.StorageRoot, err)
+		}
 	}
 
 	useCase := app.NewIngestDocumentUseCase(
@@ -105,7 +118,7 @@ func run() error {
 		// A nil runner selects the real poppler binaries, so a missing tool fails
 		// at Open rather than at the page that first needs it.
 		pdf.NewSource(nil),
-		client,
+		transcriber,
 		store,
 	)
 
@@ -114,22 +127,110 @@ func run() error {
 		Title:     filepath.Base(*pdfPath),
 		SourceURI: *pdfPath,
 		OutPath:   *outPath,
-	}, printPageEvent)
+	}, app.Options{
+		DryRun:        *dryRun,
+		Force:         *force,
+		MaxModelPages: *maxModelPages,
+	}, app.Hooks{
+		OnPlan: printPlan,
+		OnPage: printPageEvent,
+	})
 
-	// A partial report is printed even when the run aborted, so the failure is
-	// reported next to how far it got.
-	if report != nil {
-		printSummary(report)
-	}
 	if runErr != nil {
+		// A partial report is printed even when the run aborted, so the failure
+		// is reported next to how far it got. A refusal at planning reached no
+		// job and has nothing to summarize, and a dry run produced no pages.
+		if report != nil && !*dryRun && report.JobID != "" {
+			printSummary(report)
+		}
 		return describe(runErr)
 	}
+
+	if *dryRun {
+		return nil
+	}
+
+	printSummary(report)
 
 	if report.Extracted+report.Transcribed == 0 {
 		return fmt.Errorf("no page produced text; the run converted nothing")
 	}
 
 	return nil
+}
+
+// openDatabase opens the planning or the working database.
+//
+// A real run opens read-write and applies migrations. A dry run must not write
+// to the database: it opens read-only and skips migrations, and when there is no
+// file to open read-only it uses an empty in-memory schema, which answers every
+// lookup with "not found" exactly as a database that has never seen the bytes
+// does. That fallback writes nothing to disk.
+func openDatabase(ctx context.Context, cfg *config.Config, dryRun bool) (*sql.DB, error) {
+	migrations := slices.Concat(studysqlite.Migrations(), ragsqlite.Migrations())
+
+	if dryRun {
+		if sqlDB, err := db.Open(ctx, readOnlyDSN(cfg.DatabaseDSN)); err == nil {
+			return sqlDB, nil
+		}
+
+		sqlDB, err := db.Open(ctx, ":memory:")
+		if err != nil {
+			return nil, fmt.Errorf("open planning database: %w", err)
+		}
+		if err := db.Migrate(ctx, sqlDB, migrations); err != nil {
+			sqlDB.Close()
+			return nil, fmt.Errorf("prepare planning database: %w", err)
+		}
+		return sqlDB, nil
+	}
+
+	sqlDB, err := db.Open(ctx, cfg.DatabaseDSN)
+	if err != nil {
+		return nil, fmt.Errorf("open database: %w", err)
+	}
+	if err := db.Migrate(ctx, sqlDB, migrations); err != nil {
+		sqlDB.Close()
+		return nil, fmt.Errorf("migrate database: %w", err)
+	}
+	return sqlDB, nil
+}
+
+// readOnlyDSN appends SQLite's read-only mode to a file DSN, preserving any
+// query string it already carries. An in-memory DSN is returned unchanged.
+func readOnlyDSN(dsn string) string {
+	if strings.Contains(dsn, ":memory:") {
+		return dsn
+	}
+	if strings.Contains(dsn, "?") {
+		return dsn + "&mode=ro"
+	}
+	return dsn + "?mode=ro"
+}
+
+// printPlan writes the plan line before any model work starts.
+func printPlan(plan app.Plan) {
+	fmt.Printf("plan  %d pages: %d already recorded, %d from the text layer, %d to the model (~%s)\n",
+		plan.TotalPages, plan.AlreadyRecorded, plan.ToExtract, plan.ToModel, formatEstimate(plan.EstimatedVision))
+}
+
+// formatEstimate renders a vision-time estimate compactly: 1h22m, 4m, or 0s.
+func formatEstimate(d time.Duration) string {
+	if d <= 0 {
+		return "0s"
+	}
+
+	d = d.Round(time.Minute)
+	if d < time.Minute {
+		d = time.Minute
+	}
+
+	hours := d / time.Hour
+	minutes := (d % time.Hour) / time.Minute
+	if hours == 0 {
+		return fmt.Sprintf("%dm", minutes)
+	}
+	return fmt.Sprintf("%dh%02dm", hours, minutes)
 }
 
 // printPageEvent writes one line per processed page.

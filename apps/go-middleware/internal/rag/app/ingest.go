@@ -87,8 +87,71 @@ type Report struct {
 	// Markdown was written.
 	Settled bool
 
+	// Plan is the plan this run computed, including the counts a caller would
+	// otherwise have to re-derive from the page events.
+	Plan Plan
+
 	Duration time.Duration
 }
+
+// Plan describes what a run will do, computed by reading the local PDF and the
+// database before any model work starts.
+//
+// ToExtract and ToModel count only the pages this run still owes; pages an
+// earlier run recorded are counted separately in AlreadyRecorded and are not
+// touched.
+type Plan struct {
+	// TotalPages is the job's page count.
+	TotalPages int
+
+	// AlreadyRecorded is how many pages an earlier run recorded and this run
+	// will not touch.
+	AlreadyRecorded int
+
+	// ToExtract is how many owed pages will be taken from the text layer.
+	ToExtract int
+
+	// ToModel is how many owed pages will be rendered and sent to the model.
+	ToModel int
+
+	// EstimatedVision is ToModel times one observed mean. It is a rough
+	// estimate for the printed plan, not a promise.
+	EstimatedVision time.Duration
+}
+
+// Options controls one run.
+type Options struct {
+	// DryRun plans the run and stops before doing any of it: nothing is stored,
+	// no document or job is created, no page outcome is recorded, and no file is
+	// written. It reads the local PDF and the database only.
+	DryRun bool
+
+	// Force allows the output file to replace one this pipeline did not generate.
+	Force bool
+
+	// MaxModelPages refuses the run when the plan would send more pages to the
+	// model than this. Zero means no limit.
+	MaxModelPages int
+}
+
+// Hooks are the caller's callbacks for observing a run.
+type Hooks struct {
+	// OnPlan is called once, after planning and before any model work, so a
+	// caller can print what the run will cost before it starts spending.
+	OnPlan func(Plan)
+
+	// OnPage is called once per page this run processes, in ascending order.
+	// Pages an earlier run recorded are not reported again.
+	OnPage func(PageEvent)
+}
+
+// meanVisionPageDuration estimates one vision page's wall time.
+//
+// It is an observed mean: seven real pages measured between 31s and 1m41s. It is
+// a rough estimate for the printed plan, not a promise — page complexity, model
+// latency, and retries all move it — and it is deliberately a constant rather
+// than a knob so plans stay comparable between runs.
+const meanVisionPageDuration = 70 * time.Second
 
 // IngestDocumentUseCase converts one document to Markdown, resuming where an
 // earlier run stopped.
@@ -130,26 +193,49 @@ func NewIngestDocumentUseCase(
 	}
 }
 
+// runState is the resolved state of one run before its pages are planned.
+//
+// document and job are nil on a dry run of bytes the database has never seen,
+// because a dry run persists neither.
+type runState struct {
+	document   *domain.Document
+	job        *domain.IngestionJob
+	totalPages int
+	recorded   []domain.PageOutcome
+}
+
+// plannedPage is one owed page's planning result, reused verbatim by the
+// processing loop so the text is extracted once.
+type plannedPage struct {
+	page       int
+	text       string
+	extractErr error
+	needsModel bool
+}
+
 // Execute runs one conversion.
 //
-// onPage, when not nil, is called exactly once per page this run processes, in
-// ascending page order. Pages an earlier run recorded are not reported again.
+// The plan is computed first, from the local file and the database only: the
+// owed pages' text is extracted once, each page is classified with
+// domain.NeedsModel, and hooks.OnPlan reports the result. A dry run and a
+// refusal stop there, before the database or the store is written to, so neither
+// can leave a document, an artifact, or a job behind. Only a run that passes
+// every refusal acquires the bytes, and its processing loop reuses the plan's
+// decisions and text.
 //
-// The returned Report is non-nil whenever a job was reached, including on an
+// The returned Report is non-nil whenever a plan was reached, including on an
 // abort, so a caller can print what happened. A non-nil error always means the
 // run did not settle, and in that case no output file was written.
 func (uc *IngestDocumentUseCase) Execute(
 	ctx context.Context,
 	request IngestRequest,
-	onPage func(PageEvent),
+	options Options,
+	hooks Hooks,
 ) (*Report, error) {
 	started := uc.now()
 
 	if err := request.validate(); err != nil {
 		return nil, err
-	}
-	if uc.transcriber == nil {
-		return nil, fmt.Errorf("page transcriber is required: %w", apperror.ErrInvalidInput)
 	}
 
 	contentHash, err := hashFile(request.PDFPath)
@@ -157,76 +243,73 @@ func (uc *IngestDocumentUseCase) Execute(
 		return nil, err
 	}
 
-	document, err := uc.findOrCreateDocument(ctx, request, contentHash, started)
-	if err != nil {
-		return nil, err
-	}
-
-	payloadPath, err := uc.store.Path(document.ArtifactID)
-	if err != nil {
-		return nil, fmt.Errorf("resolve stored payload of %s: %w", request.PDFPath, err)
-	}
-	workDir, err := uc.store.Workspace(document.ArtifactID)
-	if err != nil {
-		return nil, fmt.Errorf("prepare render workspace of %s: %w", request.PDFPath, err)
-	}
-
-	source, err := uc.sources.Open(payloadPath, workDir)
-	if err != nil {
-		return nil, fmt.Errorf("open page source of %s: %w", request.PDFPath, err)
-	}
-
-	pageCount, err := source.Extractor.PageCount(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("read page count of %s: %w", request.PDFPath, err)
-	}
-
-	job, err := uc.findOrStartJob(ctx, document.ID, pageCount, started)
+	state, plannedPages, plan, err := uc.plan(ctx, request, contentHash)
 	if err != nil {
 		return nil, err
 	}
 
 	report := &Report{
-		DocumentID: document.ID,
-		JobID:      job.ID,
 		OutPath:    request.OutPath,
-		TotalPages: job.TotalPages,
+		TotalPages: plan.TotalPages,
+		Plan:       plan,
+	}
+	if state.document != nil {
+		report.DocumentID = state.document.ID
+	}
+	if state.job != nil {
+		report.JobID = state.job.ID
+	}
+	report.Skipped = plan.AlreadyRecorded
+
+	if hooks.OnPlan != nil {
+		hooks.OnPlan(plan)
 	}
 
-	recorded, err := uc.pages.ListOutcomes(ctx, job.ID)
+	if options.MaxModelPages > 0 && plan.ToModel > options.MaxModelPages {
+		return report, fmt.Errorf("plan would send %d pages to the model, above the limit of %d: %w",
+			plan.ToModel, options.MaxModelPages, apperror.ErrInvalidInput)
+	}
+
+	// A dry run never calls the model, so it needs no transcriber even when the
+	// plan reaches the model. A real run needs one only when the plan actually
+	// does: a text-only book needs no key.
+	if !options.DryRun && plan.ToModel > 0 && uc.transcriber == nil {
+		return report, fmt.Errorf("page transcriber is required: %w", apperror.ErrInvalidInput)
+	}
+
+	if options.DryRun {
+		report.Duration = uc.now().Sub(started)
+		return report, nil
+	}
+
+	// Every refusal has passed. Only now are the bytes stored and the document
+	// and job created; processing renders from the stored payload, not the local
+	// file.
+	document, job, source, err := uc.acquire(ctx, request, contentHash, plan.TotalPages, started)
 	if err != nil {
-		return report, fmt.Errorf("list recorded pages of job %s: %w", job.ID, err)
+		report.Duration = uc.now().Sub(started)
+		return report, err
 	}
+	report.DocumentID = document.ID
+	report.JobID = job.ID
 
-	pending := domain.PendingPages(job.TotalPages, recorded)
-	report.Skipped = job.TotalPages - len(pending)
-
-	// The inventory is read once for the whole book, before the loop. A failure
-	// here aborts: pdfimages failing means we do not know which pages carry
-	// figures, and treating that as zero images is the silent degradation the
-	// header-driven parse exists to prevent.
-	imageCounts, err := source.Figures.ImageCounts(ctx)
-	if err != nil {
-		return report, fmt.Errorf("list images of %s: %w", request.PDFPath, err)
-	}
-
-	for _, page := range pending {
+	for _, planned := range plannedPages {
 		pageStarted := uc.now()
 
-		outcome, err := uc.processPage(ctx, job, source, imageCounts, page)
+		outcome, err := uc.processPage(ctx, job, source, planned)
 		if err != nil {
 			report.Duration = uc.now().Sub(started)
-			return report, fmt.Errorf("page %d of %s: %w", page, request.PDFPath, err)
+			return report, fmt.Errorf("page %d of %s: %w", planned.page, request.PDFPath, err)
 		}
 
 		if err := uc.pages.SaveOutcome(ctx, outcome); err != nil {
 			report.Duration = uc.now().Sub(started)
-			return report, fmt.Errorf("record page %d of %s: %w", page, request.PDFPath, err)
+			return report, fmt.Errorf("record page %d of %s: %w", planned.page, request.PDFPath, err)
 		}
 
-		if onPage != nil {
-			onPage(PageEvent{
-				Page:    page,
+		if hooks.OnPage != nil {
+			hooks.OnPage(PageEvent{
+				Page:    planned.page,
 				Total:   job.TotalPages,
 				Status:  outcome.Status,
 				Method:  outcome.Method,
@@ -269,11 +352,167 @@ func (uc *IngestDocumentUseCase) Execute(
 	if err := uc.jobs.UpdateStatus(ctx, job); err != nil {
 		return report, fmt.Errorf("persist job %s: %w", job.ID, err)
 	}
-	if err := uc.writeMarkdown(request.OutPath, document.Title, job.TotalPages, final); err != nil {
+	if err := uc.writeMarkdown(request.OutPath, document.Title, job.TotalPages, final, options.Force); err != nil {
 		return report, err
 	}
 
 	return report, nil
+}
+
+// acquire stores the bytes and creates the document and job on first sight, then
+// opens the stored payload the processing loop renders from.
+//
+// It is called only after the plan has passed every refusal, so a refused run
+// never reaches it and leaves nothing behind. Processing reads the stored payload
+// rather than the local file: the archived bytes are what the page ports operate
+// on, and the content hash guarantees they are the bytes the plan was computed
+// from.
+func (uc *IngestDocumentUseCase) acquire(
+	ctx context.Context,
+	request IngestRequest,
+	contentHash string,
+	pageCount int,
+	started time.Time,
+) (*domain.Document, *domain.IngestionJob, domain.PagePorts, error) {
+	document, err := uc.findOrCreateDocument(ctx, request, contentHash, started)
+	if err != nil {
+		return nil, nil, domain.PagePorts{}, err
+	}
+
+	payloadPath, err := uc.store.Path(document.ArtifactID)
+	if err != nil {
+		return nil, nil, domain.PagePorts{}, fmt.Errorf("resolve stored payload of %s: %w", request.PDFPath, err)
+	}
+	workDir, err := uc.store.Workspace(document.ArtifactID)
+	if err != nil {
+		return nil, nil, domain.PagePorts{}, fmt.Errorf("prepare render workspace of %s: %w", request.PDFPath, err)
+	}
+
+	source, err := uc.sources.Open(payloadPath, workDir)
+	if err != nil {
+		return nil, nil, domain.PagePorts{}, fmt.Errorf("open page source of %s: %w", request.PDFPath, err)
+	}
+
+	job, err := uc.findOrStartJob(ctx, document.ID, pageCount, started)
+	if err != nil {
+		return nil, nil, domain.PagePorts{}, err
+	}
+
+	return document, job, source, nil
+}
+
+// plan reads the database and the local PDF and decides what the run will do,
+// without writing to either.
+//
+// It is the only planning path, used by a dry run and a real run alike. It opens
+// the file the caller named rather than a stored payload, because the payload may
+// not exist yet and the content hash is what guarantees the local bytes are the
+// ones identity was computed from. Nothing here writes, so a dry run or a refusal
+// leaves the database and the store untouched.
+func (uc *IngestDocumentUseCase) plan(
+	ctx context.Context,
+	request IngestRequest,
+	contentHash string,
+) (*runState, []plannedPage, Plan, error) {
+	// The renderer's work directory is only used when a page is rendered, which
+	// planning never does; pointing it at the system temp directory keeps any
+	// hypothetical scratch out of the vault and the repository.
+	source, err := uc.sources.Open(request.PDFPath, os.TempDir())
+	if err != nil {
+		return nil, nil, Plan{}, fmt.Errorf("open page source of %s: %w", request.PDFPath, err)
+	}
+
+	state := &runState{}
+
+	document, err := uc.documents.FindByContentHash(ctx, contentHash)
+	switch {
+	case err == nil:
+		state.document = document
+	case errors.Is(err, apperror.ErrNotFound):
+		// Those bytes have never been ingested; every page is owed and nothing
+		// is stored or created.
+	default:
+		return nil, nil, Plan{}, fmt.Errorf("look up document for %s: %w", request.PDFPath, err)
+	}
+
+	if state.document != nil {
+		job, err := uc.jobs.FindLatestByDocumentID(ctx, state.document.ID)
+		switch {
+		case err == nil:
+			recorded, listErr := uc.pages.ListOutcomes(ctx, job.ID)
+			if listErr != nil {
+				return nil, nil, Plan{}, fmt.Errorf("list recorded pages of job %s: %w", job.ID, listErr)
+			}
+			state.job = job
+			state.recorded = recorded
+		case errors.Is(err, apperror.ErrNotFound):
+			// The document exists but was never run; plan the whole book.
+		default:
+			return nil, nil, Plan{}, fmt.Errorf("look up job for document %s: %w", state.document.ID, err)
+		}
+	}
+
+	pageCount, err := source.Extractor.PageCount(ctx)
+	if err != nil {
+		return nil, nil, Plan{}, fmt.Errorf("read page count of %s: %w", request.PDFPath, err)
+	}
+	state.totalPages = pageCount
+
+	pending := domain.PendingPages(state.totalPages, state.recorded)
+
+	// The inventory is read once for the whole book, before the plan. A failure
+	// here aborts: pdfimages failing means we do not know which pages carry
+	// figures, and treating that as zero images is the silent degradation the
+	// header-driven parse exists to prevent.
+	imageCounts, err := source.Figures.ImageCounts(ctx)
+	if err != nil {
+		return nil, nil, Plan{}, fmt.Errorf("list images of %s: %w", request.PDFPath, err)
+	}
+
+	plannedPages, plan := uc.planPages(ctx, source, state.totalPages, imageCounts, pending)
+	return state, plannedPages, plan, nil
+}
+
+// planPages extracts each owed page's text once and classifies it.
+//
+// The extracted text and the domain.NeedsModel decision are returned so the
+// processing loop can reuse them: extracting again would double the only free
+// part of the run and make the printed plan a lie.
+//
+// A page whose extraction fails is captured rather than aborted. The loop decides
+// whether the failure is an interruption that must stop the run or a page that is
+// recorded as failed; such a page is counted in ToExtract because it will not
+// reach the model.
+func (uc *IngestDocumentUseCase) planPages(
+	ctx context.Context,
+	source domain.PagePorts,
+	totalPages int,
+	imageCounts map[int]int,
+	pending []int,
+) ([]plannedPage, Plan) {
+	pages := make([]plannedPage, 0, len(pending))
+	plan := Plan{
+		TotalPages:      totalPages,
+		AlreadyRecorded: totalPages - len(pending),
+	}
+
+	for _, page := range pending {
+		text, err := source.Extractor.PageText(ctx, page)
+		planned := plannedPage{page: page, text: text, extractErr: err}
+		if err == nil {
+			planned.needsModel = domain.NeedsModel(text, imageCounts[page])
+		}
+
+		if planned.needsModel {
+			plan.ToModel++
+		} else {
+			plan.ToExtract++
+		}
+		pages = append(pages, planned)
+	}
+
+	plan.EstimatedVision = time.Duration(plan.ToModel) * meanVisionPageDuration
+	return pages, plan
 }
 
 // validate rejects a request that cannot produce a file.
@@ -406,47 +645,45 @@ func (uc *IngestDocumentUseCase) processPage(
 	ctx context.Context,
 	job *domain.IngestionJob,
 	source domain.PagePorts,
-	imageCounts map[int]int,
-	page int,
+	planned plannedPage,
 ) (domain.PageOutcome, error) {
-	extracted, err := source.Extractor.PageText(ctx, page)
-	if err != nil {
-		if interrupted(ctx, err) {
-			return domain.PageOutcome{}, err
+	if planned.extractErr != nil {
+		if interrupted(ctx, planned.extractErr) {
+			return domain.PageOutcome{}, planned.extractErr
 		}
-		return failedOutcome(job.ID, page, domain.MethodExtract, err, uc.now()), nil
+		return failedOutcome(job.ID, planned.page, domain.MethodExtract, planned.extractErr, uc.now()), nil
 	}
 
-	if !domain.NeedsModel(extracted, imageCounts[page]) {
+	if !planned.needsModel {
 		return domain.PageOutcome{
 			JobID:      job.ID,
-			PageNumber: page,
+			PageNumber: planned.page,
 			Status:     domain.PageExtracted,
 			Method:     domain.MethodExtract,
-			Text:       extracted,
+			Text:       planned.text,
 			UpdatedAt:  uc.now(),
 		}, nil
 	}
 
-	render, err := source.Renderer.RenderPage(ctx, page)
+	render, err := source.Renderer.RenderPage(ctx, planned.page)
 	if err != nil {
 		if interrupted(ctx, err) {
 			return domain.PageOutcome{}, err
 		}
-		return failedOutcome(job.ID, page, domain.MethodVision, err, uc.now()), nil
+		return failedOutcome(job.ID, planned.page, domain.MethodVision, err, uc.now()), nil
 	}
 
-	transcribed, err := uc.transcriber.Transcribe(ctx, TranscriptionPrompt(page, job.TotalPages), render)
+	transcribed, err := uc.transcriber.Transcribe(ctx, TranscriptionPrompt(planned.page, job.TotalPages), render)
 	if err != nil {
 		if interrupted(ctx, err) {
 			return domain.PageOutcome{}, err
 		}
-		return failedOutcome(job.ID, page, domain.MethodVision, err, uc.now()), nil
+		return failedOutcome(job.ID, planned.page, domain.MethodVision, err, uc.now()), nil
 	}
 
 	return domain.PageOutcome{
 		JobID:      job.ID,
-		PageNumber: page,
+		PageNumber: planned.page,
 		Status:     domain.PageTranscribed,
 		Method:     domain.MethodVision,
 		Text:       transcribed,
@@ -483,11 +720,23 @@ func interrupted(ctx context.Context, err error) bool {
 // filesystem and is therefore atomic, and it is renamed into place only once it
 // is complete. A vault file is read by other tools while the run is going, and it
 // must never be observed half-written.
+//
+// When force is false, an existing target is replaced only if it carries the
+// generated header: a vault path may hold a note a human wrote, and the pipeline
+// must not silently destroy it (backlog P3). The guard runs before the temporary
+// file is created, so a refusal leaves nothing behind.
 func (uc *IngestDocumentUseCase) writeMarkdown(
 	outPath, title string,
 	totalPages int,
 	outcomes []domain.PageOutcome,
+	force bool,
 ) error {
+	if !force {
+		if err := refuseForeignTarget(outPath); err != nil {
+			return err
+		}
+	}
+
 	markdown := domain.RenderMarkdown(domain.MarkdownHeader{
 		Title:      title,
 		TotalPages: totalPages,
@@ -511,6 +760,14 @@ func (uc *IngestDocumentUseCase) writeMarkdown(
 		temp.Close()
 		return fmt.Errorf("write %s: %w", tempPath, err)
 	}
+	// The mode is set explicitly rather than negotiated through the umask: the
+	// file lands in a shared vault rather than a private directory, and a sync
+	// process running as another user must be able to read it. os.CreateTemp
+	// would otherwise leave it 0600.
+	if err := temp.Chmod(0o644); err != nil {
+		temp.Close()
+		return fmt.Errorf("set mode of %s: %w", tempPath, err)
+	}
 	if err := temp.Close(); err != nil {
 		return fmt.Errorf("close %s: %w", tempPath, err)
 	}
@@ -519,6 +776,40 @@ func (uc *IngestDocumentUseCase) writeMarkdown(
 	}
 
 	return nil
+}
+
+// outputHeadBytes bounds how much of an existing target is read to decide who
+// wrote it. The generated header is one short line, so a few kilobytes are more
+// than enough and a large book is never read just to be refused.
+const outputHeadBytes = 4 * 1024
+
+// refuseForeignTarget returns an error when outPath holds a file this pipeline
+// did not generate.
+//
+// A missing target is fine: there is nothing to protect. An unreadable target is
+// reported rather than overwritten.
+func refuseForeignTarget(outPath string) error {
+	file, err := os.Open(outPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("inspect output path %s: %w", outPath, err)
+	}
+	defer file.Close()
+
+	head := make([]byte, outputHeadBytes)
+	n, err := io.ReadFull(file, head)
+	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
+		return fmt.Errorf("inspect output path %s: %w", outPath, err)
+	}
+
+	if domain.IsGeneratedMarkdown(head[:n]) {
+		return nil
+	}
+
+	return fmt.Errorf("refusing to overwrite %s: it is not generated Markdown; pass -force to replace it: %w",
+		outPath, apperror.ErrConflict)
 }
 
 // hashFile streams a file through sha256, so identity does not depend on holding

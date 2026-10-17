@@ -7,6 +7,35 @@ import (
 	"unicode"
 )
 
+// GeneratedHeaderLine is the first non-empty line of every file this package
+// materializes.
+//
+// It is the marker that tells a previously generated book from a Markdown note a
+// human wrote at the same path (backlog P3): the pipeline may overwrite its own
+// output on a re-run, but it must never silently destroy someone else's note.
+//
+// The constant is exported and RenderMarkdown writes this exact value, so the
+// marker a caller checks with IsGeneratedMarkdown can never drift from the one
+// the writer emits.
+const GeneratedHeaderLine = "# Processed Book for RAG"
+
+// IsGeneratedMarkdown reports whether content was produced by RenderMarkdown.
+//
+// It is true only when the first non-empty line equals GeneratedHeaderLine. A
+// handwritten note, an empty file, and a generated file that someone prepended a
+// line to are all false. The leading-line check is deliberately strict: a file
+// that merely mentions the phrase somewhere is still the caller's file.
+func IsGeneratedMarkdown(content []byte) bool {
+	for _, line := range strings.Split(string(content), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		return trimmed == GeneratedHeaderLine
+	}
+	return false
+}
+
 // MarkdownHeader carries the document-level facts of one materialized run.
 type MarkdownHeader struct {
 	// Title is the document's human-readable name, shown as the source line.
@@ -55,7 +84,8 @@ func RenderMarkdown(header MarkdownHeader, outcomes []PageOutcome) string {
 	}
 
 	var builder strings.Builder
-	builder.WriteString("# Processed Book for RAG\n\n")
+	builder.WriteString(GeneratedHeaderLine)
+	builder.WriteString("\n\n")
 	fmt.Fprintf(&builder, "- source: %s\n", header.Title)
 	fmt.Fprintf(&builder, "- pages: 1-%d (%d recorded, %d failed)\n",
 		header.TotalPages, progress.Succeeded(), progress.Failed)
