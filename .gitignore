@@ -7,12 +7,11 @@
 .env.local
 .env.*.local
 
-# Local SQLite databases: personal study data, plus WAL sidecar files.
-apps/go-middleware/data/*.db
-apps/go-middleware/data/*.db-*
-
-# Stored artifacts: the source PDFs and generated Markdown. Never committed.
-apps/go-middleware/data/artifacts/
+# Everything under data/ is local: the SQLite database, its WAL sidecars, the
+# stored source PDFs, and the generated Markdown. Never committed. The .gitkeep
+# is the one exception, so the directory itself stays in the tree.
+apps/go-middleware/data/*
+!apps/go-middleware/data/.gitkeep
 
 # Build artifacts
 apps/go-middleware/bin/
