@@ -38,6 +38,11 @@ const (
 	// EnvLLMModel selects the model the ingestion pipeline transcribes with.
 	EnvLLMModel = "STUDY_LLM_MODEL"
 
+	// EnvEmbeddingModel selects the model the semantic stage embeds with. It is a
+	// separate knob from EnvLLMModel because the two model roles are unrelated:
+	// one transcribes a page, the other turns text into a vector.
+	EnvEmbeddingModel = "STUDY_EMBEDDING_MODEL"
+
 	// EnvOpenRouterBaseURL overrides the API root. It is the only way to point a
 	// run at a proxy, a gateway, or a test double.
 	EnvOpenRouterBaseURL = "STUDY_OPENROUTER_BASE_URL"
@@ -62,6 +67,12 @@ const (
 	// DefaultLLMModel is the vision-capable model verified against the live
 	// models API: it is present, and its input_modalities include image.
 	DefaultLLMModel = "qwen/qwen3.5-flash-02-23"
+
+	// DefaultEmbeddingModel is the multilingual embedding model chosen from the
+	// measured ranking in the step-5 log (L4), not from a name: eight candidates
+	// were scored on 16 Spanish queries against the real English corpus, and this
+	// one won on every aggregate (@1, @5, MRR). It is 3072-dimensional.
+	DefaultEmbeddingModel = "google/gemini-embedding-2"
 
 	// DefaultOpenRouterBaseURL is the public OpenRouter API root.
 	DefaultOpenRouterBaseURL = "https://openrouter.ai/api/v1"
@@ -110,6 +121,11 @@ type Config struct {
 
 	// LLMModel is the model identifier sent with every transcription request.
 	LLMModel string
+
+	// EmbeddingModel is the model identifier sent with every embedding request.
+	// Its slug is stored beside every vector, so a change is detectable rather
+	// than silently compared against the old model's vectors.
+	EmbeddingModel string
 
 	// OpenRouterBaseURL is the API root. It has an http or https scheme and a
 	// host, both checked at load time so a typo aborts the run instead of
@@ -185,6 +201,11 @@ func load(dotEnvPath string, lookup EnvLookup) (*Config, error) {
 		model = DefaultLLMModel
 	}
 
+	embeddingModel := strings.TrimSpace(resolve(EnvEmbeddingModel))
+	if embeddingModel == "" {
+		embeddingModel = DefaultEmbeddingModel
+	}
+
 	baseURL, err := ParseOpenRouterBaseURL(resolve(EnvOpenRouterBaseURL))
 	if err != nil {
 		return nil, err
@@ -198,6 +219,7 @@ func load(dotEnvPath string, lookup EnvLookup) (*Config, error) {
 		CORSAllowedOrigins: origins,
 		OpenRouterAPIKey:   apiKey,
 		LLMModel:           model,
+		EmbeddingModel:     embeddingModel,
 		OpenRouterBaseURL:  baseURL,
 	}, nil
 }

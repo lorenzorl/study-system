@@ -17,6 +17,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -44,11 +45,12 @@ func main() {
 
 func run() error {
 	pdfPath := flag.String("pdf", "", "file to convert, by path on this machine")
-	outPath := flag.String("out", "", "path of the Markdown file to write; required unless -list, -search or -reindex is used")
+	outPath := flag.String("out", "", "path of the Markdown file to write; required unless -list, -search, -reindex or -embed is used")
 	list := flag.Bool("list", false, "list stored artifacts and exit")
 	search := flag.String("search", "", "search the chunk index and exit; needs no API key, no PDF and no storage")
 	limit := flag.Int("limit", app.DefaultSearchLimit, "maximum number of results for -search")
 	reindex := flag.Bool("reindex", false, "rebuild the chunk index of every document with recorded pages, and exit")
+	embed := flag.Bool("embed", false, "rebuild the embeddings of every document that has chunks, and exit; needs the API key and the network")
 	dryRun := flag.Bool("dry-run", false, "print the plan and stop before any model work or write")
 	maxModelPages := flag.Int("max-model-pages", 0, "refuse the run when the plan would send more pages to the model than this (0 = no limit)")
 	force := flag.Bool("force", false, "replace the output file even when this pipeline did not generate it")
@@ -86,7 +88,27 @@ func run() error {
 		}
 		defer sqlDB.Close()
 
-		return runSearch(ctx, ragsqlite.NewChunkRepository(sqlDB), *search, *limit)
+		chunks := ragsqlite.NewChunkRepository(sqlDB)
+
+		// The semantic stage is best-effort at the command level. With no key the
+		// search stays lexical and reads only the database, which is what keeps it
+		// working on a machine with no credential and no network. With a key, the
+		// use case still falls back to lexical when the model has no stored vector.
+		var searcher *app.SearchUseCase
+		if cfg.OpenRouterAPIKey == "" {
+			searcher = app.NewSearchUseCase(chunks)
+		} else {
+			client, err := llm.NewEmbeddingClient(
+				cfg.OpenRouterAPIKey, cfg.OpenRouterBaseURL, cfg.EmbeddingModel, llm.Options{})
+			if err != nil {
+				return fmt.Errorf("create embedding client: %w", err)
+			}
+
+			searcher = app.NewHybridSearchUseCase(
+				chunks, ragsqlite.NewEmbeddingRepository(sqlDB), client, cfg.EmbeddingModel)
+		}
+
+		return runSearch(ctx, searcher, *search, *limit)
 	}
 
 	// A reindex reads recorded page text and writes chunks, so it needs the
@@ -109,9 +131,43 @@ func run() error {
 		return runReindex(ctx, indexer)
 	}
 
+	// Embedding is the only step that costs money and reaches the network, so it
+	// is separate from the reindex and refuses to start without the key. The
+	// database is opened read-write because this command writes vectors and
+	// applies the migration that adds their table.
+	if *embed {
+		if cfg.OpenRouterAPIKey == "" {
+			return fmt.Errorf("%s is not set: -embed calls the embedding model and cannot run without it",
+				config.EnvOpenRouterAPIKey)
+		}
+
+		client, err := llm.NewEmbeddingClient(
+			cfg.OpenRouterAPIKey, cfg.OpenRouterBaseURL, cfg.EmbeddingModel, llm.Options{})
+		if err != nil {
+			return fmt.Errorf("create embedding client: %w", err)
+		}
+
+		ctx := context.Background()
+
+		sqlDB, err := openDatabase(ctx, cfg, false)
+		if err != nil {
+			return err
+		}
+		defer sqlDB.Close()
+
+		embedder := app.NewEmbedDocumentUseCase(
+			ragsqlite.NewDocumentRepository(sqlDB),
+			ragsqlite.NewChunkRepository(sqlDB),
+			ragsqlite.NewEmbeddingRepository(sqlDB),
+			client,
+			cfg.EmbeddingModel,
+		)
+		return runEmbed(ctx, embedder)
+	}
+
 	if *pdfPath == "" {
 		flag.Usage()
-		return errors.New("-pdf is required unless -list, -search or -reindex is used")
+		return errors.New("-pdf is required unless -list, -search, -reindex or -embed is used")
 	}
 	if *outPath == "" {
 		flag.Usage()
@@ -218,23 +274,26 @@ func run() error {
 }
 
 // runSearch prints one ranked line per result, then the count.
-func runSearch(ctx context.Context, chunks domain.ChunkRepository, query string, limit int) error {
-	results, err := app.NewSearchUseCase(chunks).Search(ctx, query, limit)
+func runSearch(ctx context.Context, searcher *app.SearchUseCase, query string, limit int) error {
+	results, err := searcher.Search(ctx, query, limit)
 	if err != nil {
 		return fmt.Errorf("search %q: %w", query, err)
 	}
 
 	if len(results) > 0 {
 		writer := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(writer, "#\tTITLE\tPAGE\tRELEVANCE\tSNIPPET")
+		fmt.Fprintln(writer, "#\tTITLE\tPAGE\tMATCH\tBM25\tCOSINE\tSNIPPET")
 
 		for i, result := range results {
-			// The index's score is smaller-is-better, so its magnitude is printed
-			// under a name that says what it means: a bigger relevance is a better
-			// match. Printing the raw negative score would invite the opposite
-			// reading.
-			fmt.Fprintf(writer, "%d\t%s\t%d\t%.3f\t%s\n",
-				i+1, result.DocumentTitle, result.PageNumber, -result.Score, result.Snippet)
+			// bm25 is smaller-is-better, so its magnitude is printed under a name
+			// that says what it means: a bigger BM25 is a better lexical match.
+			// The cosine is already larger-is-better. A stage that did not rank the
+			// chunk prints 0 for its score, and MATCH names the stage that did.
+			// math.Abs keeps that 0 positive: negating a zero score would print
+			// "-0.000", which reads as a score rather than as "not ranked here".
+			fmt.Fprintf(writer, "%d\t%s\t%d\t%s\t%.3f\t%.3f\t%s\n",
+				i+1, result.DocumentTitle, result.PageNumber, result.Stage,
+				math.Abs(result.Score), result.Similarity, result.Snippet)
 		}
 		if err := writer.Flush(); err != nil {
 			return err
@@ -243,6 +302,19 @@ func runSearch(ctx context.Context, chunks domain.ChunkRepository, query string,
 	}
 
 	fmt.Printf("%d results\n", len(results))
+	return nil
+}
+
+// runEmbed rebuilds every document's vectors and reports the total, so a run that
+// costs money is observable rather than silent.
+func runEmbed(ctx context.Context, embedder *app.EmbedDocumentUseCase) error {
+	report, err := embedder.EmbedAll(ctx)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("embedded %d documents, %d vectors at %d dimensions with %s\n",
+		report.Documents, report.Embeddings, report.Dimensions, report.Model)
 	return nil
 }
 

@@ -29,6 +29,14 @@ var chunkIndexTables = []string{"chunks", "chunks_fts"}
 // migration must fail: databases in the wild have already run it.
 const chunkIndexVersion = 101
 
+// chunkEmbeddingVersion is the migration that adds the vector table. It is the
+// latest version this context owns.
+const chunkEmbeddingVersion = 102
+
+// embeddingTables is the semantic index this context adds on top of the chunk
+// index.
+var embeddingTables = []string{"chunk_embeddings"}
+
 // studyTables is the schema the other context owns, listed here so an
 // adoption test can prove this context's migration leaves it alone.
 var studyTables = []string{"topics", "concepts", "flashcards", "resources", "card_states", "review_logs"}
@@ -123,7 +131,7 @@ func TestMigrations_FreshDatabaseGetsTheIngestionSchema(t *testing.T) {
 
 	version, err := db.CurrentVersion(t.Context(), sqlDB)
 	require.NoError(t, err)
-	assert.Equal(t, chunkIndexVersion, version)
+	assert.Equal(t, chunkEmbeddingVersion, version)
 }
 
 // The composition root applies both lists in one run. A shared ascending
@@ -140,12 +148,15 @@ func TestMigrations_CombinedListsApplyWithoutCollision(t *testing.T) {
 	for _, table := range chunkIndexTables {
 		assert.True(t, hasTable(t, sqlDB, table), "table %s must exist", table)
 	}
+	for _, table := range embeddingTables {
+		assert.True(t, hasTable(t, sqlDB, table), "table %s must exist", table)
+	}
 
 	version, err := db.CurrentVersion(t.Context(), sqlDB)
 	require.NoError(t, err)
-	assert.Equal(t, chunkIndexVersion, version)
-	assert.Equal(t, 4, schemaVersionRows(t, sqlDB),
-		"two study migrations plus two ingestion migrations must be recorded")
+	assert.Equal(t, chunkEmbeddingVersion, version)
+	assert.Equal(t, 5, schemaVersionRows(t, sqlDB),
+		"two study migrations plus three ingestion migrations must be recorded")
 }
 
 // Adoption: the study schema is already applied and holds data. This context's
@@ -172,7 +183,7 @@ func TestMigrations_AddsTheSchemaToAnExistingStudyDatabase(t *testing.T) {
 
 	version, err := db.CurrentVersion(t.Context(), sqlDB)
 	require.NoError(t, err)
-	assert.Equal(t, chunkIndexVersion, version)
+	assert.Equal(t, chunkEmbeddingVersion, version)
 }
 
 func TestMigrations_AreIdempotent(t *testing.T) {
@@ -182,8 +193,11 @@ func TestMigrations_AreIdempotent(t *testing.T) {
 	require.NoError(t, db.Migrate(t.Context(), sqlDB, combinedMigrations()),
 		"a second boot must not fail or duplicate anything")
 
-	assert.Equal(t, 4, schemaVersionRows(t, sqlDB))
+	assert.Equal(t, 5, schemaVersionRows(t, sqlDB))
 	for _, table := range chunkIndexTables {
+		assert.True(t, hasTable(t, sqlDB, table), "table %s must survive a second migrate", table)
+	}
+	for _, table := range embeddingTables {
 		assert.True(t, hasTable(t, sqlDB, table), "table %s must survive a second migrate", table)
 	}
 }
@@ -214,8 +228,8 @@ func TestMigrations_FreshDatabaseGetsTheChunkIndex(t *testing.T) {
 
 	version, err := db.CurrentVersion(t.Context(), sqlDB)
 	require.NoError(t, err)
-	assert.Equal(t, chunkIndexVersion, version,
-		"a fresh migrate must reach the chunk index, not stop at the baseline")
+	assert.Equal(t, chunkEmbeddingVersion, version,
+		"a fresh migrate must reach the vector table, not stop at the chunk index")
 
 	insertDocument(t, sqlDB, "doc-1", testHash("doc-1"))
 	insertJob(t, sqlDB, "job-1", "doc-1")

@@ -44,6 +44,11 @@ func Migrations() []db.Migration {
 			Description: "chunks and chunks_fts: the lexical index over recorded page text",
 			Up:          migrateChunks,
 		},
+		{
+			Version:     102,
+			Description: "chunk_embeddings: stored vectors with the model and dimension that produced them",
+			Up:          migrateChunkEmbeddings,
+		},
 	}
 }
 
@@ -149,6 +154,36 @@ func migrateChunks(ctx context.Context, tx *sql.Tx) error {
 
 	if _, err := tx.ExecContext(ctx, schema); err != nil {
 		return fmt.Errorf("create chunk index: %w", err)
+	}
+	return nil
+}
+
+// migrateChunkEmbeddings creates the vector table: one row per chunk, carrying
+// the model and the dimension that produced it.
+//
+// chunks stays the source of truth. A vector is derived data with the same
+// rebuildable life cycle as the lexical index, and the foreign key cascades, so a
+// reindex that replaces a document's chunks can never leave a vector pointing at
+// a chunk that no longer exists.
+//
+// The row carries model and dimensions on purpose. Two encodings are ambiguous
+// without them: a vector from a different model, and a vector whose blob length
+// does not match its own dimension. The first is filtered out by model, and the
+// second is rejected when it is read, so neither is silently compared against the
+// current query vector.
+func migrateChunkEmbeddings(ctx context.Context, tx *sql.Tx) error {
+	schema := `
+	CREATE TABLE IF NOT EXISTS chunk_embeddings (
+		chunk_id   TEXT PRIMARY KEY REFERENCES chunks(id) ON DELETE CASCADE,
+		model      TEXT NOT NULL,
+		dimensions INTEGER NOT NULL CHECK (dimensions > 0),
+		vector     BLOB NOT NULL,
+		created_at TEXT NOT NULL
+	);
+	`
+
+	if _, err := tx.ExecContext(ctx, schema); err != nil {
+		return fmt.Errorf("create chunk embeddings: %w", err)
 	}
 	return nil
 }

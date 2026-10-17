@@ -447,3 +447,41 @@ func TestParseOpenRouterBaseURL(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), config.EnvOpenRouterBaseURL)
 }
+
+// --- Load: embedding model settings ---
+
+// The default is the model the measurement in the step-5 log chose, not the slug
+// the earlier cost estimate proposed. Pinning the literal is the point: a name is
+// not evidence, and a silent default change would undo a measured decision.
+func TestLoad_EmbeddingModelDefaultsToTheMeasuredWinner(t *testing.T) {
+	cfg, err := config.LoadFrom(filepath.Join(t.TempDir(), "absent.env"), emptyEnv())
+	require.NoError(t, err)
+
+	assert.Equal(t, "google/gemini-embedding-2", config.DefaultEmbeddingModel)
+	assert.Equal(t, config.DefaultEmbeddingModel, cfg.EmbeddingModel)
+}
+
+func TestLoad_EmbeddingModelFromEnvironment(t *testing.T) {
+	cfg, err := config.LoadFrom(filepath.Join(t.TempDir(), "absent.env"),
+		fakeEnv(map[string]string{config.EnvEmbeddingModel: "baai/bge-m3"}))
+	require.NoError(t, err)
+
+	assert.Equal(t, "baai/bge-m3", cfg.EmbeddingModel)
+}
+
+func TestLoad_BlankEmbeddingModelFallsBackToTheDefault(t *testing.T) {
+	cfg, err := config.LoadFrom(filepath.Join(t.TempDir(), "absent.env"),
+		fakeEnv(map[string]string{config.EnvEmbeddingModel: "   "}))
+	require.NoError(t, err)
+
+	assert.Equal(t, config.DefaultEmbeddingModel, cfg.EmbeddingModel)
+}
+
+func TestLoad_EmbeddingModelFromDotEnvFile(t *testing.T) {
+	path := writeDotEnv(t, "STUDY_EMBEDDING_MODEL=file/embedding\n")
+
+	cfg, err := config.LoadFrom(path, emptyEnv())
+	require.NoError(t, err)
+
+	assert.Equal(t, "file/embedding", cfg.EmbeddingModel)
+}

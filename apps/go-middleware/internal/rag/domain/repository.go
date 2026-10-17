@@ -50,7 +50,32 @@ type ChunkRepository interface {
 	// user's, not a query language: it is the repository's job to make it a valid
 	// expression rather than the caller's job to sanitise it.
 	Search(ctx context.Context, query string, limit int) ([]SearchResult, error)
+
+	// ListDocumentChunks returns the document's stored chunks in index order
+	// (page, then ordinal), each with its id and its text, or an empty slice when
+	// the document has none.
+	//
+	// It is what the embedding stage is fed from: the chunk text a vector is built
+	// from is the same text the lexical index holds, and taking it from here avoids
+	// re-reading and re-chunking the page outcomes.
+	ListDocumentChunks(ctx context.Context, documentID string) ([]StoredChunk, error)
 }
+
+// MatchStage names the retrieval stage that produced a search result, so a
+// caller can tell a lexical hit from a semantic one and see when both agreed.
+type MatchStage string
+
+const (
+	// StageLexical means only the FTS5 bm25 ranking found the chunk.
+	StageLexical MatchStage = "lexical"
+
+	// StageSemantic means only the cosine ranking found the chunk, which is the
+	// case that crosses the language boundary.
+	StageSemantic MatchStage = "semantic"
+
+	// StageHybrid means both rankings found the chunk.
+	StageHybrid MatchStage = "hybrid"
+)
 
 // SearchResult is one ranked chunk, carrying everything a caller needs to show
 // it and to cite it.
@@ -77,7 +102,17 @@ type SearchResult struct {
 	// is a BETTER match, and results are ordered by it ascending. A reader who
 	// assumes a bigger score is better reads the ranking inverted, which is why
 	// the command prints its magnitude under a name that says what it means.
+	//
+	// It is zero when the chunk was not in the lexical ranking.
 	Score float64
+
+	// Stage names the retrieval stage that produced this result.
+	Stage MatchStage
+
+	// Similarity is the semantic cosine similarity in [-1, 1], where LARGER is a
+	// BETTER match, which is the opposite of Score. It is zero when the chunk was
+	// not in the semantic ranking.
+	Similarity float64
 }
 
 // JobRepository manages persistence of IngestionJob entities.

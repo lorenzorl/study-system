@@ -46,6 +46,9 @@ const (
 
 	// imageDataPrefix is the data-URL prefix the API expects for an inline PNG.
 	imageDataPrefix = "data:image/png;base64,"
+
+	// chatCompletionsPath is the chat endpoint, relative to the API root.
+	chatCompletionsPath = "/chat/completions"
 )
 
 // Options carries the injectable seams. The zero value is the production choice
@@ -163,7 +166,7 @@ func (c *Client) Transcribe(ctx context.Context, prompt string, imagePNG []byte)
 		if attempt == maxAttempts {
 			break
 		}
-		if err := c.waitBeforeRetry(ctx, attempt+1); err != nil {
+		if err := waitForRetry(ctx, c.retryBase, attempt+1); err != nil {
 			return "", err
 		}
 	}
@@ -215,10 +218,11 @@ func (c *Client) attempt(ctx context.Context, payload []byte) (string, bool, err
 	return parsed.Choices[0].Message.Content, false, nil
 }
 
-// waitBeforeRetry sleeps for the exponential backoff before the given attempt,
-// returning early when the context is done.
-func (c *Client) waitBeforeRetry(ctx context.Context, attempt int) error {
-	delay := c.retryBase * time.Duration(1<<(attempt-2))
+// waitForRetry sleeps for the exponential backoff before the given attempt,
+// returning early when the context is done. Both clients share it, so a rate limit
+// costs neither of them a manual re-run and neither of them its own policy.
+func waitForRetry(ctx context.Context, retryBase time.Duration, attempt int) error {
+	delay := retryBase * time.Duration(1<<(attempt-2))
 
 	timer := time.NewTimer(delay)
 	defer timer.Stop()
@@ -260,9 +264,15 @@ func truncate(body []byte) string {
 	return text[:maxErrorBodyBytes] + "..."
 }
 
-// chatCompletionsURL joins the API root with the endpoint path and checks the
-// result is absolute, so a mistyped base URL fails at construction.
+// chatCompletionsURL joins the API root with the chat-completions path.
 func chatCompletionsURL(baseURL string) (string, error) {
+	return apiURL(baseURL, chatCompletionsPath)
+}
+
+// apiURL joins the API root with an endpoint path and checks the result is
+// absolute, so a mistyped base URL fails at construction rather than at the first
+// request.
+func apiURL(baseURL, path string) (string, error) {
 	trimmed := strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if trimmed == "" {
 		return "", fmt.Errorf("base URL must not be empty: %w", apperror.ErrInvalidInput)
@@ -273,7 +283,7 @@ func chatCompletionsURL(baseURL string) (string, error) {
 		return "", fmt.Errorf("base URL %q must be absolute: %w", baseURL, apperror.ErrInvalidInput)
 	}
 
-	return trimmed + "/chat/completions", nil
+	return trimmed + path, nil
 }
 
 // chatRequest is the request body. The field order is the order the verified

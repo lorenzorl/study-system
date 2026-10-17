@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/google/uuid"
 
@@ -191,6 +190,37 @@ func (r *ChunkRepository) Search(ctx context.Context, query string, limit int) (
 	return results, nil
 }
 
+// ListDocumentChunks returns the document's chunks in index order, with their
+// ids and text, or an empty slice when it has none.
+//
+// The order is page then ordinal, which is the order the chunks were written in,
+// so a caller that pairs the result with vectors positionally pairs them with
+// the right chunks.
+func (r *ChunkRepository) ListDocumentChunks(ctx context.Context, documentID string) ([]domain.StoredChunk, error) {
+	chunks := []domain.StoredChunk{}
+
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id, text FROM chunks WHERE document_id = ? ORDER BY page_number ASC, ordinal ASC`,
+		documentID)
+	if err != nil {
+		return nil, fmt.Errorf("list the chunks of document %s: %w", documentID, err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var chunk domain.StoredChunk
+		if err := rows.Scan(&chunk.ID, &chunk.Text); err != nil {
+			return nil, fmt.Errorf("scan chunk of document %s: %w", documentID, err)
+		}
+		chunks = append(chunks, chunk)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate the chunks of document %s: %w", documentID, err)
+	}
+
+	return chunks, nil
+}
+
 // matchQuery turns the user's text into an FTS5 MATCH expression.
 //
 // FTS5's MATCH grammar is a small query language — quotes, star, caret, NEAR,
@@ -208,22 +238,11 @@ func (r *ChunkRepository) Search(ctx context.Context, query string, limit int) (
 func matchQuery(query string) string {
 	terms := make([]string, 0)
 	for _, token := range strings.Fields(query) {
-		if !hasIndexableRune(token) {
+		if !domain.HasIndexableText(token) {
 			continue
 		}
 		terms = append(terms, `"`+strings.ReplaceAll(token, `"`, `""`)+`"`)
 	}
 
 	return strings.Join(terms, " OR ")
-}
-
-// hasIndexableRune reports whether a token holds anything the tokenizer would
-// index. It matches what the analyzer keeps: letters and digits, in any script.
-func hasIndexableRune(token string) bool {
-	for _, r := range token {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) {
-			return true
-		}
-	}
-	return false
 }

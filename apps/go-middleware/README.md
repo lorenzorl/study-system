@@ -28,11 +28,11 @@ internal/
 │   ├── app/                  one file per use case
 │   ├── sqlite/               repository adapters + the study schema migrations
 │   └── http/                 contracts, DTOs, one handler file per resource, router
-└── rag/                    bounded context: documents, ingestion jobs, page outcomes, chunk index
-    ├── domain/               entities, ports, resumability invariants, page heuristic, chunker
-    ├── app/                  the conversion run, the index rebuild, and search
+└── rag/                    bounded context: documents, jobs, page outcomes, chunk index, embeddings
+    ├── domain/               entities, ports, resumability, page heuristic, chunker, cosine, RRF
+    ├── app/                  the conversion run, the index rebuild, embedding, and hybrid search
     ├── infra/pdf/            poppler adapters: page count, text, figures, renders
-    └── sqlite/               repository adapters + the ingestion and chunk-index migrations
+    └── sqlite/               repository adapters + the ingestion, chunk-index, and vector migrations
 ```
 
 ### The dependency rule
@@ -62,6 +62,7 @@ go run ./cmd/ingest -pdf book.pdf --out ~/vault/book.md   # convert a book to Ma
 go run ./cmd/ingest -pdf book.pdf -dry-run                # what it would cost, without doing it
 go run ./cmd/ingest -list                        # list stored artifacts
 go run ./cmd/ingest -reindex                     # rebuild the chunk index from recorded pages
+go run ./cmd/ingest -embed                       # rebuild the embeddings; needs the key and the network
 go run ./cmd/ingest -search "attention" -limit 5 # search the index; no key, PDF, or storage
 go test ./...
 go vet ./...
@@ -102,6 +103,7 @@ variable is not listed here, nothing reads it.
 | `STUDY_CORS_ORIGINS` | Obsidian + localhost origins | Comma-separated allowlist of origins that may read API responses. |
 | `STUDY_OPENROUTER_API_KEY` | unset | OpenRouter key used by ingestion. Read as optional so the server keeps booting without it; `cmd/ingest` requires it and aborts before page 1 when it is missing. |
 | `STUDY_LLM_MODEL` | `qwen/qwen3.5-flash-02-23` | Model slug used for the pages that need the model. |
+| `STUDY_EMBEDDING_MODEL` | `google/gemini-embedding-2` | Multilingual embedding model for the semantic stage; chosen from measured evidence (see Semantic search). |
 | `STUDY_OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | Base URL of the chat-completions API. Override it for a proxy, a gateway, or a test double; a malformed value aborts the boot. |
 
 Invalid values fail at startup with a message naming the variable. A port
@@ -280,9 +282,44 @@ run that settles also rebuilds the document it just converted.
   command prints the magnitude under `RELEVANCE`, so a bigger number is a better
   match, and orders ascending.
 - **Accents fold in both directions**, which is what lets a Spanish query find
-  Spanish text however the accents were typed (S1/S5). The semantic stage that
-  crosses the language boundary is slice 5.2; the lexical stage is real but
-  partial.
+  Spanish text however the accents were typed (S1/S5). The lexical stage is real
+  but partial: it cannot cross the language boundary on its own, which is what the
+  semantic stage below is for.
+
+## Semantic search and hybrid retrieval
+
+`-embed` rebuilds the vectors and `-search` uses them. This is the stage that
+crosses the language boundary between a Spanish query and an English book (S1).
+
+- **The model** is `google/gemini-embedding-2` (3072 dimensions), read from
+  `STUDY_EMBEDDING_MODEL`. It was chosen from a measured ranking of eight
+  multilingual candidates over 16 Spanish queries against the real English corpus,
+  not from a slug; `baai/bge-m3` is the cheaper alternative recorded in the log.
+- **`-embed` is separate from `-reindex`.** Indexing is local and free; embedding
+  is the only step that needs the API key and the network, so it is never reached
+  by accident from a conversion or a reindex. It rebuilds every document that has
+  chunks, one document at a time and inside one transaction per document, so it is
+  idempotent: a re-run replaces rather than appends.
+- **The schema is migration 102**: `chunk_embeddings` stores one vector per chunk
+  with the `model` and `dimensions` that produced it. A vector from another model
+  is filtered out of a search rather than compared against the current query
+  vector, and a blob whose length is not `dimensions * 4` is an error. The foreign
+  key cascades from `chunks`, so a reindex that replaces a document's chunks
+  cannot leave a vector pointing at a chunk that no longer exists.
+- **The encoding** is `float32`, little-endian, `dimensions * 4` bytes.
+- **The fusion** is Reciprocal Rank Fusion with k = 60. Ranks are fused, not scores,
+  because bm25 is smaller-is-better and negative while cosine is larger-is-better
+  in [-1, 1]; a score-normalising fusion would have to invent a common scale. A
+  result carries the stage that found it: `lexical`, `semantic`, or `hybrid` when
+  both agreed.
+- **Search degrades gracefully.** The lexical stage always runs and reads only the
+  database. The semantic stage runs only when vectors are stored for the configured
+  model and the query holds a letter or a digit; with no stored vectors, or with no
+  API key, `-search` is a lexical search and makes no network call. A
+  punctuation-only query returns no results without embedding anything.
+- **`-search` prints** `MATCH` (the stage), `BM25` (the lexical score's magnitude,
+  bigger is better) and `COSINE` (the semantic similarity, bigger is better). The
+  score a stage did not produce reads 0.
 
 ## Schema migrations
 

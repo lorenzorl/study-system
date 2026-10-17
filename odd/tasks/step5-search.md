@@ -66,13 +66,13 @@ never across a page boundary, so every chunk cites exactly one page.
 
 ### Slice 5.2 — embeddings and hybrid retrieval
 
-- [ ] T7 — `platform/llm`: `Embed`, and a multilingual model chosen from measured
+- [x] T7 — `platform/llm`: `Embed`, and a multilingual model chosen from measured
       evidence (a Spanish query against an English passage across candidates), not
       from a name
-- [ ] T8 — Migration 102: the vector column plus the model and dimension it was
+- [x] T8 — Migration 102: the vector column plus the model and dimension it was
       produced with, so a model change is detectable rather than silent
-- [ ] T9 — Cosine in Go and the fusion of the lexical and semantic rankings
-- [ ] T10 — Tests including a Spanish query against an English corpus fixture
+- [x] T9 — Cosine in Go and the fusion of the lexical and semantic rankings
+- [x] T10 — Tests including a Spanish query against an English corpus fixture
 
 ### Slice 5.3 — the retrieval surface
 
@@ -139,6 +139,81 @@ Indexing is derived data with a rebuildable life cycle: `IndexDocument` deletes 
 document's chunks and writes them again from the recorded page text, so it is
 idempotent and repairs staleness. A settled ingestion run rebuilds the document's
 chunks; `-reindex` rebuilds every document.
+
+## Contract of slice 5.2
+
+Decided 2026-10-17 from the measurement in L4. Where a spec or the 5.1 contract
+already fixes a rule, this contract does not repeat it.
+
+**Model.** `google/gemini-embedding-2`, 3072 dimensions, read from
+`STUDY_EMBEDDING_MODEL` (default that slug). It was chosen from the measured
+ranking in L4 and not from a name: `voyage-4-lite`, the slug the earlier facts
+proposed, ranked worst of the multilingual candidates on the real corpus.
+
+**Migration 102** adds one table. `chunks` stays the source of truth; a vector is
+derived data with the same rebuildable life cycle.
+
+```sql
+CREATE TABLE IF NOT EXISTS chunk_embeddings (
+    chunk_id   TEXT PRIMARY KEY REFERENCES chunks(id) ON DELETE CASCADE,
+    model      TEXT NOT NULL,
+    dimensions INTEGER NOT NULL CHECK (dimensions > 0),
+    vector     BLOB NOT NULL,
+    created_at TEXT NOT NULL
+);
+```
+
+The row carries the model and the dimension, so a vector produced by another
+model is detectable instead of silently compared against the current one. A blob
+whose byte length is not `dimensions * 4` is an error.
+
+**Encoding.** `float32`, little-endian, `dimensions * 4` bytes.
+
+**Ports and pure functions.**
+
+- `domain.Embedder`: `Embed(ctx, texts []string) ([][]float32, error)`.
+- `domain.EmbeddingRepository`: replace-all-per-document inside one transaction,
+  and a read of every stored vector for one model joined with the chunk's
+  citation and text.
+- `domain.ChunkRepository` gains a read of one document's stored chunks (id and
+  text) so the embedder can be fed without re-reading page outcomes.
+- `domain.Cosine(a, b []float32) (float64, error)`.
+- `domain.FuseRankings(rankings ...[]string) []string`, Reciprocal Rank Fusion
+  with k = 60. RRF fuses ranks, not scores: bm25 is smaller-is-better and
+  negative while cosine is larger-is-better in [0,1], so a score-normalising
+  fusion would have to invent a common scale.
+
+**`platform/llm`.** A separate `EmbeddingClient` with its own constructor posts
+to `/embeddings`, batches inputs, reuses the existing retry/backoff and response
+bound, and never touches the chat-completions path.
+
+**`rag/app`.** `EmbedDocument`/`EmbedAll` rebuild a document's vectors from its
+stored chunks, replace-all-per-document, and are idempotent. `Search` gains the
+semantic stage and the fusion: the lexical bm25 ranking and the semantic cosine
+ranking are fused with RRF, and a result carries the stage that found it. When
+the configured model has no stored vectors, search falls back to lexical-only
+rather than failing, so a machine with no embeddings still searches.
+
+**`cmd/ingest`.** `-embed` rebuilds the embeddings of every document that has
+chunks; it is separate from `-reindex` because it is the only step that costs
+money and reaches the network. `-search` uses the hybrid ranking when vectors
+exist.
+
+**Tests are hermetic.** No test calls the network: a fake `Embedder` returns
+deterministic vectors, and the Spanish-query-against-an-English-fixture test uses
+it. The live measurement stays in L4.
+
+**Acceptance criteria for 5.2.**
+
+1. `gofmt`, `go vet`, all tests green.
+2. A Spanish query finds an English passage it shares no literal token with,
+   verified through the repository and the app, not only in a probe.
+3. Cosine and the fusion are covered by tests for their boundaries.
+4. Indexing the same document's embeddings twice leaves the same rows.
+5. The migration carries the model and the dimension, and a vector from another
+   model is not mixed into a search.
+6. Embedding needs the API key and the network; search works without them once
+   vectors are stored.
 
 ## Acceptance criteria
 
@@ -221,3 +296,66 @@ Recorded out of scope, as promised in the contract: FTS5 query syntax (`NEAR`,
 prefixes, field filters, `AND`/`NOT`) is not exposed. The user's text is split
 into tokens, each token is a quoted literal, and the terms are joined with `OR`,
 so a stray `"`, `*`, or `^` cannot change the query's meaning.
+
+**L4 (2026-10-17, embedding model measured)** — eight candidate models were
+measured against the real corpus before choosing one, because a name is not
+evidence. The corpus was the 135 chunks of the two ingested papers (English) and
+the test was 16 Spanish queries whose answer lives in one specific English
+chunk; a model was scored by where it ranked that chunk. No model was judged by
+its slug. Measured (`@1`/`@5`/MRR over 16 queries):
+
+| model | dim | @1 | @5 | MRR | US$/M tok |
+| --- | --- | --- | --- | --- | --- |
+| `google/gemini-embedding-2` | 3072 | 0.50 | 0.88 | **0.68** | 0.20 |
+| `baai/bge-m3` | 1024 | 0.44 | 0.75 | 0.57 | 0.01 |
+| `perplexity/pplx-embed-v1-0.6b` | 1024 | 0.38 | 0.88 | 0.57 | 0.004 |
+| `nvidia/nemotron-3-embed-1b:free` | 2048 | 0.31 | 0.88 | 0.53 | 0 |
+| `voyageai/voyage-4` | 1024 | 0.25 | 0.88 | 0.47 | 0.06 |
+| `voyageai/voyage-4-lite` | 1024 | 0.25 | 0.75 | 0.46 | 0.02 |
+| `qwen/qwen3-embedding-4b` | 2560 | 0.38 | 0.50 | 0.46 | 0.02 |
+| `qwen/qwen3-embedding-8b` | 4096 | 0.25 | 0.62 | 0.39 | 0.01 |
+
+The lexical stage over the same 16 queries and the same corpus scored
+precision@1 = 0.31 and @5 = 0.50 (page-level, and it only reached that through
+shared technical tokens such as `transformer` and `0.1`), so the semantic stage
+is what actually crosses the language boundary. `google/gemini-embedding-2` won
+on every aggregate and costs about US$ 0,063 to embed a 359-page book, which is
+why it is the chosen default; `baai/bge-m3` is the cheap alternative recorded
+here if cost ever matters. The earlier probe with 6 synthetic topics was
+discarded: every multilingual model scored 1.00, so it could not tell them
+apart. The measurement scripts were throwaway, like the L2 probe.
+
+**L5 (2026-10-17, slice 5.2 verified and committed)** — the slice was implemented
+by a bounded writer and then verified by a separate read-only agent against the
+Contract of slice 5.2; the writer's report was treated as a claim, not evidence.
+`gofmt -l`, `go build ./...`, `go vet ./...` clean; `go test ./... -count=1` ok in
+every package; `func Test` went from 370 at `09d3d78` to 435 in the slice (+65).
+
+Live end-to-end on the `/tmp/step5-copia` copy with the real key: `-embed` wrote
+**135 vectors at 3072 dimensions** with `google/gemini-embedding-2` in ~10 s
+(`schema_version` 1|2|100|101|102, `length(vector) = 12288 = 3072*4`, 0 orphan
+rows). With the key, `-search` returned `MATCH = lexical|semantic|hybrid` rows and
+the scaled dot-product chunk came back with cosine 0.598. From a directory with
+no `.env` and the key unset, `-search` stayed lexical-only and exited 0, and
+`-embed` exited 1 naming `STUDY_OPENROUTER_API_KEY`. The independent verification
+returned PASS on all six 5.2 acceptance criteria and on the 5.1 regression,
+including a reversed-index fake that proved all 135 chunk/vector pairings survive
+the batch, and a model-mismatch probe that proved another model's vectors are not
+compared against the configured model's query.
+
+Two advisories from that verification were fixed before the commit:
+`TestFuseRankings_UsesTheFixedRRFConstant` did not actually pin k=60 or the rank
+base (a mutation to k=59 passed it), so
+`TestFuseRankings_PinsTheRankBaseAndKExactly` was added and observed to fail under
+both mutations; and a semantic-only row printed `BM25 -0.000`, now `math.Abs`, so
+an unranked stage reads `0.000`.
+
+One residual finding is left for the user, not fixed: the fusion can rank a noisy
+lexical hit above the correct semantic one. On the real corpus,
+`-search "cómo se calcula la atención de producto punto escalado"` ranks a page-8
+BLEU table first (lexical, matched the stopword `de` against `EN-[DE]`) and the
+scaled dot-product chunk second (semantic, cosine 0.598). Both score 1/61 under
+RRF, so the tie-break decides. The cause is the 5.1 contract keeping every token
+as an `OR` term, stopwords included; dropping stopwords, weighting the semantic
+stage, or widening the candidate pool are changes the user decides, not this
+slice.
