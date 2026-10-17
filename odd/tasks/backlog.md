@@ -27,10 +27,41 @@ wrong for a legitimate client, the plugin fails with a confusing CORS error.
 **How to close:** open the plugin in Obsidian on desktop and on mobile, capture
 the actual `Origin`, update the list in `internal/platform/config/config.go`.
 
+**The browser dev harness cannot close this.** `vite.config.ts` proxies `/api` to
+`:8080`, so the harness's requests reach the server server-side and never exercise
+the CORS path at all. Verified: the harness serves fine (`GET /` and `GET /main.ts`
+return 200) precisely because it proxies. A real Obsidian client is the only way.
+
 **Escape hatch while open:** `STUDY_CORS_ORIGINS='*'` restores the previous
 permissive behaviour with no code change.
 
 **This is the only assumption in the codebase with no evidence behind it.**
+
+---
+
+## 🟢 Cosmetic and tooling
+
+### C1 — `dev/main.ts` fails type checking, but the dev harness works
+
+`apps/obsidian-plugin/tsconfig.json` includes only `src/**/*.ts` and
+`src/**/*.vue`, so `dev/main.ts` is outside the build's type check and outside the
+scope of `src/shims-vue.d.ts`, which is what declares the `*.vue` module shape.
+An editor analysing that file standalone therefore reports that it cannot find
+`../src/vue-app/App.vue`.
+
+**Pre-existing, not caused by the restructure:** `dev/` was last touched by
+`464410a` (June), and the Dify removal never edited it.
+
+**It is cosmetic, verified rather than assumed:** `npm run build` passes,
+`npm test` passes, the plugin works in Obsidian, and vite serves the harness fine
+(`GET /` and `GET /main.ts` both 200, with `App.vue` resolved by
+`@vitejs/plugin-vue`). Vite needs no TypeScript declaration to handle a `.vue`
+import; only the type checker does.
+
+**Why it is not fixed here:** the obvious fix — adding `dev/**/*.ts` to `include`
+— would make the build type check that file, and since the shim does not reach it,
+the build would start failing. So the fix is not a one-liner, and doing it inside
+an unrelated slice would risk breaking a build that currently works.
 
 ---
 
