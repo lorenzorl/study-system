@@ -1,7 +1,7 @@
 # Backlog — open findings
 
 **Single source of truth for everything deliberately not fixed yet.**
-Updated: 2026-10-17 (ingest hardening — run plan, model ceiling, output guard)
+Updated: 2026-10-17 (step 5 slice 5.1 — chunk index and lexical search)
 
 A follow-up is a finding that was real, but outside the scope of the step that
 found it. Fixing it mid-step would make that step unverifiable: you could no
@@ -131,7 +131,8 @@ not run yet.
 | Item | Owner | Why open |
 | --- | --- | --- |
 | HTTP multipart upload endpoint + body-size middleware | step 4 (`rag/http`) | Uploads belong to the context that owns documents, together with `http.MaxBytesReader`. |
-| Conversation/retrieval surface | step 5+ | Nothing is designed for retrieval yet. |
+| Conversation/retrieval surface | step 5 slice 5.3 | Designed in `odd/tasks/step5-search.md`; the HTTP route is not built yet. |
+| FTS5 query syntax (`NEAR`, prefixes, field filters) | step 5 slice 5.1 | The user's text is treated as literal terms joined with `OR`; recorded in `odd/tasks/step5-search.md`. |
 
 ---
 

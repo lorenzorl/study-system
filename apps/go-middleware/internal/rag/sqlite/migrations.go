@@ -39,6 +39,11 @@ func Migrations() []db.Migration {
 			Description: "baseline: documents, ingestion_jobs, job_pages",
 			Up:          migrateBaseline,
 		},
+		{
+			Version:     101,
+			Description: "chunks and chunks_fts: the lexical index over recorded page text",
+			Up:          migrateChunks,
+		},
 	}
 }
 
@@ -97,6 +102,53 @@ func migrateBaseline(ctx context.Context, tx *sql.Tx) error {
 
 	if _, err := tx.ExecContext(ctx, schema); err != nil {
 		return fmt.Errorf("create ingestion schema: %w", err)
+	}
+	return nil
+}
+
+// migrateChunks creates the lexical index: one row per chunk, and one row per
+// chunk in an FTS5 table that holds a second copy of the text.
+//
+// chunks is the source of truth. It carries the citation — document, job, page
+// and ordinal — and it is what a hit joins back to, so a search result can name
+// the book and the page a reader should open. A chunk belongs to exactly one
+// page, which is what keeps that citation exact.
+//
+// chunks_fts is a plain FTS5 table rather than an external-content table over
+// chunks. The copy costs about 1,3 MB for a 359-page book and buys a delete path
+// with no triggers and no 'delete'-row ceremony: an external-content table is
+// only told a row went away by inserting a special 'delete' row carrying the row's
+// old values first, and getting that subtly wrong leaves terms matching text that
+// no longer exists without raising anything. Indexing is replace-all-per-document,
+// so the two tables are always written together inside one transaction and can
+// never disagree outside it.
+//
+// The tokenizer is unicode61 with remove_diacritics 2, which folds accents in
+// both directions: "obstaculo" finds "obstáculo" and the reverse (S5). That is
+// what lets a Spanish query, always written by the user in Spanish (S1), find
+// Spanish text however the accents were typed. chunk_id is UNINDEXED: it travels
+// with a hit and is never searched.
+func migrateChunks(ctx context.Context, tx *sql.Tx) error {
+	schema := `
+	CREATE TABLE IF NOT EXISTS chunks (
+		id          TEXT PRIMARY KEY,
+		document_id TEXT NOT NULL REFERENCES documents(id),
+		job_id      TEXT NOT NULL REFERENCES ingestion_jobs(id) ON DELETE CASCADE,
+		page_number INTEGER NOT NULL CHECK (page_number >= 1),
+		ordinal     INTEGER NOT NULL CHECK (ordinal >= 0),
+		text        TEXT NOT NULL,
+		created_at  TEXT NOT NULL
+	);
+
+	CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
+		chunk_id UNINDEXED,
+		text,
+		tokenize = 'unicode61 remove_diacritics 2'
+	);
+	`
+
+	if _, err := tx.ExecContext(ctx, schema); err != nil {
+		return fmt.Errorf("create chunk index: %w", err)
 	}
 	return nil
 }

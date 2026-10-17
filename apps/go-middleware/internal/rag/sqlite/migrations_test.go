@@ -21,6 +21,14 @@ import (
 // ingestionTables is the schema this context is responsible for.
 var ingestionTables = []string{"documents", "ingestion_jobs", "job_pages"}
 
+// chunkIndexTables is the lexical index this context adds on top of it.
+var chunkIndexTables = []string{"chunks", "chunks_fts"}
+
+// chunkIndexVersion is the migration that adds the chunk index. It is written
+// out rather than derived from the list because a test that renumbers a shipped
+// migration must fail: databases in the wild have already run it.
+const chunkIndexVersion = 101
+
 // studyTables is the schema the other context owns, listed here so an
 // adoption test can prove this context's migration leaves it alone.
 var studyTables = []string{"topics", "concepts", "flashcards", "resources", "card_states", "review_logs"}
@@ -115,7 +123,7 @@ func TestMigrations_FreshDatabaseGetsTheIngestionSchema(t *testing.T) {
 
 	version, err := db.CurrentVersion(t.Context(), sqlDB)
 	require.NoError(t, err)
-	assert.Equal(t, ragsqlite.VersionBlockStart, version)
+	assert.Equal(t, chunkIndexVersion, version)
 }
 
 // The composition root applies both lists in one run. A shared ascending
@@ -129,12 +137,15 @@ func TestMigrations_CombinedListsApplyWithoutCollision(t *testing.T) {
 	for _, table := range append(slices.Clone(studyTables), ingestionTables...) {
 		assert.True(t, hasTable(t, sqlDB, table), "table %s must exist", table)
 	}
+	for _, table := range chunkIndexTables {
+		assert.True(t, hasTable(t, sqlDB, table), "table %s must exist", table)
+	}
 
 	version, err := db.CurrentVersion(t.Context(), sqlDB)
 	require.NoError(t, err)
-	assert.Equal(t, ragsqlite.VersionBlockStart, version)
-	assert.Equal(t, 3, schemaVersionRows(t, sqlDB),
-		"two study migrations plus one ingestion migration must be recorded")
+	assert.Equal(t, chunkIndexVersion, version)
+	assert.Equal(t, 4, schemaVersionRows(t, sqlDB),
+		"two study migrations plus two ingestion migrations must be recorded")
 }
 
 // Adoption: the study schema is already applied and holds data. This context's
@@ -161,7 +172,7 @@ func TestMigrations_AddsTheSchemaToAnExistingStudyDatabase(t *testing.T) {
 
 	version, err := db.CurrentVersion(t.Context(), sqlDB)
 	require.NoError(t, err)
-	assert.Equal(t, ragsqlite.VersionBlockStart, version)
+	assert.Equal(t, chunkIndexVersion, version)
 }
 
 func TestMigrations_AreIdempotent(t *testing.T) {
@@ -171,7 +182,10 @@ func TestMigrations_AreIdempotent(t *testing.T) {
 	require.NoError(t, db.Migrate(t.Context(), sqlDB, combinedMigrations()),
 		"a second boot must not fail or duplicate anything")
 
-	assert.Equal(t, 3, schemaVersionRows(t, sqlDB))
+	assert.Equal(t, 4, schemaVersionRows(t, sqlDB))
+	for _, table := range chunkIndexTables {
+		assert.True(t, hasTable(t, sqlDB, table), "table %s must survive a second migrate", table)
+	}
 }
 
 // The block is what makes a single-context Migrate call safe. If a version ever
@@ -186,6 +200,43 @@ func TestMigrations_VersionsStayInsideTheRagBlock(t *testing.T) {
 		assert.LessOrEqual(t, migration.Version, ragsqlite.VersionBlockEnd,
 			"migration %q is above this context's version block", migration.Description)
 	}
+}
+
+// The chunk index is added by its own migration, so a database that already ran
+// the baseline adopts it in place.
+func TestMigrations_FreshDatabaseGetsTheChunkIndex(t *testing.T) {
+	sqlDB := openFile(t, "chunks.db")
+	require.NoError(t, db.Migrate(t.Context(), sqlDB, ragsqlite.Migrations()))
+
+	for _, table := range chunkIndexTables {
+		assert.True(t, hasTable(t, sqlDB, table), "table %s must exist", table)
+	}
+
+	version, err := db.CurrentVersion(t.Context(), sqlDB)
+	require.NoError(t, err)
+	assert.Equal(t, chunkIndexVersion, version,
+		"a fresh migrate must reach the chunk index, not stop at the baseline")
+
+	insertDocument(t, sqlDB, "doc-1", testHash("doc-1"))
+	insertJob(t, sqlDB, "job-1", "doc-1")
+
+	_, err = sqlDB.Exec(
+		`INSERT INTO chunks (id, document_id, job_id, page_number, ordinal, text, created_at)
+		 VALUES ('chunk-1', 'doc-1', 'job-1', 1, 0, 'el obstáculo del diseño', '2026-10-17T12:00:00Z')`)
+	require.NoError(t, err)
+
+	// chunks_fts holds its own copy: writing the chunk row alone does not index
+	// it, which is the price of a copy instead of an external-content table.
+	_, err = sqlDB.Exec(`INSERT INTO chunks_fts (chunk_id, text) VALUES ('chunk-1', 'el obstáculo del diseño')`)
+	require.NoError(t, err)
+
+	// The search itself is the proof that the virtual table is FTS5 with the
+	// accent-folding tokenizer rather than a table that merely has the right name.
+	var found int
+	require.NoError(t, sqlDB.QueryRow(
+		`SELECT count(*) FROM chunks_fts WHERE chunks_fts MATCH ?`, `"obstaculo"`,
+	).Scan(&found))
+	assert.Equal(t, 1, found, "an unaccented term must match the accented text")
 }
 
 // One outcome per page is the invariant a resumed run depends on. It is enforced
@@ -233,6 +284,19 @@ func TestMigrations_ForeignKeysAreEnforcedForTheNewTables(t *testing.T) {
 		`INSERT INTO job_pages (job_id, page_number, status, method, error, text, updated_at)
 		 VALUES ('no-such-job', 1, 'extracted', 'extract', '', 'text', '2026-10-17T12:00:00Z')`)
 	require.Error(t, err, "a page outcome must not reference an unknown job")
+
+	insertDocument(t, sqlDB, "doc-1", testHash("doc-1"))
+	insertJob(t, sqlDB, "job-1", "doc-1")
+
+	_, err = sqlDB.Exec(
+		`INSERT INTO chunks (id, document_id, job_id, page_number, ordinal, text, created_at)
+		 VALUES (?, 'no-such-document', 'job-1', 1, 0, 'text', '2026-10-17T12:00:00Z')`, uuid.NewString())
+	require.Error(t, err, "a chunk must not reference an unknown document")
+
+	_, err = sqlDB.Exec(
+		`INSERT INTO chunks (id, document_id, job_id, page_number, ordinal, text, created_at)
+		 VALUES (?, 'doc-1', 'no-such-job', 1, 0, 'text', '2026-10-17T12:00:00Z')`, uuid.NewString())
+	require.Error(t, err, "a chunk must not reference an unknown job")
 }
 
 // A content hash is the document's identity, so two spellings of one digest must

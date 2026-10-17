@@ -1,6 +1,9 @@
 package domain
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // DocumentRepository manages persistence of Document entities.
 type DocumentRepository interface {
@@ -17,6 +20,64 @@ type DocumentRepository interface {
 	// hash, or apperror.ErrNotFound when those bytes have never been ingested.
 	// This is the lookup that decides resume or start fresh.
 	FindByContentHash(ctx context.Context, contentSHA256 string) (*Document, error)
+
+	// ListIndexable returns every document that has at least one recorded page,
+	// ordered by title and then id, as an empty slice when there is none.
+	//
+	// It is what a full reindex walks, and the "has a recorded page" filter is
+	// the point: a document nobody has converted has nothing to index, and
+	// rebuilding it would report work that produced no chunk.
+	ListIndexable(ctx context.Context) ([]*Document, error)
+}
+
+// ChunkRepository manages the lexical index over recorded page text.
+type ChunkRepository interface {
+	// ReplaceDocumentChunks deletes the document's chunks and writes the given
+	// ones in their place, inside one transaction.
+	//
+	// Replace is the only write: the index is derived data with a rebuildable
+	// life cycle, so recovering from a stale or interrupted index is re-running
+	// this call. An append would leave a document's old text matching alongside
+	// its new text, and a caller could not tell the two apart.
+	//
+	// An unknown document or job is apperror.ErrNotFound.
+	ReplaceDocumentChunks(ctx context.Context, documentID, jobID string, chunks []Chunk, now time.Time) error
+
+	// Search returns the chunks matching a user's query, best first.
+	//
+	// An empty query, a query of only punctuation, and a query that matches
+	// nothing all return an empty slice and no error. The query text is the
+	// user's, not a query language: it is the repository's job to make it a valid
+	// expression rather than the caller's job to sanitise it.
+	Search(ctx context.Context, query string, limit int) ([]SearchResult, error)
+}
+
+// SearchResult is one ranked chunk, carrying everything a caller needs to show
+// it and to cite it.
+type SearchResult struct {
+	// ChunkID identifies the chunk.
+	ChunkID string
+
+	// DocumentID identifies the book the chunk came from.
+	DocumentID string
+
+	// DocumentTitle is the document's title, joined in so a result is
+	// human-readable without a second lookup.
+	DocumentTitle string
+
+	// PageNumber is the 1-based page to open. A chunk never spans two pages, so
+	// this is exact.
+	PageNumber int
+
+	// Snippet is a bounded window of the chunk's text with the matched terms
+	// marked, folded onto one line so a caller can print one line per result.
+	Snippet string
+
+	// Score is the lexical rank as the index computes it: SMALLER (more negative)
+	// is a BETTER match, and results are ordered by it ascending. A reader who
+	// assumes a bigger score is better reads the ranking inverted, which is why
+	// the command prints its magnitude under a name that says what it means.
+	Score float64
 }
 
 // JobRepository manages persistence of IngestionJob entities.

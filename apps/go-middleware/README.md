@@ -28,11 +28,11 @@ internal/
 │   ├── app/                  one file per use case
 │   ├── sqlite/               repository adapters + the study schema migrations
 │   └── http/                 contracts, DTOs, one handler file per resource, router
-└── rag/                    bounded context: documents, ingestion jobs, page outcomes
-    ├── domain/               entities, ports, resumability invariants, page heuristic
-    ├── app/                  the conversion run: acquire, resume, materialize
+└── rag/                    bounded context: documents, ingestion jobs, page outcomes, chunk index
+    ├── domain/               entities, ports, resumability invariants, page heuristic, chunker
+    ├── app/                  the conversion run, the index rebuild, and search
     ├── infra/pdf/            poppler adapters: page count, text, figures, renders
-    └── sqlite/               repository adapters + the ingestion schema migrations
+    └── sqlite/               repository adapters + the ingestion and chunk-index migrations
 ```
 
 ### The dependency rule
@@ -61,6 +61,8 @@ go run ./cmd/server                            # listens on :8080, override with
 go run ./cmd/ingest -pdf book.pdf --out ~/vault/book.md   # convert a book to Markdown
 go run ./cmd/ingest -pdf book.pdf -dry-run                # what it would cost, without doing it
 go run ./cmd/ingest -list                        # list stored artifacts
+go run ./cmd/ingest -reindex                     # rebuild the chunk index from recorded pages
+go run ./cmd/ingest -search "attention" -limit 5 # search the index; no key, PDF, or storage
 go test ./...
 go vet ./...
 ```
@@ -246,6 +248,41 @@ directory is renamed into place, so a vault file is never observed half-written.
   responses are not retried: they are request or account defects.
 - **`-list` needs no key, no database, and no PDF.** It exists to inspect the
   store and returns before anything else is opened.
+
+## Lexical search
+
+`go run ./cmd/ingest -reindex` rebuilds the chunk index from the page text
+already recorded in `job_pages`, and `go run ./cmd/ingest -search "query" -limit N`
+answers a lexical query over it. Both read the database and nothing else: no API
+key, no PDF, no network, no storage root. `-search` opens the database read-only
+and fails when it is absent rather than answering an empty result set.
+
+The index is derived data with a rebuildable life cycle. `-reindex` walks every
+document that has a recorded page, deletes that document's chunks, and writes
+them again inside one transaction, so it is idempotent and repairs staleness; a
+run that settles also rebuilds the document it just converted.
+
+- **Chunking** is `rag/domain.ChunkPage`, a pure function of the page text and
+  the page number: ≈300 tokens (1200 characters) per chunk with a 15% overlap,
+  cut on blank lines, and never across a page boundary, so every chunk cites
+  exactly one page (S4).
+- **The schema** is migration 101: `chunks` is the source of truth with the
+  citation, and `chunks_fts` is an FTS5 table holding a second copy of the text,
+  tokenized with `unicode61 remove_diacritics 2`. The copy buys a delete path
+  with no triggers and no `'delete'`-row ceremony; the two tables are always
+  written together in one transaction.
+- **The query** is the user's text, not a query language: each whitespace token
+  becomes one quoted literal term (embedded quotes doubled), the terms are joined
+  with `OR`, and `bm25` ranks them. A token with no letter or digit is dropped, so
+  a punctuation-only query is an empty result and never an error. FTS5's syntax
+  (`NEAR`, prefixes, field filters) is deliberately not exposed.
+- **The ranking** is `bm25`, which is smaller-is-better (negative scores). The
+  command prints the magnitude under `RELEVANCE`, so a bigger number is a better
+  match, and orders ascending.
+- **Accents fold in both directions**, which is what lets a Spanish query find
+  Spanish text however the accents were typed (S1/S5). The semantic stage that
+  crosses the language boundary is slice 5.2; the lexical stage is real but
+  partial.
 
 ## Schema migrations
 

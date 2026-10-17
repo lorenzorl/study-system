@@ -58,6 +58,60 @@ func (r *DocumentRepository) FindByContentHash(ctx context.Context, contentSHA25
 	)
 }
 
+// ListIndexable returns every document with at least one recorded page, ordered
+// by title and then id.
+//
+// The EXISTS is answered by the job_pages primary key, and it is deliberately not
+// restricted to the document's latest job: the question is whether there is text
+// to index at all. A document with no recorded page is left out so a reindex does
+// not report work it cannot do.
+func (r *DocumentRepository) ListIndexable(ctx context.Context) ([]*domain.Document, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id, title, artifact_id, source_uri, content_sha256, created_at
+		 FROM documents
+		 WHERE EXISTS (
+			SELECT 1 FROM ingestion_jobs
+			JOIN job_pages ON job_pages.job_id = ingestion_jobs.id
+			WHERE ingestion_jobs.document_id = documents.id
+		 )
+		 ORDER BY title ASC, id ASC`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list indexable documents: %w", err)
+	}
+	defer rows.Close()
+
+	documents := []*domain.Document{}
+	for rows.Next() {
+		var (
+			document  domain.Document
+			createdAt string
+		)
+
+		if err := rows.Scan(
+			&document.ID,
+			&document.Title,
+			&document.ArtifactID,
+			&document.SourceURI,
+			&document.ContentSHA256,
+			&createdAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan indexable document: %w", err)
+		}
+
+		if document.CreatedAt, err = parseInstant(createdAt); err != nil {
+			return nil, fmt.Errorf("document %s: %w", document.ID, err)
+		}
+
+		documents = append(documents, &document)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate indexable documents: %w", err)
+	}
+
+	return documents, nil
+}
+
 // findOne runs a single-row document query and maps a miss to apperror.ErrNotFound.
 func (r *DocumentRepository) findOne(ctx context.Context, query string, arg any) (*domain.Document, error) {
 	var (
