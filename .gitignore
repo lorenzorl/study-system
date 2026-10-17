@@ -1,0 +1,19 @@
+# Local Pi runtime state
+.atl/
+
+# Secrets. Real environment files are never committed; the documented template
+# is .env.example, which is.
+.env
+.env.local
+.env.*.local
+
+# Local SQLite databases: personal study data, plus WAL sidecar files.
+apps/go-middleware/data/*.db
+apps/go-middleware/data/*.db-*
+
+# Stored artifacts: the source PDFs and generated Markdown. Never committed.
+apps/go-middleware/data/artifacts/
+
+# Build artifacts
+apps/go-middleware/bin/
+*.test
