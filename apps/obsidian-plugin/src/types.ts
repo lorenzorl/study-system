@@ -96,11 +96,6 @@ export interface CreateConceptResponse {
 
 // ─── RAG Resource Sync Types ──────────────────────────────────────────────────
 
-export interface PendingDifyDocument {
-  id: string
-  name: string
-}
-
 export type ResourceType = "book" | "note" | "article" | "video"
 
 export interface SyncResourceRequest {
@@ -108,7 +103,6 @@ export interface SyncResourceRequest {
   resource_title: string
   type: ResourceType
   source_uri: string
-  dify_document_id?: string
 }
 
 export interface SyncResourceResponse {

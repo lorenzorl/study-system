@@ -35,14 +35,6 @@
         >
           Sincronizar nota
         </button>
-        <button
-          class="dashboard__sync-btn"
-          @click="goToPendingResources"
-          aria-label="Organizar recursos"
-          title="Organizar recursos pendientes de Dify"
-        >
-          Organizar Recursos
-        </button>
       </h2>
 
       <form
@@ -181,10 +173,6 @@ function goToTopic(id: string) {
 
 function goToDueCards() {
   router.push({ name: "due-cards" })
-}
-
-function goToPendingResources() {
-  router.push({ name: "pending-dify" })
 }
 
 async function handleCreateTopic() {

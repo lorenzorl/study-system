@@ -439,16 +439,10 @@ describe("isValidSyncResourceRequest", () => {
     resource_title: "Blue Book",
     type: "book",
     source_uri: "https://example.com/book",
-    dify_document_id: "dify-123",
   }
 
   it("returns true for a valid request", () => {
     expect(isValidSyncResourceRequest(validReq)).toBe(true)
-  })
-
-  it("returns true when optional dify_document_id is missing", () => {
-    const { dify_document_id: _, ...rest } = validReq
-    expect(isValidSyncResourceRequest(rest)).toBe(true)
   })
 
   it("returns false when topic_name is empty", () => {

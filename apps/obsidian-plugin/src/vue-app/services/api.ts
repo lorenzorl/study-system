@@ -11,7 +11,6 @@ import type {
   DueCard,
   ReviewRequest,
   ReviewResponse,
-  PendingDifyDocument,
 } from "../../types"
 
 const DEFAULT_API_BASE = "http://localhost:8080"
@@ -163,8 +162,4 @@ export async function submitReview(
     method: "POST",
     body: JSON.stringify(req),
   })
-}
-
-export async function fetchPendingDifyDocuments(): Promise<PendingDifyDocument[]> {
-  return request<PendingDifyDocument[]>("/api/resources/pending-dify")
 }
