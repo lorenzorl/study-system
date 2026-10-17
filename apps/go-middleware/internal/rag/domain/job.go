@@ -86,7 +86,16 @@ type PageOutcome struct {
 	Status     PageStatus
 	Method     PageMethod
 	Error      string
-	UpdatedAt  time.Time
+
+	// Text is the page's content as produced by the extractor or the model.
+	//
+	// It is recorded rather than re-derived, and that is what makes a resume both
+	// cheap and correct: the output document is materialized by reading recorded
+	// pages in order, so a page that is already done is never extracted twice and
+	// can never be emitted twice. A failed page records an empty text.
+	Text string
+
+	UpdatedAt time.Time
 }
 
 // Progress summarises a job's pages. Every field is derived from recorded

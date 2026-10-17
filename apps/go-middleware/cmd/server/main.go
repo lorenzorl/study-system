@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"slices"
 	"strconv"
 	"syscall"
 	"time"
@@ -14,10 +15,11 @@ import (
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/platform/config"
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/platform/db"
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/platform/httpx"
+	ragsqlite "github.com/lorenzorangel/study-system/apps/go-middleware/internal/rag/sqlite"
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/study/app"
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/study/domain"
 	studyhttp "github.com/lorenzorangel/study-system/apps/go-middleware/internal/study/http"
-	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/study/sqlite"
+	studysqlite "github.com/lorenzorangel/study-system/apps/go-middleware/internal/study/sqlite"
 )
 
 func main() {
@@ -50,17 +52,21 @@ func main() {
 	}
 	defer sqlDB.Close()
 
-	if err := db.Migrate(ctx, sqlDB, sqlite.Migrations()); err != nil {
+	// Each context owns its own migration list and its own version block; see the
+	// "Schema migrations" section of the README. The composition root is what puts
+	// them in one database, in one run.
+	migrations := slices.Concat(studysqlite.Migrations(), ragsqlite.Migrations())
+	if err := db.Migrate(ctx, sqlDB, migrations); err != nil {
 		log.Fatalf("migrate database: %v", err)
 	}
 
 	// --- study context: repositories ---
-	topicRepo := sqlite.NewTopicRepository(sqlDB)
-	conceptRepo := sqlite.NewConceptRepository(sqlDB)
-	flashcardRepo := sqlite.NewFlashcardRepository(sqlDB)
-	resourceRepo := sqlite.NewResourceRepository(sqlDB)
-	cardStateRepo := sqlite.NewCardStateRepository(sqlDB)
-	reviewLogRepo := sqlite.NewReviewLogRepository(sqlDB)
+	topicRepo := studysqlite.NewTopicRepository(sqlDB)
+	conceptRepo := studysqlite.NewConceptRepository(sqlDB)
+	flashcardRepo := studysqlite.NewFlashcardRepository(sqlDB)
+	resourceRepo := studysqlite.NewResourceRepository(sqlDB)
+	cardStateRepo := studysqlite.NewCardStateRepository(sqlDB)
+	reviewLogRepo := studysqlite.NewReviewLogRepository(sqlDB)
 
 	// --- study context: use cases ---
 	syncConceptUC := app.NewSyncConceptUseCase(topicRepo, conceptRepo)

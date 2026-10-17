@@ -1,7 +1,7 @@
 # Backlog — open findings
 
 **Single source of truth for everything deliberately not fixed yet.**
-Updated: 2026-10-17 (B1 closed)
+Updated: 2026-10-17 (step 4 slice 2 — ingestion schema and repositories)
 
 A follow-up is a finding that was real, but outside the scope of the step that
 found it. Fixing it mid-step would make that step unverifiable: you could no
@@ -63,6 +63,25 @@ import; only the type checker does.
 the build would start failing. So the fix is not a one-liner, and doing it inside
 an unrelated slice would risk breaking a build that currently works.
 
+### C2 — Two contexts keep their own copy of two shared rules
+
+`study/domain/time.go` and `rag/domain/time.go` hold the same `InstantPrecision`
+and `Now()`, and `study/sqlite/errors.go` and `rag/sqlite/errors.go` hold the same
+constraint-violation matching. Both copies are deliberate: a context must not
+import another context, and promoting either into `platform` would have meant
+editing already-applied study code inside an unrelated slice.
+
+**Why it is tracked instead of shrugged at:** the timestamp rule is load-bearing,
+not cosmetic. Stored instants are compared as strings in at least one query, and
+that is only correct while every writer shares one fixed-width layout. Two copies
+can drift apart silently, and the symptom would be an ordering bug in a distant
+feature — a resume that picks the wrong job, or a due-cards query that misses.
+
+**How to close:** the first time a third context needs either rule, move it to
+`platform` and delete both copies in the same commit. Not before: a shared helper
+with two users is still cheaper as two copies than as an edit to code that no
+longer has a test failing.
+
 ---
 
 ## 🟡 Missing policy
@@ -85,7 +104,6 @@ not run yet.
 
 | Item | Owner | Why open |
 | --- | --- | --- |
-| `ingestion_jobs` table | step 4 (`internal/rag` migration) | The RAG context does not exist. It is what makes an ingestion resumable, which is what the retired `optimizebooks` script lacked: its run died at page 179 and was patched by hand. |
 | Read `STUDY_OPENROUTER_API_KEY` / `STUDY_LLM_MODEL` | step 4 (ingestion) | Documented in the README, deliberately not read yet so there is no dead config field. |
 | HTTP multipart upload endpoint + body-size middleware | step 4 (`rag/http`) | Uploads belong to the context that owns documents, together with `http.MaxBytesReader`. |
 | Conversation/retrieval surface | step 5+ | Nothing is designed for retrieval yet. |
@@ -106,6 +124,7 @@ Kept so the same work is not proposed twice.
 | Stored artifacts would have been committed | step 3 — `.gitignore` covers `data/artifacts/` |
 | `B1` — HTTP responses carried timestamps off by the machine's UTC offset | B1 close — see the corrected description below |
 | Instants did not survive a persist/read round trip | B1 close — `domain.Now()` truncates to `InstantPrecision` |
+| `documents`, `ingestion_jobs`, and `job_pages` did not exist | step 4 slice 2 — `rag/sqlite` migration 100, with `(job_id, page_number)` as the primary key |
 
 ### B1 (closed) — the original description was wrong, and that matters
 

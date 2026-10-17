@@ -22,11 +22,14 @@ internal/
 │   ├── db/                   SQLite connection setup, PRAGMAs, migration runner
 │   ├── httpx/                JSON/error writers, CORS middleware
 │   └── storage/              artifact store: atomic writes, size ceiling
-└── study/                  bounded context: topics, concepts, flashcards, reviews
-    ├── domain/               entities, repository ports, FSRS, no external imports
-    ├── app/                  one file per use case
-    ├── sqlite/               repository adapters + the study schema migrations
-    └── http/                 contracts, DTOs, one handler file per resource, router
+├── study/                  bounded context: topics, concepts, flashcards, reviews
+│   ├── domain/               entities, repository ports, FSRS, no external imports
+│   ├── app/                  one file per use case
+│   ├── sqlite/               repository adapters + the study schema migrations
+│   └── http/                 contracts, DTOs, one handler file per resource, router
+└── rag/                    bounded context: documents, ingestion jobs, page outcomes
+    ├── domain/               entities, repository ports, resumability invariants
+    └── sqlite/               repository adapters + the ingestion schema migrations
 ```
 
 ### The dependency rule
@@ -40,10 +43,12 @@ the application layer can change shape without breaking them.
 
 ### Why by context, not by layer
 
-A second context (RAG: documents, chunks, embeddings, and ingestion jobs) is planned.
-A flat `domain/`, `application/`, `infrastructure/` layout works for one context
-and mixes two unrelated domains once a second one arrives. Adding a context here
-means adding a sibling of `study/`, not editing three shared folders.
+A second context (RAG: documents, chunks, embeddings, and ingestion jobs) was
+planned and now exists. Adding it meant adding a sibling of `study/`, exactly as
+intended: no shared folder was edited for it, and no study file imports anything
+from it. A flat `domain/`, `application/`, `infrastructure/` layout would have
+mixed two unrelated domains into one set of folders and forced every later
+change to reason about both.
 
 ## Running
 
@@ -148,7 +153,17 @@ than infer one from a filename.
 ## Schema migrations
 
 `platform/db` owns the mechanism; each context owns its schema and exports a
-migration list. `sqlite.Migrations()` is the study context's.
+migration list. `sqlite.Migrations()` is the study context's and
+`rag/sqlite.Migrations()` is the ingestion context's.
+
+- **Each context owns a version block.** `schema_version` is one table keyed by
+  the version alone, and the runner treats every version at or below
+  `max(version)` as already applied. Under one shared ascending sequence, a call
+  that received only one context's list would not fail — it would silently skip
+  the other context's lower versions. Study therefore owns 1-99 and the
+  ingestion context owns 100-199, which makes the mistake harmless and a
+  cross-context collision impossible. `cmd/server` applies
+  `slices.Concat(study.Migrations(), rag.Migrations())` in one run.
 
 - `Migrate` applies pending migrations in ascending version order, each inside a
   transaction that also records it in `schema_version`. A migration either

@@ -48,9 +48,9 @@ A job with persisted per-page state makes a re-run continue instead of restart.
 ## Tasks
 
 - [ ] T1 — Task file (this document)
-- [ ] T2 — `rag/domain`: `Document`, `IngestionJob`, `PageOutcome`, statuses, ports
-- [ ] T3 — Migration: `documents` and `ingestion_jobs`, versioned
-- [ ] T4 — `rag/sqlite`: repositories for documents and jobs
+- [x] T2 — `rag/domain`: `Document`, `IngestionJob`, `PageOutcome`, statuses, ports
+- [x] T3 — Migration: `documents` and `ingestion_jobs`, versioned
+- [x] T4 — `rag/sqlite`: repositories for documents and jobs
 - [ ] T5 — `rag/infra/extract`: `pdftotext` behind a port, plus page count
 - [ ] T6 — "Needs the model" heuristic (sparse text, or a figure on the page)
 - [ ] T7 — `platform/llm`: OpenRouter client behind a port, key from config
@@ -59,6 +59,26 @@ A job with persisted per-page state makes a re-run continue instead of restart.
 - [ ] T10 — `cmd/ingest`: run the pipeline, write the `.md` to `--out`
 - [ ] T11 — Verify against a real book, twice, to prove resumability
 - [ ] T12 — README + backlog
+
+## Slice 2 — migration + repositories (in progress)
+
+Note: the session numbering and the slice numbering above differ. Slice 1 delivered
+the job model (`rag/domain/job.go`); slice 2 is the migration and the repositories.
+
+Decisions locked by the user (2026-10-17):
+
+| Question | Choice | Why |
+| --- | --- | --- |
+| Migration numbering | **rag owns the 100-199 block** | `schema_version` is one global table keyed only by `version`, and the runner treats every version <= `max(version)` as applied. Disjoint blocks make a cross-context collision impossible and stop a single-context `Migrate` call from silently skipping the other context's migrations. |
+| Document identity | **content sha256** (`documents.content_sha256 UNIQUE`) | If the PDF changed, it is a different document, so a resume can never mix pages from two versions of the file — the failure class that left two headers in `DDD-full.md`. The path is informational only, not a key. |
+| Page text | **`job_pages.text`** | The `.md` is materialized by reading recorded pages in order, so a resume re-extracts nothing and can never emit a page twice. |
+
+- [x] S2.1 `rag/domain`: `Document`, `PageOutcome.Text`, and the repository ports
+- [x] S2.2 `rag/sqlite/migrations.go`: `documents`, `ingestion_jobs`, `job_pages` with primary key `(job_id, page_number)`
+- [x] S2.3 `rag/sqlite`: document, job, and page-outcome repositories
+- [x] S2.4 `cmd/server`: apply both contexts' migration lists
+- [x] S2.5 Tests: adoption of an existing study database, one outcome per page, resume after interruption
+- [x] S2.6 README + backlog, then commit the slice
 
 ## Acceptance criteria
 
