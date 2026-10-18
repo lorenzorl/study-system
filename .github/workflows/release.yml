@@ -14,17 +14,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # pnpm reads its version from the `packageManager` field, so no `version`
+      # input here: one source of truth. The repo root has no package.json, so
+      # the action needs the plugin's path to find that field.
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: apps/obsidian-plugin/package.json
+
+      # pnpm 11 requires node >= 22.13; Node 20 cannot run it.
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
         working-directory: apps/obsidian-plugin
 
       - name: Build plugin
-        run: npm run build
+        run: pnpm run build
         working-directory: apps/obsidian-plugin
 
       - name: Create release
