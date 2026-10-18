@@ -57,7 +57,10 @@ dónde y cómo se cumple cada spec.
 - **Formato de la nota.** `Study Dashboard/Chats/<slug>.md`: frontmatter con los overrides
   del chat (`model`, `temperature`, `top_k`), región `<!-- prompt:begin -->…<!-- prompt:end -->`
   con el system prompt, y región `<!-- chat:begin -->…<!-- chat:end -->` con el transcript.
-  Esas tres regiones son las únicas que el plugin escribe (S2, S6).
+  Esas tres regiones son las únicas que el plugin escribe (S2, S6). Una cita se
+guarda como dato plano (`Domain-Driven Design, p. 42`) y el `Fuente: ` que la
+nota muestra es presentación del render, así que leer y escribir un turno
+round-tripea sin prefijo ni markdown.
 - **Escritura aditiva.** El plugin nunca reescribe el archivo entero: inserta dentro de la
   región, y si la región no existe la agrega al final. Lo que el usuario escriba afuera de
   los marcadores no se toca. Se escribe con `vault.process` (read-modify-write atómico), no

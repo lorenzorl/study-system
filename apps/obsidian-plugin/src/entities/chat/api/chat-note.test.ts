@@ -1,0 +1,131 @@
+import { beforeEach, describe, expect, it, vi } from "vitest"
+
+// The vault boundary is mocked with a single in-memory Map shared by every
+// boundary function, so the api segment exercises the real region surgery from
+// `lib/note.ts` against persisted content.
+const fake = vi.hoisted(() => ({ store: new Map<string, string>() }))
+
+vi.mock("@/shared/obsidian", () => ({
+  chatsFolderPath: vi.fn(() => "Study Dashboard/Chats"),
+  listVaultFiles: vi.fn((folder: string) =>
+    [...fake.store.keys()]
+      .filter((path) => path.startsWith(`${folder}/`))
+      .sort(),
+  ),
+  readVaultFile: vi.fn(async (path: string) => {
+    const content = fake.store.get(path)
+    if (content === undefined) {
+      throw new Error(`No se encontró la nota "${path}".`)
+    }
+    return content
+  }),
+  writeVaultFile: vi.fn(async (path: string, content: string) => {
+    fake.store.set(path, content)
+  }),
+  processVaultFile: vi.fn(async (path: string, fn: (data: string) => string) => {
+    const next = fn(fake.store.get(path) ?? "")
+    fake.store.set(path, next)
+    return next
+  }),
+  onVaultFileChange: vi.fn(() => () => {}),
+}))
+
+import { listVaultFiles, processVaultFile } from "@/shared/obsidian"
+import { appendTurn, createChatNote, listChatPaths } from "./chat-note"
+
+const PATH = "Study Dashboard/Chats/tutor.md"
+
+function baseNote(): string {
+  return [
+    "---",
+    "model: m",
+    "---",
+    "<!-- prompt:begin -->",
+    "p",
+    "<!-- prompt:end -->",
+    "",
+    "<!-- chat:begin -->",
+    "<!-- chat:end -->",
+    "",
+  ].join("\n")
+}
+
+beforeEach(() => {
+  fake.store.clear()
+  vi.clearAllMocks()
+})
+
+describe("listChatPaths", () => {
+  it("returns what the vault boundary returns", async () => {
+    vi.mocked(listVaultFiles).mockReturnValueOnce([
+      PATH,
+      "Study Dashboard/Chats/otro.md",
+    ])
+
+    await expect(listChatPaths()).resolves.toEqual([
+      PATH,
+      "Study Dashboard/Chats/otro.md",
+    ])
+    expect(listVaultFiles).toHaveBeenCalledWith("Study Dashboard/Chats")
+  })
+})
+
+describe("createChatNote", () => {
+  it("writes the full note to the given path", async () => {
+    await createChatNote(PATH, "Sos mi tutor.", {
+      model: "m",
+      temperature: 0.2,
+      topK: 8,
+    })
+
+    const stored = fake.store.get(PATH)
+    expect(stored).toBeDefined()
+    expect(stored).toContain("---\nmodel: m\ntemperature: 0.2\ntop_k: 8\n---")
+    expect(stored).toContain(
+      "<!-- prompt:begin -->\nSos mi tutor.\n<!-- prompt:end -->",
+    )
+    expect(stored).toContain("<!-- chat:begin -->\n<!-- chat:end -->")
+    expect(processVaultFile).toHaveBeenCalled()
+  })
+})
+
+describe("appendTurn", () => {
+  it("persists through processVaultFile and the stored note gains the turn", async () => {
+    fake.store.set(PATH, baseNote())
+
+    await appendTurn(PATH, { role: "user", content: "Hola", sources: [] })
+
+    expect(processVaultFile).toHaveBeenCalledWith(PATH, expect.any(Function))
+    expect(fake.store.get(PATH)).toContain("### 🧑 Hola")
+  })
+
+  it("leaves user text outside the regions unchanged", async () => {
+    const raw = [
+      "---",
+      "model: m",
+      "---",
+      "USER INTRO",
+      "<!-- prompt:begin -->",
+      "p",
+      "<!-- prompt:end -->",
+      "USER MIDDLE",
+      "<!-- chat:begin -->",
+      "<!-- chat:end -->",
+      "USER TAIL",
+      "",
+    ].join("\n")
+    fake.store.set(PATH, raw)
+
+    await appendTurn(PATH, { role: "user", content: "Hola", sources: [] })
+
+    const stored = fake.store.get(PATH) as string
+    const chatBegin = "<!-- chat:begin -->"
+    const chatEnd = "<!-- chat:end -->"
+    expect(stored.slice(0, stored.indexOf(chatBegin))).toBe(
+      raw.slice(0, raw.indexOf(chatBegin)),
+    )
+    expect(
+      stored.slice(stored.indexOf(chatEnd) + chatEnd.length),
+    ).toBe(raw.slice(raw.indexOf(chatEnd) + chatEnd.length))
+  })
+})

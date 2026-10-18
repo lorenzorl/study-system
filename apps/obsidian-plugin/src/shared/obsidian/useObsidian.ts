@@ -4,6 +4,7 @@ import { normalizePath, type App, type Vault } from "obsidian"
 let _app: App | null = null
 
 const PLUGIN_FOLDER = "Study Dashboard"
+const CHATS_FOLDER = `${PLUGIN_FOLDER}/Chats`
 
 /** Returns the Obsidian Vault instance, or null if not yet initialized. */
 export function getVault(): Vault | null {
@@ -50,6 +51,143 @@ export function topicFolderPath(topicName: string): string {
 /** Build the full vault path for a concept subfolder. */
 export function conceptFolderPath(topicName: string, conceptTitle: string): string {
   return `${PLUGIN_FOLDER}/${sanitizeFolderName(topicName)}/${sanitizeFolderName(conceptTitle)}`
+}
+
+/** The folder that holds every chat note. */
+export function chatsFolderPath(): string {
+  return CHATS_FOLDER
+}
+
+function requireVault(): Vault {
+  const vault = getVault()
+  if (!vault) {
+    throw new Error("El vault de Obsidian no está disponible.")
+  }
+  return vault
+}
+
+/** Read a vault file's text. Throws when the file does not exist. */
+export async function readVaultFile(path: string): Promise<string> {
+  const vault = requireVault()
+  const normalized = normalizePath(path)
+  const file = vault.getFileByPath(normalized)
+  if (!file) {
+    throw new Error(`No se encontró la nota "${normalized}".`)
+  }
+  return await vault.read(file)
+}
+
+/** Whether a file exists at the given vault path. */
+export function vaultFileExists(path: string): boolean {
+  const vault = getVault()
+  if (!vault) return false
+  return vault.getFileByPath(normalizePath(path)) !== null
+}
+
+/** Create the parent folder when missing, then create or overwrite the file. */
+export async function writeVaultFile(
+  path: string,
+  content: string,
+): Promise<void> {
+  const vault = requireVault()
+  const normalized = normalizePath(path)
+  const parent = normalized.split("/").slice(0, -1).join("/")
+  if (parent) {
+    await ensureFolder(parent)
+  }
+
+  const existing = vault.getFileByPath(normalized)
+  if (existing) {
+    await vault.modify(existing, content)
+    return
+  }
+  await vault.create(normalized, content)
+}
+
+/**
+ * Atomic read-modify-write of a vault file, built on `vault.process`. A
+ * `read` + `modify` pair would race with the user's own editor and surface
+ * Obsidian's "file changed on disk" conflict. Creates the file (and its parent
+ * folder) when missing so every write can route through one primitive.
+ */
+export async function processVaultFile(
+  path: string,
+  fn: (data: string) => string,
+): Promise<string> {
+  const vault = requireVault()
+  const normalized = normalizePath(path)
+  let file = vault.getFileByPath(normalized)
+
+  if (!file) {
+    const parent = normalized.split("/").slice(0, -1).join("/")
+    if (parent) {
+      await ensureFolder(parent)
+    }
+    await vault.create(normalized, "")
+    file = vault.getFileByPath(normalized)
+  }
+
+  if (!file) {
+    throw new Error(`No se pudo crear la nota "${normalized}".`)
+  }
+
+  return await vault.process(file, fn)
+}
+
+/** The `.md` files directly inside `folder`, as vault-relative paths, sorted. */
+export function listVaultFiles(folder: string): string[] {
+  const vault = getVault()
+  if (!vault) return []
+
+  const normalized = normalizePath(folder)
+  const prefix = normalized ? `${normalized}/` : ""
+
+  return vault
+    .getFiles()
+    .filter((file) => {
+      if (file.extension !== "md") return false
+      if (!file.path.startsWith(prefix)) return false
+      return !file.path.slice(prefix.length).includes("/")
+    })
+    .map((file) => file.path)
+    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+}
+
+/**
+ * Subscribe to vault changes that touch `folder`. Returns an unsubscribe
+ * function that removes the registration.
+ */
+export function onVaultFileChange(
+  folder: string,
+  listener: () => void,
+): () => void {
+  const vault = getVault()
+  if (!vault) return () => {}
+
+  const normalized = normalizePath(folder)
+  const prefix = normalized ? `${normalized}/` : ""
+
+  const isInside = (candidate: unknown): boolean =>
+    typeof candidate === "string" && candidate.startsWith(prefix)
+
+  const handler = (...args: unknown[]): void => {
+    const file = args[0] as { path?: string } | undefined
+    if (isInside(file?.path) || isInside(args[1])) {
+      listener()
+    }
+  }
+
+  vault.on("modify", handler)
+  vault.on("create", handler)
+  vault.on("delete", handler)
+  vault.on("rename", handler)
+
+  return () => {
+    vault.off("modify", handler)
+    vault.off("create", handler)
+    vault.off("delete", handler)
+    vault.off("rename", handler)
+  }
 }
 
 export function setObsidianApp(app: App): void {
