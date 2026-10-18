@@ -24,6 +24,11 @@ type SearchResultResponse struct {
 	// marked, folded onto one line.
 	Snippet string `json:"snippet"`
 
+	// Text is the chunk's text, verbatim, for a client that builds a prompt from
+	// it. It is longer than the snippet by design: the snippet is what a reader
+	// scans, the text is what a model reads.
+	Text string `json:"text"`
+
 	// Stage names the retrieval stage that produced the result: lexical,
 	// semantic, or hybrid.
 	Stage string `json:"stage"`

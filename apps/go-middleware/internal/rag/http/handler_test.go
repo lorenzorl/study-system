@@ -55,6 +55,7 @@ func TestSearchHandler_Success(t *testing.T) {
 		DocumentTitle: "Attention Is All You Need",
 		PageNumber:    3,
 		Snippet:       "the [attention] mechanism",
+		Text:          "the attention mechanism, in full, for the model to read",
 		Stage:         domain.StageHybrid,
 		Score:         -1.25,
 		Similarity:    0.75,
@@ -75,13 +76,15 @@ func TestSearchHandler_Success(t *testing.T) {
 	require.Len(t, raw, 1)
 	assert.ElementsMatch(t, []string{
 		"chunk_id", "document_id", "document_title", "page_number",
-		"snippet", "stage", "bm25", "similarity",
+		"snippet", "text", "stage", "bm25", "similarity",
 	}, keysOf(raw[0]))
 
 	var resp []httppkg.SearchResultResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	require.Len(t, resp, 1)
 	assert.Equal(t, "chunk-1", resp[0].ChunkID)
+	assert.Equal(t, "the attention mechanism, in full, for the model to read", resp[0].Text,
+		"the wire carries the chunk text next to the snippet")
 	assert.Equal(t, "doc-1", resp[0].DocumentID)
 	assert.Equal(t, "Attention Is All You Need", resp[0].DocumentTitle)
 	assert.Equal(t, 3, resp[0].PageNumber)

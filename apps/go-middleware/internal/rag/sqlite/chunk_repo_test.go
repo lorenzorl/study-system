@@ -218,6 +218,26 @@ func TestChunkRepository_SearchReturnsTheCitation(t *testing.T) {
 	assert.NotContains(t, result.Snippet, "\n", "a snippet is one line")
 }
 
+// A snippet is a citation aid: 12 tokens with the matched terms marked. A caller
+// that feeds the retrieved text to a model needs the chunk itself, so a result
+// carries both and they are not the same string.
+func TestChunkRepository_SearchReturnsTheFullChunkText(t *testing.T) {
+	_, repos := openRepos(t)
+	ctx := t.Context()
+
+	const chunk = "the aggregate is the consistency boundary of the model, and everything inside it must stay consistent in one transaction"
+
+	indexedDocument(t, ctx, repos, "Domain-Driven Design", map[int][]string{4: {chunk}})
+
+	results, err := repos.chunks.Search(ctx, "aggregate", 10)
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+
+	assert.Equal(t, chunk, results[0].Text, "a result must carry the whole chunk, verbatim")
+	assert.NotEqual(t, results[0].Text, results[0].Snippet,
+		"the snippet is a bounded window and the text is not")
+}
+
 func TestChunkRepository_SearchFoldsAccentsInBothDirections(t *testing.T) {
 	t.Run("an unaccented Spanish query finds accented text", func(t *testing.T) {
 		_, repos := openRepos(t)

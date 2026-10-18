@@ -71,6 +71,28 @@ func TestSearchUseCase_SpanishQueryFindsAnEnglishPassageItSharesNoTokenWith(t *t
 	assert.Contains(t, embedder.recorded(), query, "the query itself is what was embedded")
 }
 
+// A semantic hit matched no term, so its snippet is a plain excerpt. The client
+// that answers with the retrieved text needs the chunk itself, whether the stage
+// that found it was lexical, semantic or both.
+func TestSearchUseCase_SemanticResultCarriesTheWholeChunk(t *testing.T) {
+	h := newIndexHarness(t)
+	ctx := t.Context()
+	embedder := spanishToEnglishEmbedder()
+
+	const chunk = "The aggregate is the consistency boundary of the model."
+
+	indexAndEmbed(t, h, embedder, "test/model", "An English paper", map[int]string{1: chunk})
+
+	hybrid := app.NewHybridSearchUseCase(h.chunks, embeddingStore(h), embedder, "test/model")
+	results, err := hybrid.Search(ctx, "¿cuál es el límite de consistencia del agregado?", app.DefaultSearchLimit)
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+
+	assert.Equal(t, domain.StageSemantic, results[0].Stage,
+		"this test is about the semantic stage, so it must be the one that found it")
+	assert.Equal(t, chunk, results[0].Text, "a semantic result must carry the whole chunk")
+}
+
 // Without stored vectors there is nothing to compare against, so search must stay
 // a lexical search — and must not embed the query, which is what keeps it working
 // with no API key and no network.

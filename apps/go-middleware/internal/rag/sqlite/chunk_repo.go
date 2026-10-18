@@ -22,6 +22,10 @@ import (
 //     survive any output channel. The result is folded onto one line because the
 //     command prints one line per result, and a chunk whose snippet crossed a
 //     paragraph boundary would otherwise break that line in half.
+//   - c.text travels with the snippet because the two answer different
+//     questions: the snippet is what a human reads to see why the chunk matched,
+//     and the text is what a model reads to answer from it. Twelve tokens is not
+//     enough context to answer with, and the chunk text is already here.
 //   - The joins are what make a result citable: FTS5 knows the chunk id, and
 //     chunks holds the page and documents the title.
 //   - bm25() returns SMALLER-IS-BETTER scores (negative), so the order is
@@ -35,6 +39,7 @@ SELECT c.id,
        d.title,
        c.page_number,
        replace(replace(replace(snippet(chunks_fts, 1, '[', ']', '…', 12), char(10), ' '), char(13), ' '), char(9), ' '),
+       c.text,
        bm25(chunks_fts)
 FROM chunks_fts
 JOIN chunks c ON c.id = chunks_fts.chunk_id
@@ -177,6 +182,7 @@ func (r *ChunkRepository) Search(ctx context.Context, query string, limit int) (
 			&result.DocumentTitle,
 			&result.PageNumber,
 			&result.Snippet,
+			&result.Text,
 			&result.Score,
 		); err != nil {
 			return nil, fmt.Errorf("scan search result: %w", err)

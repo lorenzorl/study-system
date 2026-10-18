@@ -51,6 +51,7 @@ func (h *SearchHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			DocumentTitle: result.DocumentTitle,
 			PageNumber:    result.PageNumber,
 			Snippet:       result.Snippet,
+			Text:          result.Text,
 			Stage:         string(result.Stage),
 			// bm25 is smaller-is-better, so the magnitude is what a reader can
 			// compare: bigger is better, the same direction the command prints.

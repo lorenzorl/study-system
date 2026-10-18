@@ -342,7 +342,14 @@ mounts it under `/api/rag/` with `httpx.CORS` as the outermost wrapper.
   wrapper and never `null`: an empty result encodes as `[]`, which is why the
   handler builds it with `make([]SearchResultResponse, 0, n)`. Fields:
   `chunk_id`, `document_id`, `document_title`, `page_number`, `snippet`,
-  `stage`, `bm25`, `similarity`.
+  `text`, `stage`, `bm25`, `similarity`.
+- **`snippet` and `text` are not the same string, and the difference is the point.**
+  `snippet` is the citation aid: FTS5 builds it from twelve tokens around the
+  match with the matched terms marked, and a semantic hit gets a 240-rune excerpt.
+  `text` is the chunk verbatim. A caller that only shows a result wants the
+  snippet; a caller that asks a model to answer from the result needs `text`,
+  because twelve tokens of context is a fragment and a model answering from a
+  fragment invents the rest.
 - **Score direction.** `bm25` is the lexical score's **magnitude** (bigger is
   better) and `similarity` is the cosine (bigger is better). A stage that did not
   rank a chunk leaves its value `0`. The command prints the same directions, so

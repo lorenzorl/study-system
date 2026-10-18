@@ -160,6 +160,7 @@ func (uc *SearchUseCase) semanticRanking(
 			DocumentTitle: item.DocumentTitle,
 			PageNumber:    item.PageNumber,
 			Snippet:       excerpt(item.Text),
+			Text:          item.Text,
 			Stage:         domain.StageSemantic,
 			Similarity:    similarity,
 		})

@@ -103,8 +103,15 @@ type SearchResult struct {
 	PageNumber int
 
 	// Snippet is a bounded window of the chunk's text with the matched terms
-	// marked, folded onto one line so a caller can print one line per result.
+	// marked, folded onto one line so a caller can print one line per result. It
+	// is a citation aid, not context: FTS5 builds it from twelve tokens.
 	Snippet string
+
+	// Text is the chunk's text, verbatim. It exists because a caller that feeds the
+	// retrieved passage to a model needs the passage and not a twelve-token window:
+	// a prompt built from snippets alone answers from a fragment. A semantic hit
+	// matched no term, so for that stage Text is the whole of what there is.
+	Text string
 
 	// Score is the lexical rank as the index computes it: SMALLER (more negative)
 	// is a BETTER match, and results are ordered by it ascending. A reader who
