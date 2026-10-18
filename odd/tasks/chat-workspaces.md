@@ -247,6 +247,30 @@ SUGGESTION), `R4-partial-content-dropped` (`client.ts:196-211`, WARNING).
 
 **Nota de proceso.** El candidato es siempre `base..HEAD`, así que para acotar cada slice hay
 que dejar HEAD en el tip del slice: se hace con un checkout detached por slice y se vuelve a
-la rama al terminar. Quedan pendientes de review: **C1** (`e4f32b3..063f852`, ~894 líneas) y
-**C2** (`063f852..8d0f51b`, ~2251 líneas).
+la rama al terminar. Los cuatro slices quedaron revisados (A, B, C1 y C2).
+
+**L9 (2026-10-18, review nativo del slice C1: aprobado en la primera pasada)** —
+`e4f32b3..063f852` (7 paths, 898 líneas) con `risk`, `resilience` y `reliability`; las tres
+lentes admitidas y **ningún hallazgo severo**, así que no hubo refutador ni corrección
+(`review-f79dc5106fc5d630`). Ocho advisory, casi todos sobre
+`features/send-message/model/useSendMessage.ts`: `R1-error-passthrough` (WARNING), `R3-1`
+(WARNING), `R3-3` (SUGGESTION), `R4-001`, `R4-002`, `R4-003` (WARNING), `R4-004`
+(SUGGESTION) y `R3-2`, que apunta al propio feature doc.
+
+**L10 (2026-10-18, review nativo del slice C2: aprobado, tras un fallo transitorio del relay)** —
+`063f852..8d0f51b` (41 paths, 2277 líneas) con `risk`, `readability` y `reliability`. El primer
+intento del grupo fue refusado en admisión: la lente de riesgo declaró **inspección no
+disponible** porque el contexto del review no traía ningún hunk de patch (solo el manifest con
+name-status y numstat), y por honestidad se negó a reportar una inspección completa. No se
+consumió ningún slot. El reintento —lo que el proveedor indica— trajo el patch (118k de
+contexto contra 47k) y las tres lentes entraron: **sin hallazgos severos**, sin corrección
+(`review-6795d3bd6deaa7ef`). Siete advisory: `R2-create-chat-duplicates-starting-default`,
+`R2-saved-badge-contradicts-dirty` (SUGGESTION), `R2-merge-doc-overstates-preservation`
+(WARNING: el comentario de `mergeIntoExistingNote` promete más preservación de la que ese
+estado intermedio del código da), `R3-001` y `R3-002` (WARNING), `R3-003` y `R3-004`
+(SUGGESTION).
+
+Lección de proceso que vale para la próxima: una negativa por **contexto faltante** es
+transitoria y merece un reintento del mismo slot; el `lens_context_budget_exceeded` del
+candidato completo es otra cosa, es determinista, y el remedio ahí sí es un candidato más chico.
 
