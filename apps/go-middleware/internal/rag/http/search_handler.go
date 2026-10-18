@@ -9,6 +9,7 @@ import (
 
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/platform/httpx"
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/rag/app"
+	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/rag/domain"
 )
 
 // SearchHandler handles GET /api/rag/search.
@@ -34,7 +35,19 @@ func (h *SearchHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results, err := h.useCase.Search(r.Context(), query, limit)
+	// document_id is optional. Absent or empty is the whole corpus, which is
+	// exactly the search the endpoint answered before the parameter existed;
+	// present is the same ranking narrowed to one document. A document that
+	// matches nothing is not a miss to report: it is a 200 with an empty array,
+	// the same answer a query with no match already returns.
+	documentID := strings.TrimSpace(r.URL.Query().Get("document_id"))
+
+	var results []domain.SearchResult
+	if documentID == "" {
+		results, err = h.useCase.Search(r.Context(), query, limit)
+	} else {
+		results, err = h.useCase.SearchInDocument(r.Context(), query, documentID, limit)
+	}
 	if err != nil {
 		httpx.WriteErrorFrom(w, err)
 		return

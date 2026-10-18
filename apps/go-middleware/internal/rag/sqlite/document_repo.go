@@ -112,6 +112,55 @@ func (r *DocumentRepository) ListIndexable(ctx context.Context) ([]*domain.Docum
 	return documents, nil
 }
 
+// ListAll returns every document, newest first, ordered by created_at
+// descending and then id ascending, or an empty slice when there is none.
+//
+// The order is read from the rows themselves — never from insertion order or
+// rowid — so two databases holding the same rows answer in the same order.
+// created_at is stored as whole-second RFC3339 UTC, which sorts lexically in
+// chronological order, so an index over it is the ordering the caller asked for.
+func (r *DocumentRepository) ListAll(ctx context.Context) ([]*domain.Document, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id, title, artifact_id, source_uri, content_sha256, created_at
+		 FROM documents
+		 ORDER BY created_at DESC, id ASC`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list documents: %w", err)
+	}
+	defer rows.Close()
+
+	documents := []*domain.Document{}
+	for rows.Next() {
+		var (
+			document  domain.Document
+			createdAt string
+		)
+
+		if err := rows.Scan(
+			&document.ID,
+			&document.Title,
+			&document.ArtifactID,
+			&document.SourceURI,
+			&document.ContentSHA256,
+			&createdAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan document: %w", err)
+		}
+
+		if document.CreatedAt, err = parseInstant(createdAt); err != nil {
+			return nil, fmt.Errorf("document %s: %w", document.ID, err)
+		}
+
+		documents = append(documents, &document)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate documents: %w", err)
+	}
+
+	return documents, nil
+}
+
 // findOne runs a single-row document query and maps a miss to apperror.ErrNotFound.
 func (r *DocumentRepository) findOne(ctx context.Context, query string, arg any) (*domain.Document, error) {
 	var (

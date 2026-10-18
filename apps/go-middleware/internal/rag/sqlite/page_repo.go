@@ -102,6 +102,25 @@ func (r *PageOutcomeRepository) ListOutcomes(ctx context.Context, jobID string) 
 	return outcomes, nil
 }
 
+// CountByDocument returns how many recorded page outcomes the document has
+// across its jobs, without reading any page text.
+//
+// The join is answered by the ingestion_jobs primary key and the job_pages
+// primary key, so it stays an index scan. An unknown document counts zero, not
+// an error: "no page" and "no document" are the same answer here.
+func (r *PageOutcomeRepository) CountByDocument(ctx context.Context, documentID string) (int, error) {
+	var count int
+	if err := r.db.QueryRowContext(ctx,
+		`SELECT count(*) FROM job_pages
+		 JOIN ingestion_jobs j ON j.id = job_pages.job_id
+		 WHERE j.document_id = ?`,
+		documentID,
+	).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count the pages of document %s: %w", documentID, err)
+	}
+	return count, nil
+}
+
 // CountByJob returns the number of recorded outcomes of a job, grouped by
 // status, without reading any page text.
 //

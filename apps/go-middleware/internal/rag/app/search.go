@@ -22,6 +22,24 @@ const DefaultSearchLimit = 10
 // reason: the command prints one line per result.
 const semanticSnippetRunes = 240
 
+// ChunkSearchRepository is the slice of the chunk index the search use case
+// reads: the whole-corpus ranking, and the same ranking narrowed to one
+// document.
+//
+// The document filter belongs to the port rather than being applied to the
+// results in Go, because only the index can apply it before the limit. A filter
+// applied here would let the limit trim the unfiltered result set first and would
+// silently change what "the first N results" means.
+type ChunkSearchRepository interface {
+	// Search returns the chunks matching a query over the whole corpus, best
+	// first.
+	Search(ctx context.Context, query string, limit int) ([]domain.SearchResult, error)
+
+	// SearchInDocument returns the chunks of one document matching a query, best
+	// first. An empty documentID is the whole corpus.
+	SearchInDocument(ctx context.Context, query, documentID string, limit int) ([]domain.SearchResult, error)
+}
+
 // SearchUseCase answers a query over the chunk index.
 //
 // The lexical stage is always available and reads only the database. The semantic
@@ -29,7 +47,7 @@ const semanticSnippetRunes = 240
 // stage that can cross the language boundary between a Spanish query and an
 // English book.
 type SearchUseCase struct {
-	chunks domain.ChunkRepository
+	chunks ChunkSearchRepository
 
 	// embeddings and embedder are nil in a lexical-only search. Keeping them
 	// separate from chunks is what lets the same use case work on a machine with
@@ -42,7 +60,7 @@ type SearchUseCase struct {
 }
 
 // NewSearchUseCase wires a lexical-only search.
-func NewSearchUseCase(chunks domain.ChunkRepository) *SearchUseCase {
+func NewSearchUseCase(chunks ChunkSearchRepository) *SearchUseCase {
 	return &SearchUseCase{chunks: chunks}
 }
 
@@ -53,7 +71,7 @@ func NewSearchUseCase(chunks domain.ChunkRepository) *SearchUseCase {
 // rather than failing, which is what lets the command stay usable without an API
 // key.
 func NewHybridSearchUseCase(
-	chunks domain.ChunkRepository,
+	chunks ChunkSearchRepository,
 	embeddings domain.EmbeddingRepository,
 	embedder domain.Embedder,
 	model string,
@@ -83,11 +101,42 @@ func (uc *SearchUseCase) semanticEnabled() bool {
 // vectors, search falls back to lexical-only rather than failing: a machine with
 // no embeddings still searches.
 func (uc *SearchUseCase) Search(ctx context.Context, query string, limit int) ([]domain.SearchResult, error) {
+	return uc.search(ctx, query, "", limit)
+}
+
+// SearchInDocument returns the chunks of one document matching query, best
+// first.
+//
+// The filter narrows both retrieval stages, so a scoped search answers from the
+// document the caller chose or from nothing. An empty documentID is the whole
+// corpus, exactly as Search. A document that matches nothing is the same empty
+// slice a query with no match returns: it is not an error, and the transport
+// keeps answering 200 with an empty array.
+func (uc *SearchUseCase) SearchInDocument(
+	ctx context.Context,
+	query, documentID string,
+	limit int,
+) ([]domain.SearchResult, error) {
+	if documentID == "" {
+		return uc.Search(ctx, query, limit)
+	}
+	return uc.search(ctx, query, documentID, limit)
+}
+
+// search runs both stages under one optional document filter. An empty
+// documentID leaves the lexical stage on the whole-corpus query and the semantic
+// stage unfiltered, which is the endpoint's behaviour before the parameter
+// existed.
+func (uc *SearchUseCase) search(
+	ctx context.Context,
+	query, documentID string,
+	limit int,
+) ([]domain.SearchResult, error) {
 	if limit < 1 {
 		limit = DefaultSearchLimit
 	}
 
-	lexical, err := uc.chunks.Search(ctx, query, limit)
+	lexical, err := uc.lexical(ctx, query, documentID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +152,7 @@ func (uc *SearchUseCase) Search(ctx context.Context, query string, limit int) ([
 		return lexical, nil
 	}
 
-	semantic, err := uc.semanticRanking(ctx, query, limit)
+	semantic, err := uc.semanticRanking(ctx, query, documentID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -114,6 +163,19 @@ func (uc *SearchUseCase) Search(ctx context.Context, query string, limit int) ([
 	return fuseResults(lexical, semantic, limit), nil
 }
 
+// lexical runs the ranked query over the whole corpus or over one document. The
+// index applies the filter, so the limit bounds the same set it is applied to.
+func (uc *SearchUseCase) lexical(
+	ctx context.Context,
+	query, documentID string,
+	limit int,
+) ([]domain.SearchResult, error) {
+	if documentID == "" {
+		return uc.chunks.Search(ctx, query, limit)
+	}
+	return uc.chunks.SearchInDocument(ctx, query, documentID, limit)
+}
+
 // semanticRanking embeds the query and ranks every stored vector of the model by
 // cosine similarity, best first.
 //
@@ -121,9 +183,13 @@ func (uc *SearchUseCase) Search(ctx context.Context, query string, limit int) ([
 // has no shared direction with the query, and returning it would turn an
 // unrelated query into a page of weak results. The ranking is brute force over
 // every stored vector, which the corpus size makes milliseconds.
+//
+// A non-empty documentID narrows the ranking to that document, applied before
+// the top-N truncation so the limit bounds the filtered set rather than the whole
+// corpus.
 func (uc *SearchUseCase) semanticRanking(
 	ctx context.Context,
-	query string,
+	query, documentID string,
 	limit int,
 ) ([]domain.SearchResult, error) {
 	stored, err := uc.embeddings.ListByModel(ctx, uc.model)
@@ -146,6 +212,13 @@ func (uc *SearchUseCase) semanticRanking(
 
 	ranked := make([]domain.SearchResult, 0, len(stored))
 	for _, item := range stored {
+		if documentID != "" && item.DocumentID != documentID {
+			// The semantic stage reads every stored vector, so the filter is
+			// applied here, before the similarity ranking is truncated: the limit
+			// must bound the document's matches, not the whole corpus's.
+			continue
+		}
+
 		similarity, err := domain.Cosine(queryVector, item.Vector)
 		if err != nil {
 			return nil, fmt.Errorf("compare the query with chunk %s: %w", item.ChunkID, err)

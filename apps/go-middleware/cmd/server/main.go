@@ -181,6 +181,7 @@ func main() {
 		searchUC,
 		raghttp.NewUploadDocumentHandler(store, documents, submitter, cfg.OpenRouterAPIKey != ""),
 		raghttp.NewDocumentStatusHandler(statusUC),
+		raghttp.NewDocumentsHandler(ragapp.NewListDocumentsUseCase(documents, pages, chunks)),
 	)
 
 	// The RAG router is mounted under its prefix on a root mux, and the study

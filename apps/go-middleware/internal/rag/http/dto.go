@@ -82,3 +82,26 @@ type PageProgressResponse struct {
 	Failed      int `json:"failed"`
 	Pending     int `json:"pending"`
 }
+
+// DocumentSummaryResponse is one entry in the bare JSON array returned by
+// GET /api/rag/documents.
+//
+// The artifact id, the source URI and the content hash are deliberately absent:
+// they are the server's internals, not what a caller chooses a document by.
+type DocumentSummaryResponse struct {
+	// ID identifies the document, which is what a search scopes to.
+	ID string `json:"id"`
+
+	// Title is the document's human-readable name.
+	Title string `json:"title"`
+
+	// CreatedAt is when the document was registered, as RFC3339.
+	CreatedAt string `json:"created_at"`
+
+	// Pages is how many page outcomes the document has recorded, so a caller can
+	// see whether it finished converting.
+	Pages int `json:"pages"`
+
+	// Chunks is how many chunks the document has in the lexical index.
+	Chunks int `json:"chunks"`
+}

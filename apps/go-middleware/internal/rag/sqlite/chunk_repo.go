@@ -33,7 +33,12 @@ import (
 //     looking, to anyone reading the SQL, exactly like the best one.
 //   - The tiebreaker is the citation order, so the same index always answers the
 //     same query the same way.
-const searchSQL = `
+//
+// searchColumns is the projection the two ranked queries share: the citation,
+// the marked snippet, and the whole chunk text. They differ only in whether they
+// narrow to one document, and they must select the same columns so one scan loop
+// reads both.
+const searchColumns = `
 SELECT c.id,
        c.document_id,
        d.title,
@@ -43,8 +48,40 @@ SELECT c.id,
        bm25(chunks_fts)
 FROM chunks_fts
 JOIN chunks c ON c.id = chunks_fts.chunk_id
-JOIN documents d ON d.id = c.document_id
+JOIN documents d ON d.id = c.document_id`
+
+// searchSQL is the ranked search over the whole corpus.
+//
+// Some choices here are not free:
+//
+//   - snippet(chunks_fts, 1, ...) reads column 1 because chunks_fts declares
+//     chunk_id first. The window is 12 tokens, and the markers are ASCII so they
+//     survive any output channel. The result is folded onto one line because the
+//     command prints one line per result, and a chunk whose snippet crossed a
+//     paragraph boundary would otherwise break that line in half.
+//   - c.text travels with the snippet because the two answer different
+//     questions: the snippet is what a human reads to see why the chunk matched,
+//     and the text is what a model reads to answer from it. Twelve tokens is not
+//     enough context to answer with, and the chunk text is already here.
+//   - The joins are what make a result citable: FTS5 knows the chunk id, and
+//     chunks holds the page and documents the title.
+//   - bm25() returns SMALLER-IS-BETTER scores (negative), so the order is
+//     ascending. Ordering descending would present the worst match first while
+//     looking, to anyone reading the SQL, exactly like the best one.
+//   - The tiebreaker is the citation order, so the same index always answers the
+//     same query the same way.
+const searchSQL = searchColumns + `
 WHERE chunks_fts MATCH ?
+ORDER BY bm25(chunks_fts) ASC, c.document_id ASC, c.page_number ASC, c.ordinal ASC
+LIMIT ?`
+
+// searchInDocumentSQL is the same ranking narrowed to one document. The
+// document predicate sits before the LIMIT, so the limit bounds the document's
+// matches rather than a page of the whole corpus that is then filtered down —
+// filtering after the fact would let a document the caller did not ask for spend
+// the caller's limit.
+const searchInDocumentSQL = searchColumns + `
+WHERE chunks_fts MATCH ? AND c.document_id = ?
 ORDER BY bm25(chunks_fts) ASC, c.document_id ASC, c.page_number ASC, c.ordinal ASC
 LIMIT ?`
 
@@ -155,6 +192,38 @@ func deleteChunks(ctx context.Context, tx *sql.Tx, documentID string) error {
 // LIMIT as "no limit", so the one value a caller is most likely to pass by
 // accident would be the one that returns the whole index.
 func (r *ChunkRepository) Search(ctx context.Context, query string, limit int) ([]domain.SearchResult, error) {
+	return r.search(ctx, searchSQL, query, limit)
+}
+
+// SearchInDocument returns the chunks of one document matching query, best
+// first.
+//
+// The document filter is a WHERE predicate, so the limit bounds the document's
+// own matches and not a page of the whole corpus that is filtered down after the
+// fact. An empty documentID is the whole corpus, exactly as Search. A document
+// with no matching chunk is an empty slice and no error: the caller asked what a
+// document contains, and the answer is nothing.
+func (r *ChunkRepository) SearchInDocument(
+	ctx context.Context,
+	query, documentID string,
+	limit int,
+) ([]domain.SearchResult, error) {
+	if documentID == "" {
+		return r.Search(ctx, query, limit)
+	}
+	return r.search(ctx, searchInDocumentSQL, query, limit, documentID)
+}
+
+// search runs one ranked statement and scans it. filter carries the statement's
+// parameters between the MATCH term and the limit, so the two public methods
+// share one scan loop: Search passes none, SearchInDocument passes the document
+// id its predicate expects.
+func (r *ChunkRepository) search(
+	ctx context.Context,
+	statement, query string,
+	limit int,
+	filter ...any,
+) ([]domain.SearchResult, error) {
 	results := []domain.SearchResult{}
 
 	match := matchQuery(query)
@@ -168,7 +237,12 @@ func (r *ChunkRepository) Search(ctx context.Context, query string, limit int) (
 		return nil, fmt.Errorf("search limit must be positive, got %d: %w", limit, apperror.ErrInvalidInput)
 	}
 
-	rows, err := r.db.QueryContext(ctx, searchSQL, match, limit)
+	args := make([]any, 0, len(filter)+2)
+	args = append(args, match)
+	args = append(args, filter...)
+	args = append(args, limit)
+
+	rows, err := r.db.QueryContext(ctx, statement, args...)
 	if err != nil {
 		return nil, fmt.Errorf("search chunks: %w", err)
 	}

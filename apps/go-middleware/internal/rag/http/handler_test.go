@@ -26,14 +26,30 @@ type mockSearchUseCase struct {
 	results []domain.SearchResult
 	err     error
 
-	gotQuery string
-	gotLimit int
-	calls    int
+	gotQuery      string
+	gotLimit      int
+	gotDocumentID string
+
+	calls       int
+	scopedCalls int
 }
 
 func (m *mockSearchUseCase) Search(ctx context.Context, query string, limit int) ([]domain.SearchResult, error) {
 	m.calls++
 	m.gotQuery = query
+	m.gotLimit = limit
+	return m.results, m.err
+}
+
+func (m *mockSearchUseCase) SearchInDocument(
+	ctx context.Context,
+	query, documentID string,
+	limit int,
+) ([]domain.SearchResult, error) {
+	m.calls++
+	m.scopedCalls++
+	m.gotQuery = query
+	m.gotDocumentID = documentID
 	m.gotLimit = limit
 	return m.results, m.err
 }
@@ -260,6 +276,80 @@ func TestSearchHandler_TrimsQuery(t *testing.T) {
 	assert.Equal(t, "attention", mock.gotQuery)
 }
 
+// T6: the parameter is optional, and absent means the whole corpus — the exact
+// contract the endpoint had before the parameter existed.
+func TestSearchHandler_AbsentDocumentIDSearchesTheWholeCorpus(t *testing.T) {
+	mock := &mockSearchUseCase{results: []domain.SearchResult{}}
+	handler := httppkg.NewSearchHandler(mock)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/rag/search?q=attention&limit=5", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, 0, mock.scopedCalls,
+		"without document_id the whole-corpus search must be the one called")
+	assert.Equal(t, "attention", mock.gotQuery)
+	assert.Equal(t, 5, mock.gotLimit)
+}
+
+// T6: an explicitly empty value is the same as an absent one.
+func TestSearchHandler_EmptyDocumentIDSearchesTheWholeCorpus(t *testing.T) {
+	mock := &mockSearchUseCase{results: []domain.SearchResult{}}
+	handler := httppkg.NewSearchHandler(mock)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/rag/search?q=attention&document_id=", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, 0, mock.scopedCalls, "an empty document_id must not narrow the search")
+}
+
+// T6: a document_id narrows the search and is forwarded verbatim.
+func TestSearchHandler_DocumentIDScopesTheSearch(t *testing.T) {
+	mock := &mockSearchUseCase{results: []domain.SearchResult{}}
+	handler := httppkg.NewSearchHandler(mock)
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/rag/search?q=attention&document_id=doc-1&limit=5", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, 1, mock.scopedCalls)
+	assert.Equal(t, "doc-1", mock.gotDocumentID)
+	assert.Equal(t, "attention", mock.gotQuery)
+	assert.Equal(t, 5, mock.gotLimit)
+}
+
+// T6: a document_id that matches nothing is a 200 with an empty array, not a 404
+// and not a 400 — the same answer a query with no match already returns.
+func TestSearchHandler_DocumentIDThatMatchesNothingIsAnEmptyArray(t *testing.T) {
+	mock := &mockSearchUseCase{results: []domain.SearchResult{}}
+	handler := httppkg.NewSearchHandler(mock)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/rag/search?q=nothing&document_id=missing", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "[]", strings.TrimSpace(rec.Body.String()))
+}
+
+func TestSearchHandler_TrimsDocumentID(t *testing.T) {
+	mock := &mockSearchUseCase{results: []domain.SearchResult{}}
+	handler := httppkg.NewSearchHandler(mock)
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/rag/search?q=x&document_id=%20%20doc-1%20%20", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "doc-1", mock.gotDocumentID)
+}
+
 func TestSearchHandler_UseCaseError(t *testing.T) {
 	mock := &mockSearchUseCase{err: errors.New("db down")}
 	handler := httppkg.NewSearchHandler(mock)
@@ -279,9 +369,16 @@ func TestSearchHandler_UseCaseError(t *testing.T) {
 // newSearchRouter builds the RAG router with a search use case and the document
 // routes stubbed out, so the search-route tests stay focused on search.
 func newSearchRouter(search httppkg.SearchUseCase) http.Handler {
+	return newSearchRouterWithDocuments(search, &fakeDocumentListUseCase{})
+}
+
+// newSearchRouterWithDocuments pins the document list use case when a test needs
+// to observe the list route itself.
+func newSearchRouterWithDocuments(search httppkg.SearchUseCase, documents httppkg.DocumentListUseCase) http.Handler {
 	return httppkg.NewRouter(search,
 		httppkg.NewUploadDocumentHandler(nil, nil, nil, false),
-		httppkg.NewDocumentStatusHandler(nil))
+		httppkg.NewDocumentStatusHandler(nil),
+		httppkg.NewDocumentsHandler(documents))
 }
 
 func TestRouter_RegistersSearchRoute(t *testing.T) {

@@ -26,10 +26,10 @@ var indexInstant = time.Date(2026, 10, 17, 12, 0, 0, 0, time.UTC)
 // the use cases are exercised against the same schema the command applies.
 type indexHarness struct {
 	sqlDB    *sql.DB
-	docs     domain.DocumentRepository
+	docs     *ragsqlite.DocumentRepository
 	jobs     domain.JobRepository
-	pages    domain.PageOutcomeRepository
-	chunks   domain.ChunkRepository
+	pages    *ragsqlite.PageOutcomeRepository
+	chunks   *ragsqlite.ChunkRepository
 	indexer  *app.IndexDocumentUseCase
 	searcher *app.SearchUseCase
 }

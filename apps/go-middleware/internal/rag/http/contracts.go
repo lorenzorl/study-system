@@ -19,10 +19,17 @@ import (
 // Both the lexical and the hybrid use cases satisfy it: the difference is which
 // stages they run, not the contract the transport sees.
 type SearchUseCase interface {
-	// Search returns the chunks matching query, best first. A query of only
-	// punctuation and a query that matches nothing both return an empty slice and
-	// no error, so they are a 200 with an empty array and never a 400.
+	// Search returns the chunks matching query over the whole corpus, best first.
+	// A query of only punctuation and a query that matches nothing both return an
+	// empty slice and no error, so they are a 200 with an empty array and never a
+	// 400.
 	Search(ctx context.Context, query string, limit int) ([]domain.SearchResult, error)
+
+	// SearchInDocument returns the chunks of one document matching query, best
+	// first. An empty documentID is the whole corpus, exactly as Search. A
+	// document that matches nothing is a 200 with an empty array, not a 404 and
+	// not a 400: it is the same empty answer a query with no match returns.
+	SearchInDocument(ctx context.Context, query, documentID string, limit int) ([]domain.SearchResult, error)
 }
 
 // MaxSearchLimit bounds the `limit` query parameter.
@@ -61,4 +68,13 @@ type DocumentProcessor interface {
 // DocumentStatusUseCase builds a document's processing status.
 type DocumentStatusUseCase interface {
 	Execute(ctx context.Context, documentID string) (app.DocumentStatus, error)
+}
+
+// DocumentListUseCase lists the corpus with the counts a caller needs to choose a
+// document to attach.
+type DocumentListUseCase interface {
+	// Execute returns every document, newest first, with its page and chunk
+	// counts. An empty corpus is an empty slice, never nil, so the transport
+	// encodes it as [].
+	Execute(ctx context.Context) ([]app.DocumentSummary, error)
 }

@@ -89,7 +89,8 @@ the variables, and create `.env` with the ones you need to override.
 | `POST` | `/api/sync/resource` | Upsert an external study resource by `source_uri` |
 | `GET` | `/api/study/due` | Flashcards whose next review is due |
 | `POST` | `/api/study/review` | Record a review, recompute the card state |
-| `GET` | `/api/rag/search` | Ranked chunks for a query (`q`, `limit`); no key required |
+| `GET` | `/api/rag/search` | Ranked chunks for a query (`q`, `limit`, and an optional `document_id` that scopes it to one document); no key required |
+| `GET` | `/api/rag/documents` | The corpus: `id`, `title`, `created_at` and the page and chunk counts of each document |
 | `POST` | `/api/rag/documents` | Upload a PDF and queue background processing; `multipart/form-data` with one `file` part |
 | `GET` | `/api/rag/documents/{id}/status` | Processing status of an uploaded document |
 
