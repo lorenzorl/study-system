@@ -318,3 +318,35 @@ shared/ widgets/ architecture.test.ts shims-vue.d.ts`.
 §10 was amended in the same commit to state the implemented rule set, because a
 contract that describes its guard loosely invites a weaker one later. With this,
 all six phases of the migration are done and the shims no longer exist.
+
+**L12 (2026-10-17, Phase 6 native review)** — scoped to the Phase 6 commit
+(`4ce14ed`, base `2b54ca3`) with `baseRef` + `committedOnly`; the eligible host
+resolved the consent for this target itself, so no relay was needed. Lineage
+`review-a95cf7f9a366fada`, medium tier, lenses **readability + reliability**, 11
+files / 334 lines, correction budget 167. Two reviewer runs (`pi_host_relay`), both
+approved on the last admitted event; the acknowledgement burned the authority.
+
+Six findings, all **non-blocking advisories** — none opened a correction:
+
+- `R2-001` (readability, WARNING) and `R3-1` (reliability, WARNING):
+  `src/architecture.test.ts:73-89` — both point at `importsOf`, the three regexes
+  that extract specifiers. The extraction is textual: it does not understand
+  `require(`, and a `from "…"` inside a comment or a string would read as an
+  import. Neither occurs in `src/` today, and a false positive fails loudly, so
+  the risk to keep in mind is the false negative when an unusual import form
+  appears.
+- `R2-002` (readability, SUGGESTION): `src/architecture.test.ts:115` — the
+  `file.split("/") as [Layer | undefined]` cast that recovers `ownLayer`.
+- `R3-2` (reliability, WARNING): `src/architecture.test.ts:120-133` — the alias
+  branch derives the target unit by destructuring `parts`, while `ownLayer` comes
+  from that cast, so the two sides are not derived the same way.
+- `R3-3` (reliability, SUGGESTION): `src/architecture.test.ts:199-200` — the scan
+  runs once at module load, so the suite reports the tree as it was at collection
+  time.
+- `R2-003` (readability, WARNING): `odd/tasks/plugin-fsd-migration.md:288-290`.
+
+With all six phases approved, **twenty-eight** advisories are open across the six
+reviews (14 from Phases 1-4, 8 from Phase 5, 6 from Phase 6). L10 said
+"twenty-three" after Phase 5, which was one too many: 14 + 8 was 22. None is
+blocking, none reopened a candidate, and the migration contract now has no open
+task.
