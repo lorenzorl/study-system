@@ -31,9 +31,66 @@ vi.mock("@/shared/obsidian", () => ({
 }))
 
 import { listVaultFiles, processVaultFile } from "@/shared/obsidian"
-import { appendTurn, createChatNote, listChatPaths } from "./chat-note"
+import { appendTurn, createChatForTitle, createChatNote, listChatPaths } from "./chat-note"
 
 const PATH = "Study Dashboard/Chats/tutor.md"
+
+// A create that lands on a path that already exists must not replace it: the two
+// default clicks on "Nuevo chat" both name the note "chat", and one of them must
+// not consume the other's transcript.
+describe("createChatNote on a path that already exists", () => {
+  it("keeps the transcript, the prompt and the user's prose", async () => {
+    const existing = [
+      "---",
+      "tags: mine",
+      "---",
+      "USER TEXT",
+      "<!-- prompt:begin -->",
+      "mi prompt",
+      "<!-- prompt:end -->",
+      "TAIL",
+      "<!-- chat:begin -->",
+      "### 🧑 hola",
+      "<!-- chat:end -->",
+    ].join("\n")
+    fake.store.set(PATH, existing)
+
+    await createChatNote(PATH, "nuevo", {
+      model: null,
+      temperature: null,
+      topK: null,
+    })
+
+    const stored = fake.store.get(PATH) as string
+    expect(stored).toContain("USER TEXT")
+    expect(stored).toContain("TAIL")
+    expect(stored).toContain("tags: mine")
+    expect(stored).toContain("### 🧑 hola")
+    expect(stored).toContain("mi prompt")
+  })
+})
+
+// The scenario the user hits: "Nuevo chat" twice, both named "Chat".
+describe("createChatForTitle", () => {
+  it("counts up instead of replacing the chat that holds the name", async () => {
+    const first = await createChatForTitle("Chat", "p", {
+      model: null,
+      temperature: null,
+      topK: null,
+    })
+    await appendTurn(first, { role: "user", content: "hola", sources: [] })
+
+    const second = await createChatForTitle("Chat", "p", {
+      model: null,
+      temperature: null,
+      topK: null,
+    })
+
+    expect(first).toBe("Study Dashboard/Chats/chat.md")
+    expect(second).toBe("Study Dashboard/Chats/chat-2.md")
+    expect(fake.store.get(first)).toContain("hola")
+  })
+})
 
 function baseNote(): string {
   return [

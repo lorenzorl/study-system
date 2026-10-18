@@ -62,10 +62,26 @@ export function setChatPrompt(raw: string, prompt: string): string {
   return insertAfterFrontmatter(raw, renderPromptRegion(prompt))
 }
 
-/** Replaces only the frontmatter block, adding one at the top when absent. */
+/**
+ * Replaces only the three keys the plugin owns, inside the frontmatter block,
+ * adding a block at the top when the note has none.
+ *
+ * Every other key the user put there is kept: a chat note is still a note, and
+ * `tags:` or `title:` are theirs. The plugin writes only `model`,
+ * `temperature` and `top_k`, which is what makes clearing an override exact
+ * instead of a guess about which line it was.
+ */
 export function setChatSettings(raw: string, settings: ChatNoteSettings): string {
-  const { body } = parseFrontmatter(raw)
-  return serializeFrontmatter(settingsToData(settings)) + body
+  const { data, body } = parseFrontmatter(raw)
+  const merged = { ...data, ...settingsToData(settings) }
+
+  // A note with no frontmatter and no overrides to write gains nothing from an
+  // empty block, so it is left exactly as it was.
+  if (Object.keys(data).length === 0 && !hasSerializableValue(merged)) {
+    return raw
+  }
+
+  return serializeFrontmatter(merged) + body
 }
 
 /** Inserts a turn before `<!-- chat:end -->`, or appends a whole region. */
@@ -104,7 +120,76 @@ export function slugifyChatTitle(title: string): string {
   return slug === "" ? "chat" : slug
 }
 
+/**
+ * Fold a chat's prompt and overrides into a note that already exists, without
+ * replacing any of it.
+ *
+ * This is the second line of defence: `createChatForTitle` in the slice's api
+ * picks a free path first. It exists because a create that lands on an existing
+ * path would otherwise consume a note the user owns, and losing a transcript to
+ * two clicks on "Nuevo chat" is not a failure a reader could detect afterwards.
+ *
+ * The prompt is added only when the note has no prompt region of its own: an
+ * existing prompt is the user's, and the note already holds a conversation that
+ * the plugin did not start.
+ */
+export function mergeIntoExistingNote(
+  raw: string,
+  prompt: string,
+  settings: ChatNoteSettings,
+): string {
+  const withSettings = setChatSettings(raw, settings)
+  const withPrompt = hasRegion(withSettings, PROMPT_BEGIN, PROMPT_END)
+    ? withSettings
+    : setChatPrompt(withSettings, prompt)
+
+  return ensureChatRegion(withPrompt)
+}
+
+/**
+ * The path a new chat titled `title` should take inside `folder`.
+ *
+ * The title is the user's and may repeat; the path is ours and may not. A taken
+ * name gets a counter, so a second "Nuevo chat" makes a second chat instead of
+ * replacing the first one's note.
+ */
+export function uniqueChatPath(
+  existingPaths: string[],
+  folder: string,
+  title: string,
+): string {
+  const slug = slugifyChatTitle(title)
+  const taken = new Set(existingPaths)
+
+  let candidate = `${folder}/${slug}.md`
+  let counter = 2
+
+  while (taken.has(candidate)) {
+    candidate = `${folder}/${slug}-${counter}.md`
+    counter += 1
+  }
+
+  return candidate
+}
+
 // ── internals ───────────────────────────────────────────────────────────────
+
+function hasRegion(raw: string, begin: string, end: string): boolean {
+  return extractRegion(raw, begin, end) !== null
+}
+
+/** Adds an empty chat region at the end when the note has none. */
+function ensureChatRegion(raw: string): string {
+  return hasRegion(raw, CHAT_BEGIN, CHAT_END) ? raw : appendChatRegion(raw, "")
+}
+
+function hasSerializableValue(
+  data: Record<string, string | number | null | undefined>,
+): boolean {
+  return Object.values(data).some(
+    (value) => value !== null && value !== undefined && value !== "",
+  )
+}
 
 function extractRegion(
   raw: string,

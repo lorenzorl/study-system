@@ -1,15 +1,13 @@
 import { defineStore } from "pinia"
 import { ref } from "vue"
-import { chatsFolderPath } from "@/shared/obsidian"
 import {
   appendTurn as apiAppendTurn,
-  createChatNote as apiCreateChatNote,
+  createChatForTitle as apiCreateChatForTitle,
   listChatPaths as apiListChatPaths,
   readChatNote as apiReadChatNote,
   writeChatPrompt as apiWriteChatPrompt,
   writeChatSettings as apiWriteChatSettings,
 } from "../api/chat-note"
-import { slugifyChatTitle } from "../lib/note"
 import type { ChatNote, ChatNoteSettings, ChatTurn } from "./types"
 
 const DEFAULT_SETTINGS: ChatNoteSettings = {
@@ -55,11 +53,12 @@ export const useChatsStore = defineStore("chats", () => {
     prompt = "",
     settings: ChatNoteSettings = DEFAULT_SETTINGS,
   ) {
-    const path = `${chatsFolderPath()}/${slugifyChatTitle(title)}.md`
     loading.value = true
     error.value = null
     try {
-      await apiCreateChatNote(path, prompt, settings)
+      // The api owns the naming: a title that is already taken gets a free path,
+      // so creating a chat twice cannot replace the first one's note.
+      const path = await apiCreateChatForTitle(title, prompt, settings)
       paths.value = await apiListChatPaths()
       note.value = await apiReadChatNote(path)
       currentPath.value = path

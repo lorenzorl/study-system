@@ -17,9 +17,11 @@ import type { ChatNote, ChatNoteSettings, ChatTurn } from "../model/types"
 import {
   appendChatTurn,
   createChatNote as buildChatNote,
+  mergeIntoExistingNote,
   parseChatNote,
   setChatPrompt,
   setChatSettings,
+  uniqueChatPath,
 } from "../lib/note"
 
 export async function listChatPaths(): Promise<string[]> {
@@ -30,12 +32,41 @@ export async function readChatNote(path: string): Promise<ChatNote> {
   return parseChatNote(await readVaultFile(path), path)
 }
 
+/**
+ * Create a chat note for a title, at a path that is free.
+ *
+ * The title is the user's and may repeat; the path is ours and may not. Two
+ * default clicks on "Nuevo chat" therefore make two chats, because the second
+ * one counts up instead of landing on the first one's file.
+ *
+ * Returns the path it wrote, so the caller can select the chat it just made
+ * rather than recomputing the name and guessing wrong.
+ */
+export async function createChatForTitle(
+  title: string,
+  prompt: string,
+  settings: ChatNoteSettings,
+): Promise<string> {
+  const path = uniqueChatPath(await listChatPaths(), chatsFolderPath(), title)
+
+  await createChatNote(path, prompt, settings)
+
+  return path
+}
+
 export async function createChatNote(
   path: string,
   prompt: string,
   settings: ChatNoteSettings,
 ): Promise<void> {
-  await processVaultFile(path, () => buildChatNote(prompt, settings))
+  // An empty file is a new note. A file with content is a note the user already
+  // has — the store picks a free path first, so reaching this branch means the
+  // path appeared since — and it is folded into rather than replaced.
+  await processVaultFile(path, (data) =>
+    data.trim() === ""
+      ? buildChatNote(prompt, settings)
+      : mergeIntoExistingNote(data, prompt, settings),
+  )
 }
 
 export async function writeChatPrompt(
