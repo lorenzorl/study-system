@@ -77,8 +77,10 @@ round-tripea sin prefijo ni markdown.
   el snippet de FTS5 son 12 tokens y no alcanza como contexto para el modelo (ver L4).
 - **Un turno que no se pudo escribir.** La pregunta se persiste antes de recuperar y de llamar
   al modelo, así que sobrevive a un fallo posterior de la recuperación o del proveedor. Si la
-  escritura del vault falla, el store de chats guarda el error y el envío continúa igual: el
-  usuario ve la respuesta en pantalla, pero ningún turno queda en la nota. Está acotado a un
+  escritura del vault falla, el store de chats guarda el error y el envío continúa igual:
+  ningún turno queda en la nota, y **la respuesta que se vio mientras streameaba desaparece**
+  al terminar, porque `ChatThread` la renderiza bajo `v-if="sending"` y el `finally` del envío
+  lo apaga (hallazgo `R3-2` del slice C1, ver `odd/tasks/review-findings.md`). Está acotado a un
   vault que rechaza escrituras y no está cubierto por un test; se acepta y se deja escrito en
   vez de agregar una comprobación frágil sobre un error que puede venir de antes.
 
