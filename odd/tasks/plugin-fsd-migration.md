@@ -244,3 +244,41 @@ larger scaffolding candidate. One pre-existing cast in `app/main.ts`
 repository's lens rejects undocumented casts; the line and its runtime behavior
 are unchanged, and widening `setObsidianApp` to `App | null` stays a candidate
 cleanup.
+
+**L10 (2026-10-17, Phase 5 native review)** — scoped to the Phase 5 commit
+(`2f4d666`, base `4818ea8`) by passing `baseRef` + `committedOnly` to START:
+`inspect` alone resolves the candidate against the merge-base with
+`origin/master` (`6263269`, the whole 30-commit branch), which is the
+`lens_context_budget_exceeded` shape; the explicit base froze the candidate to the
+29 files of this phase. Lineage `review-4138ec58a1e55bf9`, medium tier, lenses
+**risk + readability + reliability**, 29 files / 1014 lines, correction budget
+200. Three reviewer runs (`pi_host_relay`), all approved on the last admitted
+event; the acknowledgement burned the authority.
+
+Eight findings, all **non-blocking advisories** — none opened a correction, none
+reopens this review:
+
+- `R2-001` (readability, WARNING):
+  `features/upload-document/ui/UploadDocumentForm.vue:40-48`.
+- `R2-002` (readability, WARNING): `shared/api/client.ts:73-74`.
+- `R2-003` (readability, WARNING): `shared/api/client.ts:81`.
+- `R2-004` (readability, SUGGESTION):
+  `entities/document/model/types.ts:3-4`.
+- `R3-parse-refactor-untested` (reliability, WARNING):
+  `shared/api/client.ts:64-82` — the `parseJsonResponse` extraction has no
+  committed test. This is the same gap L9 flagged by hand, so the throwaway probe
+  remains the only evidence; promoting it to a permanent suite is the obvious
+  follow-up.
+- `R3-render-arithmetic-on-scores` (reliability, SUGGESTION):
+  `widgets/search-results/ui/SearchResults.vue:20-23`.
+- `R3-search-race-no-sequencing` (reliability, SUGGESTION):
+  `features/search-corpus/model/useSearchCorpus.ts:19-24` — two overlapping
+  searches can land out of order.
+- `R3-shared-sync-default-message` (reliability, WARNING):
+  `shared/api/client.ts:88` — the shared default message still says "al
+  sincronizar" for every endpoint; pre-existing, now reachable from search and
+  upload too.
+
+With Phase 5 approved, twenty-three advisories are open across the five reviews;
+none is blocking and none reopened a candidate. T6 (boundary test plus shim and
+`src/vue-app/` cleanup) is the only task left in the contract.
