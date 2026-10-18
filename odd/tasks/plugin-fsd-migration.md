@@ -166,3 +166,27 @@ advisories**, recorded here as later work:
 
 None opened a correction. As with L5, the whole-branch candidate was rejected
 with `lens_context_budget_exceeded`, so each review is scoped to a single commit.
+
+**L8 (2026-10-17, Phase 1 and Phase 2 native reviews)** — the two remaining
+phases were reviewed after a **temporary detached checkout**, because the
+provider builds the candidate as `base-ref .. HEAD`: with HEAD at Phase 4, any
+base before Phase 3 pulled Phases 2+3+4 into one candidate and exceeded the
+budget. Phase 2 (`811ad31`, base `2f596f4`, lineage `review-8fd560d1e7128d0f`, 59
+files) and Phase 1 (`2f596f4`, base `60c9117`, lineage `review-123f2444c64fb802`,
+26 files) both came back **approved**, and both acknowledgements burned their
+authority. The branch returned to `master` afterwards.
+
+Non-blocking advisories, recorded as later work:
+
+- Phase 2: `R2-metrics-dead-torefs` (readability, SUGGESTION)
+  `entities/metrics/model/useMetricsStore.ts:25-31`; `R2-shim-export-surface`
+  (readability, WARNING) `src/types.ts:3-8`; `R2-topic-validation-duplication`
+  (readability, SUGGESTION) `entities/topic/model/validation.ts:9-13`;
+  `R3-001` (reliability, SUGGESTION)
+  `entities/review/model/useReviewStore.ts:35-61`.
+- Phase 1: `R3-001` (reliability, WARNING)
+  `shared/obsidian/useObsidian.ts:40-42`; `R3-002` (reliability, SUGGESTION)
+  `vitest.config.ts:11`.
+
+All four FSD phases are now reviewed and approved. Fourteen advisories were
+raised across the four reviews; none is blocking, and none reopened a candidate.
