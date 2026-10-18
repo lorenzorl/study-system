@@ -193,3 +193,60 @@ no alcanza. Se agrega `text` (el texto completo del chunk) a la respuesta, de fo
 `snippet` queda para la UI, `text` para el contexto del modelo. Es un campo más en una
 respuesta cuyo único consumidor es este plugin, y el servidor sigue sirviendo documentos,
 que es exactamente lo que S3 le deja hacer.
+
+**L7 (2026-10-18, review nativo del slice A: aprobado con una corrección)** — el candidato
+entero no entró en el presupuesto de contexto del review (`lens_context_budget_exceeded`, 78
+paths / 6638 líneas), así que se acordó revisarlo por slice. El slice A (23 paths, 1186 líneas,
+base `ab88b3a`) se revisó con `risk` y `reliability` y terminó **aprobado**
+(`review-117aada2c5b6067d`, autoridad quemada).
+
+- Dos capturas de la lente de confiabilidad fueron refusadas por admisión, con payloads del
+  relay no conformes (`line_suffix_not_integer`; después falta de
+  `evidence_class`/`causal_disposition` en un finding severo). La tercera entró, y ninguna
+  negativa consumió el slot.
+- El refutador no pudo lanzarse porque el rol `review-refuter` no tenía modelo en
+  `~/.pi/gentle-ai/models.json`; el usuario agregó ese rol y `review-validator`.
+- El refutador corroboró un hallazgo CRITICAL, `R3-legacy-api-base-resurrection`; la
+  corrección (`beca505`, integrada a la rama como `c2db830`) consume la clave legacy de
+  `localStorage` una sola vez, después de persistir el valor resuelto, así que la migración
+  deja de re-aplicarse y no pisa el default que el usuario guardó a propósito. El validador
+  dirigido la aceptó.
+
+Advisory del slice A (no bloqueantes; trabajo posterior, nunca motivo para re-correr el review):
+
+| ID | Lente | Sev | Ubicación |
+| --- | --- | --- | --- |
+| `R1-data-json-round-trip-drops-unknown-keys` | risk | SUGGESTION | `settings.ts:66-71` |
+| `R1-llm-api-key-plaintext-storage` | risk | WARNING | `settings.ts:65-72` |
+| `R1-search-full-text-exposure` | risk | WARNING | `rag/http/dto.go:27-30` |
+| `R3-data-json-whole-file-replace` | reliability | SUGGESTION | `settings.ts:66-78` |
+| `R3-hybrid-stage-text-unproved` | reliability | WARNING | `rag/app/search_test.go:77-101` |
+| `R3-onload-settings-failure-path` | reliability | WARNING | `app/settings-store.ts:29-35` |
+
+**L8 (2026-10-18, review nativo del slice B: aprobado con una corrección)** — slice B
+(`cdbdf81..e4f32b3`, 18 paths, 2268 líneas) con `risk`, `resilience` y `reliability` (3 de 3
+admitidas), lineage `review-90875faa44dfa943`, **aprobado**.
+
+- Las lentes de riesgo y confiabilidad encontraron **el mismo defecto** que la verificación
+  independiente ya había hallado y arreglado en `8d0f51b`: `createChat` derivaba el path sólo
+  del slug y el create descartaba el contenido existente, así que dos chats con el mismo
+  título consumían el transcript del primero (`R1-1` y `R3-1`, ambos CRITICAL). El refutador
+  lo corroboró. Dos caminos independientes, el mismo hallazgo: eso es lo que el review
+  separado por slice compra.
+- La corrección (`f3fea57`; 141 líneas de diff contra 130 declaradas y un tope de 200) aplica
+  el parche mínimo — `uniqueChatPath`, `mergeIntoExistingNote` y el store usándolos — con dos
+  tests de regresión observados RED antes. El validador dirigido la aceptó.
+- No hubo nada que integrar a la rama: ya traía el arreglo equivalente en `8d0f51b`.
+
+Advisory del slice B (9, no bloqueantes): `R1-2` (`shared/llm/client.ts:185-192`, WARNING),
+`R1-3` (`shared/obsidian/useObsidian.ts:99-104`, SUGGESTION), `R3-2` (`client.ts:189-191`,
+WARNING), `R3-3` (`entities/chat/lib/note.ts:69-70`, WARNING), `R3-4` (`note.ts:215-218`,
+WARNING), `R3-5` (`useObsidian.ts:139-141`, WARNING), `R4-create-orphans-file`
+(`useChatsStore.ts:60-68`, WARNING), `R4-degraded-list-silent` (`useObsidian.ts:126-133`,
+SUGGESTION), `R4-partial-content-dropped` (`client.ts:196-211`, WARNING).
+
+**Nota de proceso.** El candidato es siempre `base..HEAD`, así que para acotar cada slice hay
+que dejar HEAD en el tip del slice: se hace con un checkout detached por slice y se vuelve a
+la rama al terminar. Quedan pendientes de review: **C1** (`e4f32b3..063f852`, ~894 líneas) y
+**C2** (`063f852..8d0f51b`, ~2251 líneas).
+
