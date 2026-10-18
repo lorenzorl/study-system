@@ -221,6 +221,35 @@ describe("setChatPrompt", () => {
     )
     expect(result.endsWith(raw)).toBe(true)
   })
+
+  // The note is the user's file and they edit it with Obsidian's own editor
+  // (S2), so the markers can be duplicated or inverted by hand. Neither state
+  // may make the plugin write a prompt that it then re-reads wrong.
+  it("inserts a region ahead of an inverted end marker and parses its own write", () => {
+    const raw = "<!-- prompt:end -->\nviejo\n"
+
+    const result = setChatPrompt(raw, "nuevo")
+
+    expect(parseChatNote(result, PATH).chat.prompt).toBe("nuevo")
+    expect(result).toContain("viejo")
+  })
+
+  it("replaces the first of two regions and keeps the second one's bytes", () => {
+    const raw = [
+      "<!-- prompt:begin -->",
+      "primero",
+      "<!-- prompt:end -->",
+      "",
+      "<!-- prompt:begin -->",
+      "segundo",
+      "<!-- prompt:end -->",
+    ].join("\n")
+
+    const result = setChatPrompt(raw, "nuevo")
+
+    expect(parseChatNote(result, PATH).chat.prompt).toBe("nuevo")
+    expect(result).toContain("segundo")
+  })
 })
 
 // ── setChatSettings ─────────────────────────────────────────────────────────
