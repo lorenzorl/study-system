@@ -158,6 +158,12 @@ func TestSearchUseCase_ChunkFoundByBothStagesIsHybrid(t *testing.T) {
 	assert.Negative(t, results[0].Score)
 	assert.Contains(t, results[0].Snippet, "[aggregate]",
 		"a hybrid result keeps the lexical snippet, which marks the matched term")
+	// The hybrid result is assembled from the lexical one, so the whole chunk has
+	// to travel with it: the client prompts the model with Text, not with the
+	// 12-token snippet, and a hybrid result with an empty Text would answer from
+	// nothing.
+	assert.Equal(t, "the aggregate is the consistency boundary", results[0].Text,
+		"a hybrid result must carry the whole chunk text")
 }
 
 // A query of only punctuation has no meaning to embed. Embedding it and returning
