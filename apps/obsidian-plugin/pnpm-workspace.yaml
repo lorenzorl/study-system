@@ -1,0 +1,12 @@
+# pnpm 11 reads its settings here, not from the `pnpm` field in package.json.
+#
+# Install scripts stay blocked by default and `strictDepBuilds` is on, so an
+# unreviewed build makes `pnpm install` exit non-zero — and, because
+# `verifyDepsBeforeRun` defaults to `install`, it also makes every
+# `pnpm run <script>` fail. These two are reviewed and allowed:
+#   - esbuild: places the platform binary `pnpm run build` needs.
+#   - vue-demi: pinia's Vue 2/3 switch.
+# `onlyBuiltDependencies` no longer exists in v11; `allowBuilds` replaced it.
+allowBuilds:
+  esbuild: true
+  vue-demi: true
