@@ -2,7 +2,10 @@ package http
 
 import (
 	"context"
+	"io"
 
+	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/platform/storage"
+	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/rag/app"
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/rag/domain"
 )
 
@@ -29,3 +32,33 @@ type SearchUseCase interface {
 // whole index and make every search answer with the corpus. Absent or empty uses
 // app.DefaultSearchLimit.
 const MaxSearchLimit = 50
+
+// UploadDocumentStore persists an uploaded payload.
+//
+// It is deliberately narrow: the handler streams bytes and learns the artifact,
+// and the store keeps every other decision — where the file lands, how large it
+// may be — to itself.
+type UploadDocumentStore interface {
+	Put(ctx context.Context, originalName string, content io.Reader) (storage.Artifact, error)
+}
+
+// UploadDocumentRepository resolves the document for uploaded bytes. The method
+// set is the one app.FindOrCreateDocument needs, so the shared registration rule
+// is what actually creates the row.
+type UploadDocumentRepository interface {
+	FindByContentHash(ctx context.Context, contentSHA256 string) (*domain.Document, error)
+	Create(ctx context.Context, document *domain.Document) error
+}
+
+// DocumentProcessor queues a registered document for background processing.
+//
+// Submit must not block: the upload request returns as soon as the document is
+// queued, which is the asynchronous model (S2).
+type DocumentProcessor interface {
+	Submit(documentID string)
+}
+
+// DocumentStatusUseCase builds a document's processing status.
+type DocumentStatusUseCase interface {
+	Execute(ctx context.Context, documentID string) (app.DocumentStatus, error)
+}

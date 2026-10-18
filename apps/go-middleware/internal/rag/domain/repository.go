@@ -59,6 +59,14 @@ type ChunkRepository interface {
 	// from is the same text the lexical index holds, and taking it from here avoids
 	// re-reading and re-chunking the page outcomes.
 	ListDocumentChunks(ctx context.Context, documentID string) ([]StoredChunk, error)
+
+	// CountByDocument returns how many chunks the document has.
+	//
+	// It is an aggregate read, not a list: the processing-status endpoint needs
+	// the count, and reading the chunks to count them would load every chunk's
+	// text to answer a question about how many. An unknown document returns 0, not
+	// an error: "no chunk" and "no document" are the same answer here.
+	CountByDocument(ctx context.Context, documentID string) (int, error)
 }
 
 // MatchStage names the retrieval stage that produced a search result, so a
@@ -134,6 +142,20 @@ type JobRepository interface {
 	UpdateStatus(ctx context.Context, job *IngestionJob) error
 }
 
+// PageCounts is the number of recorded page outcomes of a job, grouped by
+// terminal status. It carries no total: the job owns that, and Pending is
+// derived from the two, exactly as domain.Progress derives it.
+type PageCounts struct {
+	// Extracted is how many pages came from the PDF's own text layer.
+	Extracted int
+
+	// Transcribed is how many pages came from the model.
+	Transcribed int
+
+	// Failed is how many pages produced nothing usable.
+	Failed int
+}
+
 // PageOutcomeRepository manages the recorded per-page outcomes of a job.
 type PageOutcomeRepository interface {
 	// SaveOutcome records a page's outcome, replacing any earlier outcome for the
@@ -152,4 +174,12 @@ type PageOutcomeRepository interface {
 	// materialized from recorded text, so a resumed run needs the pages it did
 	// not touch just as much as the ones it did.
 	ListOutcomes(ctx context.Context, jobID string) ([]PageOutcome, error)
+
+	// CountByJob returns how many recorded outcomes the job has, by status.
+	//
+	// It is what the processing-status endpoint reads instead of ListOutcomes:
+	// the status needs counts, and ListOutcomes would load every page's text to
+	// answer it. A job with no recorded outcome returns a zero PageCounts and no
+	// error.
+	CountByJob(ctx context.Context, jobID string) (PageCounts, error)
 }

@@ -273,9 +273,17 @@ func TestSearchHandler_UseCaseError(t *testing.T) {
 	assert.Equal(t, "internal server error", errResp.Error)
 }
 
+// newSearchRouter builds the RAG router with a search use case and the document
+// routes stubbed out, so the search-route tests stay focused on search.
+func newSearchRouter(search httppkg.SearchUseCase) http.Handler {
+	return httppkg.NewRouter(search,
+		httppkg.NewUploadDocumentHandler(nil, nil, nil, false),
+		httppkg.NewDocumentStatusHandler(nil))
+}
+
 func TestRouter_RegistersSearchRoute(t *testing.T) {
 	mock := &mockSearchUseCase{results: []domain.SearchResult{}}
-	router := httppkg.NewRouter(mock)
+	router := newSearchRouter(mock)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/rag/search?q=x", nil)
 	rec := httptest.NewRecorder()
@@ -288,7 +296,7 @@ func TestRouter_RegistersSearchRoute(t *testing.T) {
 
 func TestRouter_RejectsOtherMethods(t *testing.T) {
 	mock := &mockSearchUseCase{}
-	router := httppkg.NewRouter(mock)
+	router := newSearchRouter(mock)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/rag/search?q=x", nil)
 	rec := httptest.NewRecorder()

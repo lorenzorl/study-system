@@ -221,6 +221,22 @@ func (r *ChunkRepository) ListDocumentChunks(ctx context.Context, documentID str
 	return chunks, nil
 }
 
+// CountByDocument returns how many chunks the document has, without reading any
+// of their text.
+//
+// The count is answered by the chunks primary key, so it stays a single index
+// scan however large the document is. An unknown document counts zero.
+func (r *ChunkRepository) CountByDocument(ctx context.Context, documentID string) (int, error) {
+	var count int
+	if err := r.db.QueryRowContext(ctx,
+		`SELECT count(*) FROM chunks WHERE document_id = ?`,
+		documentID,
+	).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count the chunks of document %s: %w", documentID, err)
+	}
+	return count, nil
+}
+
 // matchQuery turns the user's text into an FTS5 MATCH expression.
 //
 // FTS5's MATCH grammar is a small query language — quotes, star, caret, NEAR,

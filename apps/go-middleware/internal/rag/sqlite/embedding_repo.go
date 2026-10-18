@@ -157,6 +157,26 @@ func (r *EmbeddingRepository) ListByModel(ctx context.Context, model string) ([]
 	return stored, nil
 }
 
+// CountByDocument returns how many vectors the document has for model, without
+// reading any of their blobs.
+//
+// The model filter is the same one ListByModel applies: a vector produced by
+// another model is not part of the current model's set, so it is not counted. An
+// unknown document counts zero.
+func (r *EmbeddingRepository) CountByDocument(ctx context.Context, documentID, model string) (int, error) {
+	var count int
+	if err := r.db.QueryRowContext(ctx,
+		`SELECT count(*)
+		 FROM chunk_embeddings e
+		 JOIN chunks c ON c.id = e.chunk_id
+		 WHERE c.document_id = ? AND e.model = ?`,
+		documentID, model,
+	).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count the embeddings of document %s: %w", documentID, err)
+	}
+	return count, nil
+}
+
 // encodeVector writes a vector as float32, little-endian, dimensions*4 bytes.
 func encodeVector(vector []float32) []byte {
 	blob := make([]byte, len(vector)*4)

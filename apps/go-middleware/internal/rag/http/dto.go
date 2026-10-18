@@ -38,3 +38,42 @@ type SearchResultResponse struct {
 	// the semantic stage did not rank the chunk.
 	Similarity float64 `json:"similarity"`
 }
+
+// UploadDocumentResponse is the body of the 202 returned by
+// POST /api/rag/documents.
+type UploadDocumentResponse struct {
+	// DocumentID identifies the document the bytes belong to. The same bytes
+	// always resolve to the same document, so a re-upload resumes it.
+	DocumentID string `json:"document_id"`
+
+	// State is the processing state the document starts in. It is always
+	// "queued": the request returns before any page is attempted.
+	State string `json:"state"`
+}
+
+// DocumentStatusResponse is the status object returned by
+// GET /api/rag/documents/{documentID}/status.
+//
+// The error and the timestamps are omitted when empty, so a queued document does
+// not carry a null error or a zero instant that reads as year 1.
+type DocumentStatusResponse struct {
+	DocumentID string               `json:"document_id"`
+	Title      string               `json:"title"`
+	State      string               `json:"state"`
+	Pages      PageProgressResponse `json:"pages"`
+	Chunks     int                  `json:"chunks"`
+	Embedded   int                  `json:"embedded"`
+	Error      string               `json:"error,omitempty"`
+	StartedAt  string               `json:"started_at,omitempty"`
+	UpdatedAt  string               `json:"updated_at,omitempty"`
+	FinishedAt string               `json:"finished_at,omitempty"`
+}
+
+// PageProgressResponse is the per-page breakdown of the status object.
+type PageProgressResponse struct {
+	Total       int `json:"total"`
+	Extracted   int `json:"extracted"`
+	Transcribed int `json:"transcribed"`
+	Failed      int `json:"failed"`
+	Pending     int `json:"pending"`
+}

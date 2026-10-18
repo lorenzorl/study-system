@@ -93,6 +93,15 @@ type EmbeddingRepository interface {
 	// search: comparing a 1024-dimension vector against a 3072-dimension query
 	// would either fail or, worse, produce a similarity that means nothing.
 	ListByModel(ctx context.Context, model string) ([]StoredEmbedding, error)
+
+	// CountByDocument returns how many vectors the document has for model.
+	//
+	// It is an aggregate read, not a list: the processing-status endpoint needs
+	// the count, and ListByModel would read every vector's blob to answer a
+	// question about how many. The model filter is the same one ListByModel
+	// applies, so a vector from another model is not counted. An unknown document
+	// returns 0, not an error.
+	CountByDocument(ctx context.Context, documentID, model string) (int, error)
 }
 
 // Cosine returns the cosine similarity of two vectors, in [-1, 1].

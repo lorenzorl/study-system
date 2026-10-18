@@ -1,7 +1,7 @@
 # Backlog — open findings
 
 **Single source of truth for everything deliberately not fixed yet.**
-Updated: 2026-10-17 (step 5 slice 5.1 — chunk index and lexical search)
+Updated: 2026-10-17 (step 6 — HTTP upload and processing status)
 
 A follow-up is a finding that was real, but outside the scope of the step that
 found it. Fixing it mid-step would make that step unverifiable: you could no
@@ -130,7 +130,6 @@ not run yet.
 
 | Item | Owner | Why open |
 | --- | --- | --- |
-| HTTP multipart upload endpoint + body-size middleware | step 4 (`rag/http`) | Uploads belong to the context that owns documents, together with `http.MaxBytesReader`. |
 | Conversation/retrieval surface | step 5 slice 5.3 | Designed in `odd/tasks/step5-search.md`; the HTTP route is not built yet. |
 | FTS5 query syntax (`NEAR`, prefixes, field filters) | step 5 slice 5.1 | The user's text is treated as literal terms joined with `OR`; recorded in `odd/tasks/step5-search.md`. |
 
@@ -154,6 +153,7 @@ Kept so the same work is not proposed twice.
 | `STUDY_OPENROUTER_API_KEY` and `STUDY_LLM_MODEL` were documented but unread | step 4 slice 4 — `platform/config` reads both, `platform/llm` consumes them, and `cmd/ingest` fails before page 1 when the key is missing |
 | An ingestion run had no cost ceiling and no way to see the cost before paying it | ingest hardening — the run plans first and prints the plan, `-dry-run` stops there having written nothing, and `-max-model-pages N` refuses before anything is stored or created. The measured price of a real run (US$ 0,0013 per model page, 31s to 1m41s each) made time the real ceiling, which is why the plan reports counts and an estimate rather than only a cap |
 | `-out` overwrote whatever was at that path | ingest hardening — a target without the generated header is refused, `-force` replaces it deliberately, and the file is written 0644 because a vault is shared |
+| HTTP multipart upload endpoint + body-size middleware | step 6 — `POST /api/rag/documents` streams the body into `storage.Store.Put` under `http.MaxBytesReader`, and `GET /api/rag/documents/{id}/status` reports the derived state. An in-process background processor runs ingestion, indexing and embeddings; a restart loses in-flight state and re-uploading resumes |
 
 ### B1 (closed) — the original description was wrong, and that matters
 

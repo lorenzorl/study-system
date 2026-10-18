@@ -531,7 +531,8 @@ func (r IngestRequest) validate() error {
 //
 // The content hash is the identity, so a resume finds the existing document. On a
 // hit the bytes are NOT stored again: the stored payload is what the page ports
-// operate on, and re-storing would leave an orphan artifact per run.
+// operate on, and re-storing would leave an orphan artifact per run. The rule
+// itself lives in FindOrCreateDocument, shared with the HTTP upload path.
 func (uc *IngestDocumentUseCase) findOrCreateDocument(
 	ctx context.Context,
 	request IngestRequest,
@@ -557,24 +558,9 @@ func (uc *IngestDocumentUseCase) findOrCreateDocument(
 		return nil, fmt.Errorf("store %s: %w", request.PDFPath, err)
 	}
 
-	document := &domain.Document{
-		ID:            uc.newID(),
-		Title:         request.Title,
-		ArtifactID:    artifact.ID,
-		SourceURI:     request.SourceURI,
-		ContentSHA256: contentHash,
-		CreatedAt:     now,
-	}
-	if err := uc.documents.Create(ctx, document); err != nil {
-		if errors.Is(err, apperror.ErrConflict) {
-			// Another run inserted the same bytes first. Reuse its document rather
-			// than splitting one book across two rows.
-			found, findErr := uc.documents.FindByContentHash(ctx, contentHash)
-			if findErr != nil {
-				return nil, fmt.Errorf("look up document for %s: %w", request.PDFPath, findErr)
-			}
-			return found, nil
-		}
+	document, err := FindOrCreateDocument(ctx, uc.documents, artifact, contentHash,
+		request.Title, request.SourceURI, now, uc.newID)
+	if err != nil {
 		return nil, fmt.Errorf("create document for %s: %w", request.PDFPath, err)
 	}
 

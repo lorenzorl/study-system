@@ -90,6 +90,8 @@ the variables, and create `.env` with the ones you need to override.
 | `GET` | `/api/study/due` | Flashcards whose next review is due |
 | `POST` | `/api/study/review` | Record a review, recompute the card state |
 | `GET` | `/api/rag/search` | Ranked chunks for a query (`q`, `limit`); no key required |
+| `POST` | `/api/rag/documents` | Upload a PDF and queue background processing; `multipart/form-data` with one `file` part |
+| `GET` | `/api/rag/documents/{id}/status` | Processing status of an uploaded document |
 
 ## Configuration
 
@@ -352,6 +354,70 @@ mounts it under `/api/rag/` with `httpx.CORS` as the outermost wrapper.
   `STUDY_OPENROUTER_API_KEY` set the server upgrades to the hybrid use case, and
   it still degrades to lexical-only when the configured model has no stored
   vectors.
+
+## Document upload and processing status
+
+`POST /api/rag/documents` accepts a PDF and queues it;
+`GET /api/rag/documents/{documentID}/status` reports how far processing has got.
+The pipeline runs in the background in the same process (S2): the upload returns
+immediately and the client polls the status. Processing is ingestion, the lexical
+index, and the embeddings, so an uploaded book is hybrid-searchable when it
+completes (S3). The intended consumer is the Obsidian plugin; there is no UI.
+
+### Upload
+
+`POST /api/rag/documents`
+
+- **Body.** `multipart/form-data` with one `file` part. The part is streamed into
+  the artifact store; only the five `%PDF-` header bytes are buffered, and the
+  SHA-256 is computed on the same stream. The document is found by content hash
+  and created only when absent, so re-uploading the same bytes resumes the same
+  document.
+- **`202 Accepted`** with `{"document_id": "<id>", "state": "queued"}`.
+- **`400 Bad Request`** when the request is not multipart, has no `file` part,
+  the part is empty, or the bytes do not start with `%PDF-`.
+- **`413 Request Entity Too Large`** when the body exceeds
+  `STUDY_MAX_UPLOAD_BYTES`; the store enforces the ceiling.
+- **`503 Service Unavailable`** when `STUDY_OPENROUTER_API_KEY` is unset. The
+  pipeline cannot transcribe a page without it, so the upload is refused up
+  front rather than queued to fail later. The server still boots and serves
+  search and status.
+
+The Markdown lands at `data/artifacts/<artifact-id>/book.md`, next to the stored
+PDF (S4). No new configuration is involved.
+
+### Status
+
+`GET /api/rag/documents/{documentID}/status`
+
+- **`200 OK`** with the status object:
+
+```json
+{
+  "document_id": "…",
+  "title": "DDD.pdf",
+  "state": "queued|converting|indexing|completed|failed",
+  "pages": {"total": 359, "extracted": 333, "transcribed": 26, "failed": 0, "pending": 0},
+  "chunks": 1045,
+  "embedded": 1045,
+  "error": "…",
+  "started_at": "…",
+  "updated_at": "…",
+  "finished_at": "…"
+}
+```
+
+- **`state` is derived, never stored.** A recorded in-process failure wins; then
+  no job means `queued`; a running or pending job means `converting`; a failed
+  job means `failed`; a completed job means `indexing` until `embedded >= chunks`,
+  then `completed`.
+- `error`, `started_at`, `updated_at` and `finished_at` are omitted when empty.
+- Counts come from aggregate reads, so a poll never loads page or chunk text.
+- **`404 Not Found`** when the document is unknown.
+
+The processor's queue and its last error live in memory. A server restart loses
+them; the document and its recorded pages stay in the database, so re-uploading
+the same bytes resumes from where it stopped.
 
 ## Schema migrations
 

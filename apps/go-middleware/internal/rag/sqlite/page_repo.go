@@ -101,3 +101,45 @@ func (r *PageOutcomeRepository) ListOutcomes(ctx context.Context, jobID string) 
 
 	return outcomes, nil
 }
+
+// CountByJob returns the number of recorded outcomes of a job, grouped by
+// status, without reading any page text.
+//
+// The GROUP BY is answered by the job_pages primary key, so the query touches
+// only the index. An unknown job, like a job with no recorded page, counts zero.
+func (r *PageOutcomeRepository) CountByJob(ctx context.Context, jobID string) (domain.PageCounts, error) {
+	counts := domain.PageCounts{}
+
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT status, count(*) FROM job_pages WHERE job_id = ? GROUP BY status`,
+		jobID,
+	)
+	if err != nil {
+		return counts, fmt.Errorf("count page outcomes: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			status string
+			count  int
+		)
+		if err := rows.Scan(&status, &count); err != nil {
+			return counts, fmt.Errorf("scan page count: %w", err)
+		}
+
+		switch domain.PageStatus(status) {
+		case domain.PageExtracted:
+			counts.Extracted = count
+		case domain.PageTranscribed:
+			counts.Transcribed = count
+		case domain.PageFailed:
+			counts.Failed = count
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return counts, fmt.Errorf("iterate page counts: %w", err)
+	}
+
+	return counts, nil
+}
