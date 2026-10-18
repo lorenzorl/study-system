@@ -113,13 +113,13 @@ hay consecuencia observable.
 | `R3-5` (B) | CERRAR | — | El filtro es más ancho de lo necesario (también dispara con subcarpetas); el único efecto es una recarga extra de la lista |
 | `R4-create-orphans-file` | DECISIÓN | La nota queda creada pero no seleccionada, y el mensaje dice que no se pudo crear | Borrarla es destructivo y el plugin no tiene camino de borrado; decir otra cosa es cambiar el mensaje de producto |
 | `R4-degraded-list-silent` | CERRAR | — | Inalcanzable con el wiring entregado: `main.ts:14` instala la app antes de que exista una vista, y `onunload` la limpia cuando ya no hay UI |
-| `R4-partial-content-dropped` | DECISIÓN | Si el stream se corta, el texto ya recibido se descarta: ni en la nota ni en pantalla | Qué hacer con media respuesta es producto (guardarla, mostrarla, preguntar). No se toca |
+| `R4-partial-content-dropped` | ARREGLADO | Si el stream se corta, el texto ya recibido se descarta: ni en la nota ni en pantalla | Decisión del usuario: se guarda con la marca de interrumpida (`savePartialAnswer`, `useSendMessage.ts`) |
 | `R1-error-passthrough` | CERRAR | — | El mensaje del proveedor ya viene acotado (`toSingleLine`, 300 chars, `4a3cbd1`) y se lee sólo `error.message` |
 | `R3-1` (C1) | CERRAR | — | El orden está probado: el test afirma la secuencia exacta `append:user, search, stream, append:assistant` |
 | `R3-2` (C1) | CERRAR (informe) | El contrato promete que el usuario ve la respuesta en pantalla aunque falle la escritura | El contrato sobrepromete; la discrepancia exacta está abajo y la decide el padre. No se edita el feature doc |
 | `R3-3` (C1) | CERRAR | — | Los dos caminos tienen test: falta la key y falta el chat abierto |
 | `R4-001` | CERRAR | — | Probado: la pregunta queda persistida y no se anexa turno del asistente si la recuperación o el stream fallan |
-| `R4-002` | DECISIÓN | Al cancelar, la respuesta parcial desaparece de la pantalla y la nota queda con la pregunta sola | Qué se limpia y qué se conserva al cancelar es producto; se cruza con `R4-partial-content-dropped` |
+| `R4-002` | ARREGLADO | Al cancelar, la respuesta parcial desaparecía de la pantalla y la nota quedaba con la pregunta sola | La misma decisión cubre la cancelación: también se guarda lo que llegó, con la marca |
 | `R4-003` | ARREGLAR | Un segundo envío en vuelo intercalaba dos respuestas, anexaba cuatro turnos por dos preguntas y dejaba el primer `controller` inalcanzable | Guarda de reentrada en `useSendMessage.send`; test RED primero |
 | `R4-004` | CERRAR | — | `trimHistory` está probado (4 tests) y `historyTurns` viene clampeado a [0, 50] |
 | `R2-create-chat-duplicates-starting-default` | CERRAR | — | El literal está duplicado, pero `ChatNoteSettings` hace que una divergencia sea error de compilación: no cambia comportamiento |
@@ -161,3 +161,12 @@ hallazgos advisory que dejaron los cuatro reviews nativos.
 `R4-create-orphans-file`, `R4-partial-content-dropped`, `R4-002`) y **20 CERRAR**, de los
 cuales tres se cierran dejando un test (`R3-hybrid-stage-text-unproved`, `R3-002`). Los dos
 fuera de alcance se reportan sin tocar código. Nada de esto está commiteado todavía.
+
+**L3 (2026-10-18, decisión del usuario sobre la media respuesta)** — ante la pregunta "si el
+stream se corta a mitad, o apretás Detener, ¿qué hacemos con la respuesta parcial?", el usuario
+eligió **guardarla marcada como interrumpida**. Ya implementado: `savePartialAnswer` en
+`useSendMessage.ts` appendea el turno con la marca `— respuesta interrumpida` tanto en el fallo
+como en la cancelación, y no guarda nada si no llegó ni un delta. La marca va dentro del
+contenido, en texto plano, porque el hilo renderiza el contenido tal cual y porque el modelo,
+al leer el historial, merece saber que la respuesta anterior se cortó. Cierra
+`R4-partial-content-dropped` y `R4-002`, que eran la misma pregunta de producto.

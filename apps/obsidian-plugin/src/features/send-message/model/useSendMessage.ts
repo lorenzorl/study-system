@@ -23,6 +23,16 @@ const NO_CHAT_ERROR =
 const RETRIEVAL_ERROR = "No se pudo buscar en el corpus."
 const SEND_ERROR = "No se pudo obtener la respuesta del modelo."
 
+/**
+ * The line that marks an answer the stream cut short.
+ *
+ * Plain text and not markdown: the thread renders a turn's content verbatim, so
+ * an italic marker would show its own asterisks. It travels inside the turn's
+ * content, which means the model reads it too — and that is the point: the next
+ * answer should know the previous one was interrupted.
+ */
+export const INTERRUPTED_MARKER = "— respuesta interrumpida"
+
 export const useSendMessage = defineStore("send-message", () => {
   const sending = ref(false)
   /** The deltas received so far, so a UI can render the answer as it arrives. */
@@ -121,13 +131,45 @@ export const useSendMessage = defineStore("send-message", () => {
       if (!isAbort(e)) {
         error.value = messageOf(e, SEND_ERROR)
       }
+
+      // Whatever arrived is text the user already read on screen, so letting it
+      // vanish when the stream ends loses an answer instead of protecting them
+      // from half of one. It is saved marked as interrupted, from a failure and
+      // from their own cancel alike (findings R4-partial-content-dropped and
+      // R4-002).
+      await savePartialAnswer(chats)
     } finally {
       controller = null
       sending.value = false
     }
   }
 
-  /** Abort the stream in flight; the partial answer stays in `answer`. */
+  /**
+   * Save what arrived before the stream was cut, marked as interrupted.
+   *
+   * Nothing arrived means nothing to save: an empty turn would leave a marker in
+   * the transcript for a question the model never began to answer.
+   */
+  async function savePartialAnswer(
+    chats: ReturnType<typeof useChatsStore>,
+  ): Promise<void> {
+    const partial = answer.value.trim()
+
+    if (partial === "") return
+
+    try {
+      await chats.appendTurn({
+        role: "assistant",
+        content: `${partial}\n\n${INTERRUPTED_MARKER}`,
+        sources: [],
+      })
+    } catch {
+      // The chat store reports its own write failures in its own error, and a
+      // failure here must not replace the reason the answer was cut.
+    }
+  }
+
+  /** Abort the stream in flight; what arrived so far is saved as interrupted. */
   function cancel(): void {
     controller?.abort()
   }

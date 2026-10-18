@@ -62,7 +62,7 @@ vi.mock("@/entities/chat", () => ({
   }),
 }))
 
-import { useSendMessage } from "./useSendMessage"
+import { INTERRUPTED_MARKER, useSendMessage } from "./useSendMessage"
 
 const SEARCH_RESULT = {
   chunk_id: "c1",
@@ -354,6 +354,40 @@ describe("useSendMessage.send", () => {
     ])
     expect(store.answer).toBe("hola")
   })
+
+  it("keeps a partial answer, marked as interrupted, when the stream fails", async () => {
+    mocks.streamChatCompletion.mockImplementation(
+      async (req: { onDelta?: (delta: string) => void }) => {
+        mocks.state.calls.push("stream")
+        req.onDelta?.("Un agregado es")
+        throw new Error("el stream se cortó")
+      },
+    )
+    const store = useSendMessage()
+
+    await store.send("¿Qué es el agregado?")
+
+    expect(store.error).toContain("el stream se cortó")
+    expect(store.answer).toContain("Un agregado es")
+    expect(mocks.state.note?.turns.at(-1)).toEqual({
+      role: "assistant",
+      content: `Un agregado es\n\n${INTERRUPTED_MARKER}`,
+      sources: [],
+    })
+  })
+
+  it("saves no turn when the stream failed before a single delta", async () => {
+    mocks.streamChatCompletion.mockImplementation(async () => {
+      mocks.state.calls.push("stream")
+      throw new Error("sin red")
+    })
+    const store = useSendMessage()
+
+    await store.send("¿Qué es el agregado?")
+
+    expect(mocks.state.calls).not.toContain("append:assistant")
+    expect(store.error).toContain("sin red")
+  })
 })
 
 describe("useSendMessage.cancel", () => {
@@ -386,6 +420,41 @@ describe("useSendMessage.cancel", () => {
     expect(store.error).toBeNull()
     expect(store.sending).toBe(false)
     expect(mocks.state.calls).not.toContain("append:assistant")
+  })
+
+  it("saves what arrived before the cancel, marked as interrupted", async () => {
+    mocks.streamChatCompletion.mockImplementation(
+      (req: { signal?: AbortSignal; onDelta?: (delta: string) => void }) => {
+        mocks.state.calls.push("stream")
+        req.onDelta?.("Un agregado")
+
+        return new Promise((_resolve, reject) => {
+          req.signal?.addEventListener("abort", () => {
+            const error = new Error("La respuesta se canceló.")
+
+            error.name = "AbortError"
+            reject(error)
+          })
+        })
+      },
+    )
+    const store = useSendMessage()
+
+    const pending = store.send("¿Qué es el agregado?")
+
+    await vi.waitFor(() => {
+      expect(store.answer).toContain("Un agregado")
+    })
+
+    store.cancel()
+    await pending
+
+    expect(store.error).toBeNull()
+    expect(mocks.state.note?.turns.at(-1)).toEqual({
+      role: "assistant",
+      content: `Un agregado\n\n${INTERRUPTED_MARKER}`,
+      sources: [],
+    })
   })
 
   it("is a no-op when nothing is in flight", () => {
