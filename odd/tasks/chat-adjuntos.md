@@ -434,3 +434,38 @@ Control de tamaño: la fase 3 son ~1040 líneas autoradas, muy por encima del te
 mayor parte son cinco archivos de test nuevos, y T6 y T7 son dos comportamientos distintos que
 debieron ir en dos commits. Se entrega como una unidad ya verificada y **no se reescribe la
 historia**; de acá en adelante cada fase va en un commit por tarea cuando supere el techo.
+
+**L12 (2026-10-18, review nativo del candidato: aprobado)** — linaje `review-d82fa77ea46bbe56`,
+target `sha256:7a8ae5…`, riesgo **medium**, 4 lentes (risk, resilience, readability, reliability),
+25 archivos y 1683 líneas, con presupuesto de corrección de 200. Los 4 reviewers corrieron (4/4,
+relay del host Pi) y el review **aprobó**; la autoridad quedó quemada con
+`gentle-ai.review-acknowledged/v1` y la entrega vuelve a la política ordinaria del repositorio.
+
+El candidato revisado es **todo el diff de la rama** contra `master` (fases 1 y 3 más este
+documento), no una unidad de commit: es lo que el proveedor acotó al abrir la autoridad, y es
+más ancho de lo que esta estrategia de entrega pide.
+
+Doce hallazgos, **todos no bloqueantes** (`disposition: informational`): ninguno abrió una
+corrección, ninguno reabre el review, y el proveedor no ofrece transición de corrección para
+este candidato. **Su texto completo no viene en el sobre de la facade**: se registran por id,
+lente, ubicación y severidad, tal como llegaron, y su lectura completa queda pendiente para
+triarlos.
+
+`WARNING` — dos que ya estaban declarados acá y que el review confirmó por su cuenta:
+
+- `R3-topk-inert` (reliability) y `R4-inert-topk` (resilience) — `useSendMessage.ts:87-89,96`.
+  Es el `top_k` inerte de L9.
+- `R4-latency-nplus1` (resilience) y `R3-corpus-list-2n-plus-1` (reliability) —
+  `documents.go:63-89,68-77`. Es el 2N+1 de L11.
+
+`WARNING` nuevo: `R4-count-fail-all` (`documents.go:70-77`) — si falla una consulta de conteo,
+falla la lista entera. No es alcanzable por la API hoy; queda como trabajo posterior.
+
+`SUGGESTION`: `R1-001` (`documents_handler.go:20-21`), `R2-001` (`documents.go:40`), `R2-002`
+(`prompt.ts:30-37`), `R2-003` (`chunk_repo.go:53-72`), `R2-004` (este archivo, la línea del
+`Status`), `R3-pages-count-across-jobs` (`page_repo.go:105-122`, el conteo de páginas por jobs de
+L11) y `R4-unscoped-preserve` (`chunk_repo.go:192-196`).
+
+Ninguno de los doce es trabajo de este candidato. El review es una vista externa adicional: no
+reemplaza los chequeos funcionales, que ya se corrieron (271/271 en el plugin, 501 en Go), y no
+autoriza entrega.
