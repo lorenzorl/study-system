@@ -151,3 +151,18 @@ Since there are no component tests, the moved pages/widgets were checked with
 byte-exact diffs against their originals (five are identical) plus `tsc` and the
 build for the two extracted grids. The only DOM difference is the grid container
 class names, whose scoped CSS moved with the widgets.
+
+**L7 (2026-10-17, Phase 4 native review)** — scoped to the Phase 4 commit
+(`0745426`, base `eba6227`): lineage `review-b6a581694996ea63`, medium tier,
+lenses **readability + reliability**, 31 files. It came back **approved** and the
+acknowledgement burned the authority. Three findings were **non-blocking
+advisories**, recorded here as later work:
+
+- `R2-001` (readability, SUGGESTION):
+  `widgets/concept-list/ui/ConceptList.vue:7`.
+- `R3-001` (reliability, WARNING):
+  `widgets/concept-list/ui/ConceptList.vue:1-35`.
+- `R3-002` (reliability, SUGGESTION): `widgets/topic-list/ui/TopicList.vue:2`.
+
+None opened a correction. As with L5, the whole-branch candidate was rejected
+with `lens_context_budget_exceeded`, so each review is scoped to a single commit.
