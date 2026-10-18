@@ -1,6 +1,6 @@
 # Plugin FSD migration
 
-**Status:** in progress — T5 (Phase 5, new slices) done and committed; T6 pending.
+**Status:** complete — T1-T6 done; all six phases verified, committed and reviewed.
 **Created:** 2026-10-17
 **Contract:** `apps/obsidian-plugin/ARCHITECTURE.md` — governing. It holds the
 layers, the dependency rule, the slice conventions, the Obsidian boundary, the
@@ -41,7 +41,7 @@ re-export shims at the old paths are deleted in phase 6.
       pages. (S2, S3)
 - [x] T5 — Phase 5 New slices: scaffold `chat`/`document`/`search` and register
       the `study-chat` tab from `app/`. (S2, S3)
-- [ ] T6 — Phase 6 Enforcement + cleanup: add the boundary test, delete the shims
+- [x] T6 — Phase 6 Enforcement + cleanup: add the boundary test, delete the shims
       and `src/vue-app/`. (S2, S3)
 
 ## Log
@@ -282,3 +282,39 @@ reopens this review:
 With Phase 5 approved, twenty-three advisories are open across the five reviews;
 none is blocking and none reopened a candidate. T6 (boundary test plus shim and
 `src/vue-app/` cleanup) is the only task left in the contract.
+
+**L11 (2026-10-17, Phase 6 verified and committed)** — the enforcement guard and
+the cleanup. `npm test` is now **101 passed (11 files)**: the 94 are untouched and
+the guard adds 7. `npm run build` exited 0 and `npx tsc --noEmit -skipLibCheck`
+exited 0.
+
+`src/architecture.test.ts` walks every `.ts`/`.vue` under `src/`, extracts every
+module specifier (`from "…"`, dynamic `import("…")` and side-effect `import "…"`),
+and reports violations per rule: upward imports, same-layer siblings, alias
+imports that miss a slice root, relative imports that leave their own slice, the
+`obsidian` boundary, and files outside the layers that import into them. A seventh
+case asserts the walk found the expected files, so the guard cannot pass vacuously.
+No dependency was added: the ESLint option stays unused, as decided in §10.
+
+The guard was proven to fire, not merely to be green. Before the cleanup it went
+**RED with 24 `unlayered-module` violations**, one per re-export in the eight
+shims — the exact set this phase deletes. Each remaining rule was then proven with
+a throwaway, otherwise type-valid probe file
+(`src/features/__boundary-probe.ts`, one bad import per rule): **5 failed, 2
+passed**, one violation per rule and no false positive. The probe was deleted
+before the final run, so nothing of it is committed.
+
+Deleted: `src/types.ts`, `src/validation.ts` and the whole `src/vue-app/` tree
+(six files, six directories), plus the empty `src/__mocks__` left behind by
+Phase 1 — eight files. Nothing referenced any of them: checked with `grep` before
+deleting, and `tsc`, the build and the suite confirm it after.
+`grep -rn "vue-app/" src/ dev/` is empty; `grep -rnE 'from "@/pages/'
+src/widgets src/features src/entities src/shared` is empty; `grep -rln 'from
+"obsidian"' src/` still lists only `app/main.ts`, `app/study-view.ts`,
+`app/study-chat-view.ts` and `shared/obsidian/useObsidian.ts`. The `src/` top level
+is now exactly the §5 target plus the guard: `app/ entities/ features/ pages/
+shared/ widgets/ architecture.test.ts shims-vue.d.ts`.
+
+§10 was amended in the same commit to state the implemented rule set, because a
+contract that describes its guard loosely invites a weaker one later. With this,
+all six phases of the migration are done and the shims no longer exist.

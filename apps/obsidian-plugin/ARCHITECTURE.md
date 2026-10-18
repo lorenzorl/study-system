@@ -345,6 +345,15 @@ upward, to a sibling slice of the same layer, or when a file other than `app/`
 and `shared/obsidian/` imports `obsidian`. ESLint remains a possible future
 upgrade, but the repository adds no dependency now.
 
+**Implemented (2026-10-17, Phase 6):** `src/architecture.test.ts` is that test.
+It walks every `.ts`/`.vue` under `src/`, extracts module specifiers, and fails on
+six rules: an alias import to a higher layer; a same-layer sibling slice; an alias
+import that does not land on a slice root (`@/<layer>/<slice>`, while `shared` is
+addressed by segment as `@/shared/<segment>[/<file>]`); a relative import that
+leaves the file's own slice; `obsidian` outside `app/` and `shared/obsidian/`; and
+any file outside the layers that imports into them. A seventh case asserts the walk
+actually found the expected files, so the guard cannot pass vacuously.
+
 ## 11. Migration phases
 
 Each phase is mechanical and keeps the suite at **94 passing tests**. During migration, old paths keep thin re-export shims (`export * from "@/…"`) so untouched importers and tests stay green; shims are deleted in Phase 6.
