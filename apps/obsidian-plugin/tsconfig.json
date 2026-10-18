@@ -14,7 +14,8 @@
     "rootDir": "./src",
     "baseUrl": ".",
     "paths": {
-      "obsidian": ["./node_modules/obsidian/obsidian.d.ts"]
+      "obsidian": ["./node_modules/obsidian/obsidian.d.ts"],
+      "@/*": ["./src/*"]
     }
   },
   "include": ["src/**/*.ts", "src/**/*.vue"],

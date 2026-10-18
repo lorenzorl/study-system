@@ -1,9 +1,9 @@
 import { ItemView, type WorkspaceLeaf } from "obsidian"
 import { createApp, type App as VueApp } from "vue"
 import { createPinia } from "pinia"
-import { router } from "./vue-app/router"
-import App from "./vue-app/App.vue"
-import { setObsidianApp } from "./vue-app/composables/useObsidian"
+import { router } from "./router"
+import App from "./ui/App.vue"
+import { setObsidianApp } from "@/shared/obsidian"
 
 export const STUDY_VIEW_TYPE = "study-dashboard"
 

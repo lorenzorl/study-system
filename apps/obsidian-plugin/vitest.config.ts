@@ -4,7 +4,11 @@ import path from "path";
 export default defineConfig({
   resolve: {
     alias: {
-      obsidian: path.resolve(__dirname, "src/__mocks__/obsidian.ts"),
+      obsidian: path.resolve(
+        __dirname,
+        "src/shared/obsidian/__mocks__/obsidian.ts",
+      ),
+      "@": path.resolve(__dirname, "src"),
     },
   },
   test: {

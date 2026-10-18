@@ -1,6 +1,6 @@
 import { Plugin, Notice, normalizePath } from "obsidian"
 import { StudyView, STUDY_VIEW_TYPE } from "./study-view"
-import { setObsidianApp, useObsidian } from "./vue-app/composables/useObsidian"
+import { setObsidianApp, useObsidian } from "@/shared/obsidian"
 
 export default class FlashcardPlugin extends Plugin {
   async onload(): Promise<void> {
@@ -67,10 +67,10 @@ export default class FlashcardPlugin extends Plugin {
 
   async syncActiveNote(): Promise<void> {
     const { syncConcept, syncFlashcards } = await import(
-      "./vue-app/services/api"
+      "@/vue-app/services/api"
     )
     const { parseFlashcards } = await import(
-      "./vue-app/services/markdown-parser"
+      "@/vue-app/services/markdown-parser"
     )
 
     const obsidian = useObsidian()

@@ -10,7 +10,7 @@ import {
   sanitizeFolderName,
   topicFolderPath,
   conceptFolderPath,
-} from "../useObsidian"
+} from "./useObsidian"
 
 // ── sanitizeFolderName ──────────────────────────────────────────────────────
 

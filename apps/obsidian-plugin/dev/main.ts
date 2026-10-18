@@ -1,7 +1,7 @@
 import { createApp } from "vue"
 import { createRouter, createWebHistory } from "vue-router"
 import { createPinia } from "pinia"
-import App from "../src/vue-app/App.vue"
+import App from "@/app/ui/App.vue"
 import DashboardView from "../src/vue-app/views/DashboardView.vue"
 import TopicView from "../src/vue-app/views/TopicView.vue"
 import ConceptView from "../src/vue-app/views/ConceptView.vue"

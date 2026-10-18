@@ -1,10 +1,10 @@
 import { createRouter, createMemoryHistory } from "vue-router"
-import DashboardView from "../views/DashboardView.vue"
-import TopicView from "../views/TopicView.vue"
-import ConceptView from "../views/ConceptView.vue"
-import FlashcardSession from "../views/FlashcardSession.vue"
-import FeynmanModule from "../views/FeynmanModule.vue"
-import DueCardsView from "../views/DueCardsView.vue"
+import DashboardView from "@/vue-app/views/DashboardView.vue"
+import TopicView from "@/vue-app/views/TopicView.vue"
+import ConceptView from "@/vue-app/views/ConceptView.vue"
+import FlashcardSession from "@/vue-app/views/FlashcardSession.vue"
+import FeynmanModule from "@/vue-app/views/FeynmanModule.vue"
+import DueCardsView from "@/vue-app/views/DueCardsView.vue"
 
 const routes = [
   {
