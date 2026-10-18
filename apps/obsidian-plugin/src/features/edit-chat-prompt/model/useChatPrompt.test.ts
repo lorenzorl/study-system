@@ -39,6 +39,7 @@ function noteWithPrompt(prompt: string): ChatNote {
       settings: { model: null, temperature: null, topK: null },
     },
     turns: [],
+    attachments: [],
   }
 }
 

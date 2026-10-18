@@ -4,6 +4,7 @@
  * block. Anything the user wrote outside those regions is copied byte for byte.
  */
 import type {
+  ChatAttachment,
   ChatNote,
   ChatNoteSettings,
   ChatTurn,
@@ -13,6 +14,8 @@ import { parseFrontmatter, serializeFrontmatter } from "./frontmatter"
 
 export const PROMPT_BEGIN = "<!-- prompt:begin -->"
 export const PROMPT_END = "<!-- prompt:end -->"
+export const ATTACHMENTS_BEGIN = "<!-- adjuntos:begin -->"
+export const ATTACHMENTS_END = "<!-- adjuntos:end -->"
 export const CHAT_BEGIN = "<!-- chat:begin -->"
 export const CHAT_END = "<!-- chat:end -->"
 
@@ -23,6 +26,7 @@ const SOURCE_PREFIX = "Fuente: "
 export function parseChatNote(raw: string, path: string): ChatNote {
   const { data } = parseFrontmatter(raw)
   const promptRegion = extractRegion(raw, PROMPT_BEGIN, PROMPT_END)
+  const attachmentsRegion = extractRegion(raw, ATTACHMENTS_BEGIN, ATTACHMENTS_END)
   const chatRegion = extractRegion(raw, CHAT_BEGIN, CHAT_END)
 
   return {
@@ -33,6 +37,7 @@ export function parseChatNote(raw: string, path: string): ChatNote {
       settings: settingsFromData(data),
     },
     turns: chatRegion === null ? [] : parseTurns(chatRegion),
+    attachments: parseAttachments(attachmentsRegion),
   }
 }
 
@@ -41,7 +46,7 @@ export function createChatNote(
   settings: ChatNoteSettings,
 ): string {
   const frontmatter = serializeFrontmatter(settingsToData(settings))
-  return `${frontmatter}${renderPromptRegion(prompt)}\n\n${CHAT_BEGIN}\n${CHAT_END}\n`
+  return `${frontmatter}${renderPromptRegion(prompt)}\n\n${renderAttachmentsRegion([])}\n\n${CHAT_BEGIN}\n${CHAT_END}\n`
 }
 
 /** Replaces only what is between the prompt markers; inserts a region if absent. */
@@ -82,6 +87,38 @@ export function setChatSettings(raw: string, settings: ChatNoteSettings): string
   }
 
   return serializeFrontmatter(merged) + body
+}
+
+/**
+ * Replaces the attachments region with `attachments`, writing one line per
+ * entry in the given order, and copies everything outside the region byte for
+ * byte.
+ *
+ * The plugin owns this region, exactly as it owns the prompt and chat regions:
+ * a line the parser cannot read is dropped on rewrite instead of being kept as
+ * an error. The note is still readable and editable by hand, and the walker
+ * that reads it simply ignores what it cannot understand. When the note has no
+ * region yet, one is inserted before the chat region (or at the end when there
+ * is no chat region).
+ */
+export function setAttachments(
+  raw: string,
+  attachments: ChatAttachment[],
+): string {
+  const beginIndex = raw.indexOf(ATTACHMENTS_BEGIN)
+  const endIndex =
+    beginIndex === -1
+      ? -1
+      : raw.indexOf(ATTACHMENTS_END, beginIndex + ATTACHMENTS_BEGIN.length)
+
+  if (beginIndex !== -1 && endIndex !== -1) {
+    const inner = renderAttachmentsInner(attachments)
+    return (
+      raw.slice(0, beginIndex + ATTACHMENTS_BEGIN.length) + inner + raw.slice(endIndex)
+    )
+  }
+
+  return insertAttachmentsRegion(raw, renderAttachmentsRegion(attachments))
 }
 
 /** Inserts a turn before `<!-- chat:end -->`, or appends a whole region. */
@@ -221,6 +258,87 @@ function renderPromptRegion(prompt: string): string {
     return `${PROMPT_BEGIN}\n${PROMPT_END}`
   }
   return `${PROMPT_BEGIN}\n${prompt}\n${PROMPT_END}`
+}
+
+function renderAttachment(attachment: ChatAttachment): string {
+  if (attachment.kind === "corpus") {
+    return `- corpus | ${attachment.documentId.trim()} | ${attachment.title.trim()}`
+  }
+  return `- vault | ${attachment.path.trim()}`
+}
+
+/** What goes between the markers: a single newline when the list is empty. */
+function renderAttachmentsInner(attachments: ChatAttachment[]): string {
+  if (attachments.length === 0) return "\n"
+  return `\n${attachments.map(renderAttachment).join("\n")}\n`
+}
+
+function renderAttachmentsRegion(attachments: ChatAttachment[]): string {
+  return `${ATTACHMENTS_BEGIN}${renderAttachmentsInner(attachments)}${ATTACHMENTS_END}`
+}
+
+/**
+ * Inserts a whole attachments region before the chat region, or at the end
+ * when the note has no chat region. The original bytes stay as they are; only
+ * a separator is added to keep the block readable.
+ */
+function insertAttachmentsRegion(raw: string, region: string): string {
+  const chatIndex = raw.indexOf(CHAT_BEGIN)
+
+  if (chatIndex === -1) {
+    const separator = raw === "" ? "" : raw.endsWith("\n") ? "\n" : "\n\n"
+    return `${raw}${separator}${region}\n`
+  }
+
+  const head = raw.slice(0, chatIndex)
+  const prefix = head === "" || head.endsWith("\n") ? "" : "\n"
+  return `${head}${prefix}${region}\n\n${raw.slice(chatIndex)}`
+}
+
+function parseAttachments(region: string | null): ChatAttachment[] {
+  if (region === null) return []
+
+  const attachments: ChatAttachment[] = []
+  for (const line of region.split("\n")) {
+    const parsed = parseAttachmentLine(line)
+    if (parsed !== null) attachments.push(parsed)
+  }
+
+  return attachments
+}
+
+/**
+ * Reads one `- clase | identidad | etiqueta` line. Anything malformed returns
+ * `null` so the caller ignores it; a note is user-editable, and a typo must not
+ * break the chat.
+ */
+function parseAttachmentLine(line: string): ChatAttachment | null {
+  if (!line.startsWith("- ")) return null
+
+  const body = line.slice(2)
+  const firstPipe = body.indexOf("|")
+  if (firstPipe === -1) return null
+
+  const kind = body.slice(0, firstPipe).trim()
+  const rest = body.slice(firstPipe + 1)
+
+  if (kind === "vault") {
+    const path = rest.trim()
+    return path === "" ? null : { kind: "vault", path }
+  }
+
+  if (kind === "corpus") {
+    const secondPipe = rest.indexOf("|")
+    if (secondPipe === -1) return null
+
+    const documentId = rest.slice(0, secondPipe).trim()
+    const title = rest.slice(secondPipe + 1).trim()
+    if (documentId === "" || title === "") return null
+
+    return { kind: "corpus", documentId, title }
+  }
+
+  return null
 }
 
 function insertAfterFrontmatter(raw: string, region: string): string {

@@ -23,7 +23,19 @@ export interface Chat {
   settings: ChatNoteSettings
 }
 
+/**
+ * One thing the chat brings into context, in one of two classes that never mix.
+ *
+ * A `corpus` attachment is searched on the server through the tool; a `vault`
+ * attachment is a note that is sent whole. Keeping them a discriminated union
+ * means every consumer has to say which class it handles.
+ */
+export type ChatAttachment =
+  | { kind: "corpus"; documentId: string; title: string }
+  | { kind: "vault"; path: string }
+
 export interface ChatNote {
   chat: Chat
   turns: ChatTurn[]
+  attachments: ChatAttachment[]
 }

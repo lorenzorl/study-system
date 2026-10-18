@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest"
-import type { ChatNoteSettings } from "../model/types"
+import type { ChatAttachment, ChatNoteSettings } from "../model/types"
 import { parseFrontmatter } from "./frontmatter"
 import {
   appendChatTurn,
   createChatNote,
   parseChatNote,
+  setAttachments,
   setChatPrompt,
   setChatSettings,
 } from "./note"
@@ -19,6 +20,8 @@ const SETTINGS: ChatNoteSettings = {
 const PROMPT_END = "<!-- prompt:end -->"
 const CHAT_BEGIN = "<!-- chat:begin -->"
 const CHAT_END = "<!-- chat:end -->"
+const ATTACHMENTS_BEGIN = "<!-- adjuntos:begin -->"
+const ATTACHMENTS_END = "<!-- adjuntos:end -->"
 
 /** Everything strictly before the first occurrence of `marker`. */
 function before(raw: string, marker: string): string {
@@ -286,5 +289,179 @@ describe("setChatSettings", () => {
 
     expect(result.startsWith("---\nmodel: m\n---\n")).toBe(true)
     expect(result.endsWith(raw)).toBe(true)
+  })
+})
+
+// ── attachments region ──────────────────────────────────────────────────────
+
+/** A note whose only content is an attachments region, one line per entry. */
+function noteWithAttachmentLines(lines: string[]): string {
+  return [ATTACHMENTS_BEGIN, ...lines, ATTACHMENTS_END].join("\n")
+}
+
+const CORPUS: ChatAttachment = {
+  kind: "corpus",
+  documentId: "279fadac-07d5-442d-97dd-b9d107f97164",
+  title: "DDD",
+}
+const VAULT: ChatAttachment = { kind: "vault", path: "Notas/Tesis.md" }
+
+describe("parseChatNote attachments", () => {
+  it("a fresh note carries an empty attachments region between prompt and chat", () => {
+    const raw = createChatNote("p", SETTINGS)
+
+    const promptEnd = raw.indexOf(PROMPT_END)
+    const attachBegin = raw.indexOf(ATTACHMENTS_BEGIN)
+    const attachEnd = raw.indexOf(ATTACHMENTS_END)
+    const chatBegin = raw.indexOf(CHAT_BEGIN)
+
+    expect(promptEnd).toBeGreaterThanOrEqual(0)
+    expect(attachBegin).toBeGreaterThan(promptEnd)
+    expect(attachEnd).toBeGreaterThan(attachBegin)
+    expect(chatBegin).toBeGreaterThan(attachEnd)
+    expect(parseChatNote(raw, PATH).attachments).toEqual([])
+  })
+
+  it("parses one entry per line, trims each field and keeps the written order", () => {
+    const raw = noteWithAttachmentLines([
+      "- corpus | 279fadac-07d5-442d-97dd-b9d107f97164 |   DDD   ",
+      "- vault |   Notas/Tesis.md   ",
+    ])
+
+    expect(parseChatNote(raw, PATH).attachments).toEqual([CORPUS, VAULT])
+  })
+
+  it("reports no attachments when the region is absent", () => {
+    expect(parseChatNote("Just user text\n", PATH).attachments).toEqual([])
+  })
+
+  // Tolerance is a decision, not an accident: a malformed line is ignored,
+  // never an error, and the plugin drops it when it rewrites the region.
+  it("ignores a line that does not start with '- '", () => {
+    const raw = noteWithAttachmentLines([
+      "- vault | Notas/Tesis.md",
+      "vault | Notas/Otra.md",
+    ])
+
+    expect(parseChatNote(raw, PATH).attachments).toEqual([VAULT])
+  })
+
+  it("ignores a line whose kind is neither corpus nor vault", () => {
+    const raw = noteWithAttachmentLines(["- recurso | id | Título"])
+
+    expect(parseChatNote(raw, PATH).attachments).toEqual([])
+  })
+
+  it("ignores a corpus line missing its id", () => {
+    const raw = noteWithAttachmentLines(["- corpus |  | DDD"])
+
+    expect(parseChatNote(raw, PATH).attachments).toEqual([])
+  })
+
+  it("ignores a corpus line missing its title", () => {
+    const raw = noteWithAttachmentLines([
+      "- corpus | 279fadac-07d5-442d-97dd-b9d107f97164 |   ",
+    ])
+
+    expect(parseChatNote(raw, PATH).attachments).toEqual([])
+  })
+
+  it("ignores a vault line missing its path", () => {
+    const raw = noteWithAttachmentLines(["- vault |   "])
+
+    expect(parseChatNote(raw, PATH).attachments).toEqual([])
+  })
+})
+
+describe("setAttachments", () => {
+  it("replaces only what is between the markers", () => {
+    const raw = [
+      "USER INTRO",
+      ATTACHMENTS_BEGIN,
+      "- vault | viejo.md",
+      ATTACHMENTS_END,
+      "USER TAIL",
+      "",
+    ].join("\n")
+
+    const result = setAttachments(raw, [CORPUS])
+
+    expect(before(result, ATTACHMENTS_BEGIN)).toBe(before(raw, ATTACHMENTS_BEGIN))
+    expect(after(result, ATTACHMENTS_END)).toBe(after(raw, ATTACHMENTS_END))
+    expect(parseChatNote(result, PATH).attachments).toEqual([CORPUS])
+  })
+
+  it("round-trips both classes in the written order", () => {
+    const result = setAttachments(createChatNote("p", SETTINGS), [CORPUS, VAULT])
+
+    expect(parseChatNote(result, PATH).attachments).toEqual([CORPUS, VAULT])
+    expect(result).toContain(
+      "- corpus | 279fadac-07d5-442d-97dd-b9d107f97164 | DDD",
+    )
+    expect(result).toContain("- vault | Notas/Tesis.md")
+  })
+
+  it("writes an empty region", () => {
+    const result = setAttachments(noteWithAttachmentLines(["- vault | x.md"]), [])
+
+    expect(result).toContain(`${ATTACHMENTS_BEGIN}\n${ATTACHMENTS_END}`)
+    expect(parseChatNote(result, PATH).attachments).toEqual([])
+  })
+
+  it("is idempotent when called twice with the same list", () => {
+    const once = setAttachments(createChatNote("p", SETTINGS), [VAULT])
+    const twice = setAttachments(once, [VAULT])
+
+    expect(twice).toBe(once)
+  })
+
+  it("inserts a region before the chat region when the note has none", () => {
+    const raw = [
+      "USER INTRO",
+      "<!-- prompt:begin -->",
+      "p",
+      PROMPT_END,
+      "USER MIDDLE",
+      CHAT_BEGIN,
+      CHAT_END,
+      "USER TAIL",
+      "",
+    ].join("\n")
+
+    const result = setAttachments(raw, [VAULT])
+
+    expect(result.indexOf(ATTACHMENTS_BEGIN)).toBeGreaterThan(
+      result.indexOf(PROMPT_END),
+    )
+    expect(result.indexOf(ATTACHMENTS_BEGIN)).toBeLessThan(
+      result.indexOf(CHAT_BEGIN),
+    )
+    // Everything from the chat marker on is the original bytes, untouched.
+    expect(result.slice(result.indexOf(CHAT_BEGIN))).toBe(
+      raw.slice(raw.indexOf(CHAT_BEGIN)),
+    )
+    expect(parseChatNote(result, PATH).chat.prompt).toBe("p")
+    expect(parseChatNote(result, PATH).attachments).toEqual([VAULT])
+  })
+
+  it("appends a region at the end when the note has no chat region", () => {
+    const raw = "USER TEXT\n"
+
+    const result = setAttachments(raw, [VAULT])
+
+    expect(result.startsWith(raw)).toBe(true)
+    expect(parseChatNote(result, PATH).attachments).toEqual([VAULT])
+  })
+
+  it("drops a malformed line when it rewrites the region", () => {
+    const raw = noteWithAttachmentLines([
+      "- corpus | 279fadac-07d5-442d-97dd-b9d107f97164 | DDD",
+      "- roto | x | y",
+    ])
+
+    const result = setAttachments(raw, [VAULT])
+
+    expect(result).not.toContain("- roto")
+    expect(parseChatNote(result, PATH).attachments).toEqual([VAULT])
   })
 })
