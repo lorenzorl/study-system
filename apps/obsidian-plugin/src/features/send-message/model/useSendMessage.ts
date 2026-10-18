@@ -38,6 +38,11 @@ export const useSendMessage = defineStore("send-message", () => {
     // A blank question is not a question.
     if (!trimmed) return
 
+    // One send at a time. A second question while a stream is in flight would
+    // interleave two answers, append four turns for two questions and leave the
+    // first request's controller unreachable, so `cancel()` would stop working.
+    if (sending.value) return
+
     const settings = getSettings()
 
     if (settings.llmApiKey.trim() === "") {

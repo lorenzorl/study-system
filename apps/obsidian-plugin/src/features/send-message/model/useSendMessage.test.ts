@@ -316,6 +316,44 @@ describe("useSendMessage.send", () => {
 
     expect(store.answer).toBe("hola mundo")
   })
+
+  it("ignores a second question while the first one is still in flight", async () => {
+    // Both streams wait on the same gate, so without a reentrancy guard the two
+    // sends would interleave their appends and their deltas.
+    let openGate: () => void = () => {}
+    const gate = new Promise<void>((resolve) => {
+      openGate = resolve
+    })
+
+    mocks.streamChatCompletion.mockImplementation(
+      async (req: { onDelta?: (delta: string) => void }) => {
+        mocks.state.calls.push("stream")
+        await gate
+        req.onDelta?.("hola")
+        return { content: "hola", deltas: 1 }
+      },
+    )
+    const store = useSendMessage()
+
+    const first = store.send("primera")
+
+    await vi.waitFor(() => {
+      expect(mocks.state.calls).toContain("stream")
+    })
+
+    const second = store.send("segunda")
+
+    openGate()
+    await Promise.all([first, second])
+
+    expect(mocks.state.calls).toEqual([
+      "append:user",
+      "search",
+      "stream",
+      "append:assistant",
+    ])
+    expect(store.answer).toBe("hola")
+  })
 })
 
 describe("useSendMessage.cancel", () => {
