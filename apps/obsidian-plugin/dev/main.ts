@@ -2,36 +2,36 @@ import { createApp } from "vue"
 import { createRouter, createWebHistory } from "vue-router"
 import { createPinia } from "pinia"
 import App from "@/app/ui/App.vue"
-import DashboardView from "../src/vue-app/views/DashboardView.vue"
-import TopicView from "../src/vue-app/views/TopicView.vue"
-import ConceptView from "../src/vue-app/views/ConceptView.vue"
-import FlashcardSession from "../src/vue-app/views/FlashcardSession.vue"
-import FeynmanModule from "../src/vue-app/views/FeynmanModule.vue"
+import { DashboardPage } from "@/pages/dashboard"
+import { TopicPage } from "@/pages/topic"
+import { ConceptPage } from "@/pages/concept"
+import { FlashcardSessionPage } from "@/pages/flashcard-session"
+import { FeynmanPage } from "@/pages/feynman"
 
 const routes = [
-  { path: "/", name: "dashboard", component: DashboardView },
+  { path: "/", name: "dashboard", component: DashboardPage },
   {
     path: "/topic/:topicId",
     name: "topic",
-    component: TopicView,
+    component: TopicPage,
     props: true,
   },
   {
     path: "/topic/:topicId/concept/:conceptId",
     name: "concept",
-    component: ConceptView,
+    component: ConceptPage,
     props: true,
   },
   {
     path: "/topic/:topicId/concept/:conceptId/flashcards",
     name: "flashcards",
-    component: FlashcardSession,
+    component: FlashcardSessionPage,
     props: true,
   },
   {
     path: "/topic/:topicId/concept/:conceptId/feynman",
     name: "feynman",
-    component: FeynmanModule,
+    component: FeynmanPage,
     props: true,
   },
 ]

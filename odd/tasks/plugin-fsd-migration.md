@@ -37,7 +37,7 @@ re-export shims at the old paths are deleted in phase 6.
 - [x] T3 — Phase 3 Features: extract `create-topic`, `create-concept`,
       `sync-note`, `configure-api-base`, `select-topic`, `select-concept`,
       `review-card`. (S2, S3)
-- [ ] T4 — Phase 4 Widgets + pages: split `DashboardView` and rename the views to
+- [x] T4 — Phase 4 Widgets + pages: split `DashboardView` and rename the views to
       pages. (S2, S3)
 - [ ] T5 — Phase 5 New slices: scaffold `chat`/`document`/`search` and register
       the `study-chat` tab from `app/`. (S2, S3)
@@ -110,3 +110,44 @@ Phase 4/6: `features/create-topic` and `features/create-concept` reach the vault
 through a **dynamic** `import("@/shared/obsidian")` so the Obsidian package is
 not pulled into the Vite dev graph; moving that side effect to `app/` is a
 candidate cleanup.
+
+**L5 (2026-10-17, Phase 3 native review)** — the review of the whole branch was
+rejected in preflight with `lens_context_budget_exceeded` (26 commits exceed the
+reviewer context budget; no authority was created). Scoped to the single Phase 3
+commit (`eba6227`, base `811ad31`): lineage `review-a105c89128afad50`, medium
+tier, lenses **readability + reliability**, 30 files / 2056 lines, correction
+budget 200. It came back **approved**, and the acknowledgement burned the
+authority. Five findings were **non-blocking advisories**, recorded here as later
+work — none opened a correction, and none is a reason to re-review this
+candidate:
+
+- `R2-duplicate-create-forms` (readability, WARNING):
+  `features/create-concept/ui/CreateConceptForm.vue:31-52` duplicates the
+  create-topic form.
+- `R2-sync-note-type-names` (readability, SUGGESTION):
+  `features/sync-note/model/useSyncNote.ts:20-33`.
+- `R2-topic-change-invariant` (readability, SUGGESTION):
+  `features/select-topic/model/useTopicSelection.ts:20-22`.
+- `R3-001` (reliability, WARNING): `app/main.ts:91-96`.
+- `R3-002` (reliability, WARNING):
+  `features/sync-note/model/useSyncNote.ts:93-152`.
+
+**L6 (2026-10-17, Phase 4 verified and committed)** — implemented by a bounded
+writer and re-verified by the parent. `npm test` stayed at **94 passed (10
+files)**; `npm run build` exited 0 (it compiles every reachable `.vue`) and `npx
+tsc --noEmit -skipLibCheck` was clean.
+
+Four widget slices were created (`metrics-bar`, `daily-review`, `topic-list`,
+`concept-list`) and six page slices (`dashboard`, `topic`, `concept`,
+`flashcard-session`, `due-cards`, `feynman`). The two remaining components and
+the six views moved into them, the topic and concept grids were extracted into
+their widgets, the router and `dev/main.ts` were rewired to `@/pages/*`, and the
+emptied `src/vue-app/views/` and `src/vue-app/components/` were deleted.
+
+The parent verified the rules: `grep` for `vue-app/views|vue-app/components` is
+empty; nothing under `widgets/`, `features/`, `entities/` or `shared/` imports a
+page; and `obsidian` is still imported only by `app/` and `shared/obsidian/`.
+Since there are no component tests, the moved pages/widgets were checked with
+byte-exact diffs against their originals (five are identical) plus `tsc` and the
+build for the two extracted grids. The only DOM difference is the grid container
+class names, whose scoped CSS moved with the widgets.

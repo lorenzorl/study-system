@@ -52,15 +52,11 @@
           </p>
         </div>
 
-        <div v-else class="topic-view__grid">
-          <ConceptCard
-            v-for="concept in currentTopic.concepts"
-            :key="concept.id"
-            :concept="concept"
-            :flashcard-count="flashcardCache.getCachedFlashcards(concept.id).length"
-            @select="goToConcept"
-          />
-        </div>
+        <ConceptList
+          v-else
+          :concepts="currentTopic.concepts"
+          @select="goToConcept"
+        />
       </section>
     </div>
   </div>
@@ -70,12 +66,11 @@
 import { computed, onMounted, ref } from "vue"
 import { useRouter } from "vue-router"
 import { storeToRefs } from "pinia"
-import { ConceptCard } from "@/entities/concept"
-import { useFlashcardCache } from "@/entities/flashcard"
 import { useTopicsStore } from "@/entities/topic"
 import { useTopicSelection } from "@/features/select-topic"
 import { useConceptSelection } from "@/features/select-concept"
 import { CreateConceptForm, useCreateConcept } from "@/features/create-concept"
+import { ConceptList } from "@/widgets/concept-list"
 
 const props = defineProps<{
   topicId: string
@@ -85,7 +80,6 @@ const router = useRouter()
 const topicsStore = useTopicsStore()
 const topicSelection = useTopicSelection()
 const conceptSelection = useConceptSelection()
-const flashcardCache = useFlashcardCache()
 const createConceptStore = useCreateConcept()
 
 const { currentTopic } = storeToRefs(topicSelection)
@@ -186,12 +180,6 @@ function cancelNewConcept() {
   min-height: 44px;
   display: flex;
   align-items: center;
-}
-
-.topic-view__grid {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
 }
 
 .topic-view__state {

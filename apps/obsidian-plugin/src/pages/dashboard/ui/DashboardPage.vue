@@ -42,14 +42,7 @@
         <p>No hay temas todavía. Sincronizá una nota para crear el primero.</p>
       </div>
 
-      <div v-else class="dashboard__grid">
-        <TopicCard
-          v-for="topic in topics"
-          :key="topic.id"
-          :topic="topic"
-          @select="goToTopic"
-        />
-      </div>
+      <TopicList v-else :topics="topics" @select="goToTopic" />
     </section>
 
     <ApiBaseSettings />
@@ -60,15 +53,16 @@
 import { computed, onMounted, ref } from "vue"
 import { useRouter } from "vue-router"
 import { storeToRefs } from "pinia"
-import { TopicCard, useTopicsStore } from "@/entities/topic"
+import { useTopicsStore } from "@/entities/topic"
 import { useTopicSelection } from "@/features/select-topic"
 import { useConceptSelection } from "@/features/select-concept"
 import { CreateTopicForm, useCreateTopic } from "@/features/create-topic"
 import { SyncNoteButton, useSyncNote } from "@/features/sync-note"
 import { ApiBaseSettings } from "@/features/configure-api-base"
 import { useReviewSession } from "@/features/review-card"
-import MetricsBar from "../components/MetricsBar.vue"
-import DailyReviewCard from "../components/DailyReviewCard.vue"
+import { MetricsBar } from "@/widgets/metrics-bar"
+import { DailyReviewCard } from "@/widgets/daily-review"
+import { TopicList } from "@/widgets/topic-list"
 
 const router = useRouter()
 const topicsStore = useTopicsStore()
@@ -220,12 +214,6 @@ async function syncActiveNote() {
   min-height: 44px;
   display: flex;
   align-items: center;
-}
-
-.dashboard__grid {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
 }
 
 .dashboard__state {

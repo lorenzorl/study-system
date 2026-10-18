@@ -29,7 +29,7 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
-import { useMetricsStore } from "../stores/metrics-store";
+import { useMetricsStore } from "@/entities/metrics";
 import { storeToRefs } from "pinia";
 
 const metricsStore = useMetricsStore();
