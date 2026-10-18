@@ -469,3 +469,31 @@ L11) y `R4-unscoped-preserve` (`chunk_repo.go:192-196`).
 Ninguno de los doce es trabajo de este candidato. El review es una vista externa adicional: no
 reemplaza los chequeos funcionales, que ya se corrieron (271/271 en el plugin, 501 en Go), y no
 autoriza entrega.
+
+**L13 (2026-10-18, fase 2 implementada y verificada)** — T4 y T5, en dos commits: «feat(chat): give
+a chat note a region for its attachments» y «feat(attach-resource): attach a vault file, or refuse
+it for its size». RED: 15 de 57 fallaban. GREEN: 299 de 299 en 26 archivos (28 tests nuevos), `tsc`
+en 0 y `architecture.test.ts` verde, que es lo que prueba que la slice nueva respeta las capas.
+
+`ChatNote.attachments` quedó **obligatorio**, y eso hizo fallar `tsc` en un test fuera de la
+superficie del writer. El writer paró y lo reportó en vez de tocar fuera de su superficie, que es lo
+correcto; se arregló ese literal con una línea y el campo **no** se debilitó a opcional. El tipo hizo
+su trabajo: encontró un llamador real que el cambio invalidaba.
+
+Decisiones del writer, reportadas: el split usa el primer pipe para la clase y el segundo para la
+etiqueta, así un `|` dentro de un título sobrevive; una línea rota se ignora y se pierde al
+reescribir la región, igual que en las otras dos regiones, y está fijado por test; un adjunto del
+vault ya existente que no se puede leer aporta 0 al total en vez de hacer fallar el adjuntado nuevo
+(discutible, fijado por test); y `attachVaultFile` no deduplica rutas repetidas, así que adjuntar dos
+veces el mismo archivo cuenta dos veces para el tope — la UI de la fase 6 probablemente lo evite, y si
+no, es una línea.
+
+**L14 (2026-10-18, corrección al Contract y una opción de orden)** — la unión se simplifica:
+`{ kind: "vault"; path: string; text: string }`, sin `title`. La identidad de un archivo del vault
+**es** su ruta, y así la forma coincide con `ChatAttachment`. El bloque de contexto de un archivo se
+renderiza como `[n] <ruta>` y su cita como `Fuente: <ruta>`.
+
+Y una consecuencia del diseño que conviene tener presente: **la mitad del vault no necesita la
+tool**. Un archivo del vault se manda completo y se cita por ruta, así que S7 se puede entregar sin
+tool-calling y sin servidor. Eso abre una opción de orden que se le plantea al usuario antes de
+seguir, porque cambia qué se puede usar y cuándo.
