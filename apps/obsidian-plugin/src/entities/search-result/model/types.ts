@@ -11,8 +11,16 @@ export interface SearchResult {
   document_title: string
   /** 1-based page to open. A chunk never spans two pages. */
   page_number: number
-  /** A window of the chunk's text with the matched terms marked, on one line. */
+  /**
+   * A window of the chunk's text with the matched terms marked, on one line.
+   * This is what a caller shows to a human to scan.
+   */
   snippet: string
+  /**
+   * The chunk's text verbatim. This is what a caller prompts the model with;
+   * `snippet` is the 12-token marked window and is far too short as context.
+   */
+  text: string
   stage: SearchStage
   /** Lexical score magnitude: bigger is better, 0 when the stage did not rank. */
   bm25: number

@@ -75,6 +75,12 @@ round-tripea sin prefijo ni markdown.
 - **Sin backend nuevo.** El único cambio en `apps/go-middleware` es aditivo: la respuesta de
   `GET /api/rag/search` suma `text` (el texto completo del chunk) además de `snippet`, porque
   el snippet de FTS5 son 12 tokens y no alcanza como contexto para el modelo (ver L4).
+- **Un turno que no se pudo escribir.** La pregunta se persiste antes de recuperar y de llamar
+  al modelo, así que sobrevive a un fallo posterior de la recuperación o del proveedor. Si la
+  escritura del vault falla, el store de chats guarda el error y el envío continúa igual: el
+  usuario ve la respuesta en pantalla, pero ningún turno queda en la nota. Está acotado a un
+  vault que rechaza escrituras y no está cubierto por un test; se acepta y se deja escrito en
+  vez de agregar una comprobación frágil sobre un error que puede venir de antes.
 
 ## Tasks
 
@@ -97,8 +103,8 @@ recorded checks. The line counts are measured with
 
 | Slice | Work units | Commits | Review focus | Lines |
 | --- | --- | --- | --- | --- |
-| **A — El chunk y los ajustes** | W0, W1 | `3c2bc88`, `cdbdf81` | The additive `text` field in the retrieval response, and the credential path: `data.json`, the migration off `localStorage`, and never a key in a URL or a log | 1186 |
-| **B — El cliente del modelo y la nota** | W2, W3 | recorded with them | The SSE parser (a split line must not lose a delta), the note's region surgery (it must never rewrite what the user wrote outside the markers), and the key leaving only in an `Authorization` header | — |
+| **A — El chunk y los ajustes** | W0, W1 | `3c2bc88`, `cdbdf81` (+ 2 docs) | The additive `text` field in the retrieval response, and the credential path: `data.json`, the migration off `localStorage`, and never a key in a URL or a log | 1200 |
+| **B — El cliente del modelo y la nota** | W2, W3 | `4a3cbd1`, `e4f32b3` | The SSE parser (a split line must not lose a delta), the note's region surgery (it must never rewrite what the user wrote outside the markers), and the key leaving only in an `Authorization` header | +2252 |
 | **C — La respuesta y la UI de tres zonas** | W4, W5 | recorded with them | The citation frame staying in code and not in the user's prompt, the orchestration order (retrieve, compose, stream, append), and the wiring | — |
 
 ## Log
