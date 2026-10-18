@@ -15,6 +15,12 @@ const LEGACY_API_BASE_KEY = "study-api-base"
  * Load the plugin's global settings, adopt the legacy `localStorage` base URL
  * when there is one, and wire the resolved base URL into the HTTP client.
  *
+ * The migration runs exactly once. It has to: the legacy value is only
+ * distinguishable from "the user's current choice" while it is still in
+ * `localStorage`, so a migration that could run again would overwrite a default
+ * the user deliberately saved back (review finding
+ * R3-legacy-api-base-resurrection).
+ *
  * This is the one place that bridges `shared/config` and `shared/api`: they are
  * sibling segments of the same layer, so the boundary test forbids them from
  * importing each other (ARCHITECTURE §3).
@@ -33,6 +39,11 @@ export async function loadPluginSettings(plugin: Plugin): Promise<void> {
   // migrate, `resolved` is `stored` and this writes the same values back.
   await updateSettings(resolved)
 
+  // Consume the legacy key only after the resolved value is safely persisted: a
+  // save that threw leaves it in place, so the migration is retried on the next
+  // load instead of being lost.
+  clearLegacyApiBase()
+
   pushApiBase(resolved.apiBase)
   onSettingsChange((settings) => pushApiBase(settings.apiBase))
 }
@@ -40,6 +51,19 @@ export async function loadPluginSettings(plugin: Plugin): Promise<void> {
 /** Push a base URL into the HTTP client. */
 function pushApiBase(apiBase: string): void {
   setApiBase(apiBase)
+}
+
+/**
+ * Remove the legacy key, whose value has either been adopted or been superseded
+ * by a stored setting. From here on `localStorage` holds nothing that could
+ * disagree with `data.json`.
+ */
+function clearLegacyApiBase(): void {
+  try {
+    localStorage.removeItem(LEGACY_API_BASE_KEY)
+  } catch {
+    // An embedding without `localStorage` has nothing to clear.
+  }
 }
 
 /**
