@@ -56,6 +56,12 @@ watch(
   { immediate: true },
 )
 
+// "Guardado" describes the draft that was saved, so editing the draft takes the
+// badge away instead of leaving it claiming a save the draft no longer matches.
+watch(draft, () => {
+  saved.value = false
+})
+
 async function onSave(): Promise<void> {
   await save()
   saved.value = true
