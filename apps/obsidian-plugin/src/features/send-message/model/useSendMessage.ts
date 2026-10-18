@@ -1,26 +1,28 @@
 /**
- * The send-message interaction: retrieve, compose, stream, persist.
+ * The send-message interaction: compose, stream, persist.
  *
  * This is orchestration only. Every decision about what the model receives
  * lives in `prompt.ts`; this module decides the order of the steps — persist
- * the question, retrieve, compose, stream, append the answer — and turns every
- * failure into a Spanish message instead of throwing at the UI.
+ * the question, compose, stream, append the answer — and turns every failure
+ * into a Spanish message instead of throwing at the UI.
+ *
+ * A chat with no attachments does not touch the backend at all: there is no
+ * retrieval step left to fail, which is what lets it answer with the server
+ * down. The material path — attachments and the search tool that reads them —
+ * is added on top of this flow later, not inside it.
  */
 import { defineStore } from "pinia"
 import { ref } from "vue"
 import { getSettings } from "@/shared/config"
 import { streamChatCompletion } from "@/shared/llm"
 import { useChatsStore } from "@/entities/chat"
-import { searchCorpus } from "@/entities/search-result"
-import type { SearchResult } from "@/entities/search-result"
-import { buildMessages, buildSources } from "./prompt"
-import type { PromptPassage, PromptTurn } from "./prompt"
+import { buildMessages } from "./prompt"
+import type { PromptTurn } from "./prompt"
 
 const MISSING_KEY_ERROR =
   "Falta configurar la API key del modelo en los ajustes del plugin."
 const NO_CHAT_ERROR =
   "No hay un chat abierto. Abrí o creá un chat antes de preguntar."
-const RETRIEVAL_ERROR = "No se pudo buscar en el corpus."
 const SEND_ERROR = "No se pudo obtener la respuesta del modelo."
 
 /**
@@ -82,27 +84,14 @@ export const useSendMessage = defineStore("send-message", () => {
       // The question is a fact whether or not the model answers: persist it first.
       await chats.appendTurn({ role: "user", content: trimmed, sources: [] })
 
-      let results: SearchResult[]
-
-      try {
-        const topK = note.chat.settings.topK ?? settings.retrievalTopK
-
-        results = await searchCorpus(trimmed, topK)
-      } catch (e) {
-        error.value = messageOf(e, RETRIEVAL_ERROR)
-        return
-      }
-
-      const passages: PromptPassage[] = results.map((result) => ({
-        title: result.document_title,
-        page: result.page_number,
-        text: result.text,
-      }))
-
+      // This chat has no attachments, so there is no material and therefore no
+      // tool: the model answers with its own knowledge, under the frame that
+      // says so and forbids inventing citations.
       const messages = buildMessages({
         chatPrompt: note.chat.prompt,
         history,
-        passages,
+        passages: [],
+        grounded: false,
         question: trimmed,
         maxTurns: settings.historyTurns,
       })
@@ -124,7 +113,7 @@ export const useSendMessage = defineStore("send-message", () => {
       await chats.appendTurn({
         role: "assistant",
         content: result.content,
-        sources: buildSources(passages),
+        sources: [],
       })
     } catch (e) {
       // A cancellation is the user's own decision, not an error to report.

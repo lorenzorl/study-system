@@ -27,6 +27,14 @@ export interface PromptInput {
   history: PromptTurn[]
   /** What retrieval returned. */
   passages: PromptPassage[]
+  /**
+   * Whether the chat has material the model can ground on.
+   *
+   * An explicit input and not `passages.length === 0`, because those are not the
+   * same thing: a chat whose material the model chose not to consult has no
+   * passages and still has material, and it owes the user a different frame.
+   */
+  grounded: boolean
   question: string
 }
 
@@ -42,6 +50,22 @@ export const CITATION_FRAME = [
   "Respondé en el idioma de la pregunta.",
 ].join("\n")
 
+/**
+ * The rules the model receives when the chat has no material to ground on.
+ *
+ * The difference with `CITATION_FRAME` is not cosmetic. That frame forbids the
+ * model's own knowledge, which is right when there is material and wrong when
+ * there is none: forbidding it would turn every answer into an "I can't". And
+ * it mandates the citation format, which a model with no pages to cite will
+ * satisfy by inventing them, so here the format has to be forbidden by name.
+ */
+export const NO_MATERIAL_FRAME = [
+  "Este chat no tiene material adjunto: respondé con tu propio conocimiento.",
+  "No escribas líneas «Fuente: …» ni cites páginas: no hay material que citar.",
+  "Si la respuesta depende de material que no tenés, decilo explícitamente.",
+  "Respondé en el idioma de la pregunta.",
+].join("\n")
+
 /** Said plainly when retrieval returned nothing, so the frame has something to act on. */
 const EMPTY_CORPUS_MESSAGE =
   "El corpus no devolvió ningún pasaje para esta pregunta."
@@ -50,10 +74,20 @@ const EMPTY_CORPUS_MESSAGE =
  * The frame followed by the chat's prompt. An empty prompt leaves the frame
  * alone, with no trailing separator.
  */
-export function buildSystemMessage(chatPrompt: string): string {
+function composeSystemMessage(frame: string, chatPrompt: string): string {
   const trimmed = chatPrompt.trim()
 
-  return trimmed === "" ? CITATION_FRAME : `${CITATION_FRAME}\n\n${trimmed}`
+  return trimmed === "" ? frame : `${frame}\n\n${trimmed}`
+}
+
+/** The system message for a chat with material: the citation rules and its prompt. */
+export function buildSystemMessage(chatPrompt: string): string {
+  return composeSystemMessage(CITATION_FRAME, chatPrompt)
+}
+
+/** The system message for a chat with no material: its own knowledge, no citations. */
+export function buildNoMaterialSystemMessage(chatPrompt: string): string {
+  return composeSystemMessage(NO_MATERIAL_FRAME, chatPrompt)
 }
 
 /**
@@ -100,20 +134,23 @@ export function buildSources(passages: PromptPassage[]): string[] {
 }
 
 /**
- * `[system, ...trimmed history, user]`; the last message always carries the
- * context block and the question.
+ * `[system, ...trimmed history, user]`. The last message carries the context
+ * block and the question when the chat is grounded, and the bare question when
+ * it is not.
  */
 export function buildMessages(input: PromptInput & { maxTurns: number }): LlmMessage[] {
   const system: LlmMessage = {
     role: "system",
-    content: buildSystemMessage(input.chatPrompt),
+    content: input.grounded
+      ? buildSystemMessage(input.chatPrompt)
+      : buildNoMaterialSystemMessage(input.chatPrompt),
   }
   const history: LlmMessage[] = trimHistory(input.history, input.maxTurns).map(
     (turn) => ({ role: turn.role, content: turn.content }),
   )
   const user: LlmMessage = {
     role: "user",
-    content: buildUserMessage(input.passages, input.question),
+    content: buildUserMessage(input.passages, input.question, input.grounded),
   }
 
   return [system, ...history, user]
@@ -123,7 +160,15 @@ function renderPassage(passage: PromptPassage, index: number): string {
   return `[${index + 1}] ${passage.title} — p. ${passage.page}\n${passage.text}`
 }
 
-function buildUserMessage(passages: PromptPassage[], question: string): string {
+function buildUserMessage(
+  passages: PromptPassage[],
+  question: string,
+  grounded: boolean,
+): string {
+  // With no material there is no context block and no empty-corpus line: a
+  // corpus that was never consulted cannot have "returned nothing".
+  if (!grounded) return question.trim()
+
   const context = buildContext(passages)
   const block = context === "" ? EMPTY_CORPUS_MESSAGE : context
 

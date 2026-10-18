@@ -158,22 +158,24 @@ describe("useSendMessage.send", () => {
     expect(mocks.state.calls).toEqual([])
   })
 
-  it("persists the question, retrieves, streams, then appends the answer", async () => {
+  it("persists the question, streams, then appends the answer without touching the corpus", async () => {
     const store = useSendMessage()
 
     await store.send("¿Qué es el lenguaje ubicuo?")
 
     expect(mocks.state.calls).toEqual([
       "append:user",
-      "search",
       "stream",
       "append:assistant",
     ])
+    expect(mocks.searchCorpus).not.toHaveBeenCalled()
     expect(store.error).toBeNull()
     expect(store.sending).toBe(false)
   })
 
-  it("persists the user's turn before retrieval can fail", async () => {
+  it("answers with the corpus down: a chat without material never queries it", async () => {
+    // The corpus is unreachable on purpose. A chat without attachments must not
+    // depend on the backend at all, so the failure has to be unreachable too.
     mocks.searchCorpus.mockImplementation(async () => {
       mocks.state.calls.push("search")
       throw new Error("El corpus no responde.")
@@ -182,8 +184,8 @@ describe("useSendMessage.send", () => {
 
     await store.send("¿Qué es el lenguaje ubicuo?")
 
-    expect(mocks.state.calls).toEqual(["append:user", "search"])
-    expect(store.error).toContain("El corpus no responde.")
+    expect(mocks.state.calls).toEqual(["append:user", "stream", "append:assistant"])
+    expect(store.error).toBeNull()
     expect(store.sending).toBe(false)
   })
 
@@ -196,12 +198,12 @@ describe("useSendMessage.send", () => {
 
     await store.send("¿Qué es el lenguaje ubicuo?")
 
-    expect(mocks.state.calls).toEqual(["append:user", "search", "stream"])
+    expect(mocks.state.calls).toEqual(["append:user", "stream"])
     expect(store.error).toContain("HTTP 500")
     expect(store.sending).toBe(false)
   })
 
-  it("accumulates the streamed deltas in answer and appends their sources", async () => {
+  it("accumulates the streamed deltas in answer and appends the turn with no sources", async () => {
     const store = useSendMessage()
 
     await store.send("¿Qué es el lenguaje ubicuo?")
@@ -213,11 +215,11 @@ describe("useSendMessage.send", () => {
     expect(appended).toEqual({
       role: "assistant",
       content: "hola mundo",
-      sources: ["Domain-Driven Design, p. 42"],
+      sources: [],
     })
   })
 
-  it("prompts the model with the chunk text, not the snippet", async () => {
+  it("sends the bare question with the no-material frame and no context block", async () => {
     const store = useSendMessage()
 
     await store.send("¿Qué es el lenguaje ubicuo?")
@@ -225,10 +227,9 @@ describe("useSendMessage.send", () => {
     const request = mocks.streamChatCompletion.mock.calls[0][0] as {
       messages: Array<{ role: string; content: string }>
     }
-    const last = request.messages.at(-1)
 
-    expect(last?.content).toContain(SEARCH_RESULT.text)
-    expect(last?.content).not.toContain(SEARCH_RESULT.snippet)
+    expect(request.messages.at(-1)?.content).toBe("¿Qué es el lenguaje ubicuo?")
+    expect(request.messages[0]?.content).toContain("no tiene material adjunto")
   })
 
   it("excludes the question just appended from the history", async () => {
@@ -251,25 +252,6 @@ describe("useSendMessage.send", () => {
       "pregunta anterior",
       expect.stringContaining("¿Qué es el lenguaje ubicuo?"),
     ])
-  })
-
-  it("uses the chat's own top_k when its note sets one", async () => {
-    mocks.state.note = makeNote({
-      chat: { ...makeNote().chat, settings: { model: null, temperature: null, topK: 3 } },
-    })
-    const store = useSendMessage()
-
-    await store.send("¿Qué es el lenguaje ubicuo?")
-
-    expect(mocks.searchCorpus).toHaveBeenCalledWith("¿Qué es el lenguaje ubicuo?", 3)
-  })
-
-  it("falls back to the global top_k when the chat does not set one", async () => {
-    const store = useSendMessage()
-
-    await store.send("¿Qué es el lenguaje ubicuo?")
-
-    expect(mocks.searchCorpus).toHaveBeenCalledWith("¿Qué es el lenguaje ubicuo?", 6)
   })
 
   it("uses the chat's model and temperature overrides when set", async () => {
@@ -348,7 +330,6 @@ describe("useSendMessage.send", () => {
 
     expect(mocks.state.calls).toEqual([
       "append:user",
-      "search",
       "stream",
       "append:assistant",
     ])
