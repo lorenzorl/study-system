@@ -106,9 +106,9 @@ apps/obsidian-plugin/
     │   ├── review/{index.ts,model/{types.ts,validation.ts,useReviewStore.ts},api/review-api.ts,ui/DueCardItem.vue}
     │   ├── metrics/{index.ts,model/{types.ts,validation.ts,useMetricsStore.ts}}
     │   ├── resource/{index.ts,model/{types.ts,validation.ts},api/resource-api.ts}
-    │   ├── chat-message/{index.ts,model/types.ts}          # +
-    │   ├── document/{index.ts,model/types.ts}              # +
-    │   └── search-result/{index.ts,model/types.ts}         # +
+    │   ├── chat-message/{index.ts,model/types.ts}                       # +
+    │   ├── document/{index.ts,model/types.ts,api/document-api.ts}       # +
+    │   └── search-result/{index.ts,model/types.ts,api/search-api.ts}    # +
     └── shared/
         ├── api/client.ts
         ├── lib/{guards.ts,useSwipe.ts}
@@ -288,6 +288,17 @@ These slices do not exist today; the tree reserves them. They are **not** implem
 **Chat persistent view (important):** the chat's persistent view is a **main-area tab registered from `app/`** — an `ItemView` (file `src/app/study-chat-view.ts`, view type `study-chat`) activated with `workspace.getLeaf("tab")`, mirroring today's `StudyView` sidebar pattern (`getRightLeaf`). Only `app/` may call `getLeaf("tab")` and import `obsidian`.
 
 **Backend gap:** the chat backend endpoint **does not exist yet**. `features/ask-chat` must be scaffolded against a documented contract, and its API call cannot be wired to a live server until the endpoint is added. State this in the feature's README and keep it below the `shared/api/client.ts` boundary.
+
+**Backend status (2026-10-17, Phase 5):** the other three endpoints do exist
+(`GET /api/rag/search`, `POST /api/rag/documents`,
+`GET /api/rag/documents/{id}/status`), so `entities/document` and
+`entities/search-result` carry an `api/` segment and `features/upload-document` /
+`features/search-corpus` call through them (§3 lists `api/` as a slice segment;
+§7d is why the calls live in the entity, not in the feature model). The multipart
+upload path is `requestMultipart` in `shared/api/client.ts`, kept apart from
+`request` because only the browser may write the multipart Content-Type and its
+boundary. `features/ask-chat` still documents its contract in its own `README.md`
+and reports the missing endpoint instead of calling the network.
 
 ## 9. Naming and imports
 

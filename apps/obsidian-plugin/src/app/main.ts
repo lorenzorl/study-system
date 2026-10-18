@@ -1,5 +1,6 @@
 import { Plugin, Notice, normalizePath } from "obsidian"
 import { StudyView, STUDY_VIEW_TYPE } from "./study-view"
+import { StudyChatView, STUDY_CHAT_VIEW_TYPE } from "./study-chat-view"
 import { setObsidianApp, useObsidian } from "@/shared/obsidian"
 
 export default class FlashcardPlugin extends Plugin {
@@ -8,6 +9,7 @@ export default class FlashcardPlugin extends Plugin {
     setObsidianApp(this.app)
 
     this.registerView(STUDY_VIEW_TYPE, (leaf) => new StudyView(leaf))
+    this.registerView(STUDY_CHAT_VIEW_TYPE, (leaf) => new StudyChatView(leaf))
 
     this.addRibbonIcon("graduation-cap", "Open Study Dashboard", () => {
       this.activateView()
@@ -18,6 +20,14 @@ export default class FlashcardPlugin extends Plugin {
       name: "Open Study Dashboard",
       callback: () => {
         this.activateView()
+      },
+    })
+
+    this.addCommand({
+      id: "open-study-chat",
+      name: "Open Study Chat",
+      callback: () => {
+        this.activateChatView()
       },
     })
 
@@ -43,7 +53,9 @@ export default class FlashcardPlugin extends Plugin {
   }
 
   onunload(): void {
-    // Clean up the app singleton
+    // Clean up the app singleton.
+    // SAFETY: clearing the singleton is deliberate; the cast stands in for
+    // `App | null`, which `setObsidianApp` does not accept today.
     setObsidianApp(null as unknown as import("obsidian").App)
   }
 
@@ -63,6 +75,22 @@ export default class FlashcardPlugin extends Plugin {
       await leaf.setViewState({ type: STUDY_VIEW_TYPE, active: true })
       workspace.revealLeaf(leaf)
     }
+  }
+
+  async activateChatView(): Promise<void> {
+    const { workspace } = this.app
+
+    // Reveal existing leaf if already open
+    const existing = workspace.getLeavesOfType(STUDY_CHAT_VIEW_TYPE)
+    if (existing.length > 0) {
+      workspace.revealLeaf(existing[0])
+      return
+    }
+
+    // Create a new tab in the main area
+    const leaf = workspace.getLeaf("tab")
+    await leaf.setViewState({ type: STUDY_CHAT_VIEW_TYPE, active: true })
+    workspace.revealLeaf(leaf)
   }
 
   async syncActiveNote(): Promise<void> {

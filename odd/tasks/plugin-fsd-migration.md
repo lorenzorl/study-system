@@ -1,6 +1,6 @@
 # Plugin FSD migration
 
-**Status:** in progress
+**Status:** in progress — T5 (Phase 5, new slices) done and committed; T6 pending.
 **Created:** 2026-10-17
 **Contract:** `apps/obsidian-plugin/ARCHITECTURE.md` — governing. It holds the
 layers, the dependency rule, the slice conventions, the Obsidian boundary, the
@@ -39,7 +39,7 @@ re-export shims at the old paths are deleted in phase 6.
       `review-card`. (S2, S3)
 - [x] T4 — Phase 4 Widgets + pages: split `DashboardView` and rename the views to
       pages. (S2, S3)
-- [ ] T5 — Phase 5 New slices: scaffold `chat`/`document`/`search` and register
+- [x] T5 — Phase 5 New slices: scaffold `chat`/`document`/`search` and register
       the `study-chat` tab from `app/`. (S2, S3)
 - [ ] T6 — Phase 6 Enforcement + cleanup: add the boundary test, delete the shims
       and `src/vue-app/`. (S2, S3)
@@ -190,3 +190,57 @@ Non-blocking advisories, recorded as later work:
 
 All four FSD phases are now reviewed and approved. Fourteen advisories were
 raised across the four reviews; none is blocking, and none reopened a candidate.
+
+**L9 (2026-10-17, Phase 5 verified and committed)** — the nine slices §8
+reserves now exist, plus the persistent chat tab. Measured from
+`apps/obsidian-plugin`: `npm test` = **94 passed (10 files)**, unchanged, because
+Phase 5 adds no test; `npm run build` exited **0** and the bundle contains the
+chat view (`grep -c study-chat main.js` = 4), so every new `.vue` is reachable
+from `src/app/main.ts` and gets compiled; `npx tsc --noEmit -skipLibCheck` exited
+**0**. `grep -rln 'from "obsidian"' src/` lists exactly `app/main.ts`,
+`app/study-view.ts`, `app/study-chat-view.ts` and
+`shared/obsidian/useObsidian.ts`. `grep -rnE 'from "@/pages/' src/widgets
+src/features src/entities src/shared` is **empty**, and `grep -rn "vue-app/"
+src/ dev/` is **empty** (the Phase 2/3 shim *files* still exist; nothing imports
+through them). 25 files added, 2 source files and 3 docs changed, 938 added source
+lines.
+
+What was built: `entities/chat-message` (model only), `entities/document` and
+`entities/search-result` (model + `api/`), `features/ask-chat`,
+`features/upload-document`, `features/search-corpus`, `widgets/chat-panel`,
+`widgets/search-results`, `pages/chat`, and `app/study-chat-view.ts` — an
+`ItemView` with view type `study-chat` that mounts `pages/chat` and is opened with
+`workspace.getLeaf("tab")` from a new `Open Study Chat` command, mirroring
+`StudyView`. No dependency was added and no existing behavior changed.
+
+Two deviations from the reserved tree, both written into the contract in this
+commit (§5, §8): the new `document` and `search-result` entities carry an `api/`
+segment because those two endpoints already exist and every other entity keeps
+its server calls there (§3/§7d); `chat-message` does not, because its endpoint
+does not exist. `shared/api/client.ts` gained `requestMultipart` (FormData, no
+Content-Type header, so the browser writes the boundary) with the old
+error-handling block extracted verbatim into a private `parseJsonResponse` that
+`request` now calls. That extraction touches code every entity API shares and no
+committed test covers it (§ High risk item 6), so its behavior was probed with a
+throwaway vitest file: 5 cases — JSON Content-Type sent, body parsed, `ApiError`
+carrying the body's `error` and status, the default message when the body has no
+`error`, and a multipart call with the FormData body and no Content-Type header.
+All 5 passed and the probe was deleted, so the committed suite stays at 94.
+
+`features/ask-chat/README.md` documents the chat contract (`POST /api/chat`,
+`{ question }` → `{ answer, citations? }`) and states that no server implements
+it: `useAskChat.ask` appends the question and reports the gap instead of calling
+the network. `pages/chat` composes `widgets/chat-panel` — the chat UI the phase
+specifies — plus a corpus section (`upload-document`, `search-corpus`,
+`widgets/search-results`), which is what gives the three new corpus slices a
+consumer instead of leaving them as unreferenced files. The dashboard tab, the
+sync flow, flashcard parsing, FSRS, due cards and Feynman are untouched.
+
+This phase is **one commit** despite ~938 added lines: only the entry-reachable
+graph is compiled by esbuild, so splitting the slices away from the `app/` view
+would leave a commit whose new SFCs are never compiled — a worse trade than one
+larger scaffolding candidate. One pre-existing cast in `app/main.ts`
+(`setObsidianApp(null as unknown as App)`) gained a `SAFETY:` comment because the
+repository's lens rejects undocumented casts; the line and its runtime behavior
+are unchanged, and widening `setObsidianApp` to `App | null` stays a candidate
+cleanup.
