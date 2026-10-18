@@ -34,7 +34,7 @@ re-export shims at the old paths are deleted in phase 6.
 - [x] T2 — Phase 2 Entities: split `types.ts`/`validation.ts` by entity, move the
       stores, `markdown-parser`, the api segments and the entity cards, and
       colocate the tests. (S2, S3)
-- [ ] T3 — Phase 3 Features: extract `create-topic`, `create-concept`,
+- [x] T3 — Phase 3 Features: extract `create-topic`, `create-concept`,
       `sync-note`, `configure-api-base`, `select-topic`, `select-concept`,
       `review-card`. (S2, S3)
 - [ ] T4 — Phase 4 Widgets + pages: split `DashboardView` and rename the views to
@@ -85,3 +85,28 @@ The parent verified the two rules the contract cares about: `grep` over
 import `obsidian`. `study-store.ts` is untouched, as decided: its decomposition is
 Phase 3, so there is never a second source of topic state. The contract was
 amended in the same commit to move that decomposition from Phase 2 to Phase 3.
+
+**L4 (2026-10-17, Phase 3 verified and committed)** — implemented by a bounded
+writer and re-verified by the parent. `npm test` stayed at **94 passed (10
+files)**; `npm run build` exited 0, which also compiles every `.vue` reachable
+from `src/app/main.ts` through the esbuild Vue plugin, and `npx tsc --noEmit
+-skipLibCheck` was clean.
+
+Created the two entity stores that `study-store.ts` owned
+(`entities/topic/model/useTopicsStore.ts`, `entities/flashcard/model/useFlashcardCache.ts`)
+and the seven feature slices of §5: `create-topic`, `create-concept`,
+`sync-note`, `configure-api-base`, `select-topic`, `select-concept`,
+`review-card`. `study-store.ts` was **retired with no shim** — its content is
+fully distributed — and the six views plus `main.ts`'s `syncActiveNote` command
+were rewired to the new stores and features.
+
+The parent verified the rules again: `grep useStudyStore src/` is **empty**;
+`grep` finds **no cross-import between feature slices**; and `obsidian` is still
+imported by exactly `app/main.ts`, `app/study-view.ts` and
+`shared/obsidian/useObsidian.ts`. Because there are no component tests, the
+views' correctness rests on `tsc`, the build, and a call-site audit of every old
+`useStudyStore` member. One decision the contract did not cover, recorded for
+Phase 4/6: `features/create-topic` and `features/create-concept` reach the vault
+through a **dynamic** `import("@/shared/obsidian")` so the Obsidian package is
+not pulled into the Vite dev graph; moving that side effect to `app/` is a
+candidate cleanup.

@@ -42,23 +42,26 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from "vue"
-import { useStudyStore } from "../stores/study-store"
 import { storeToRefs } from "pinia"
+import { useTopicSelection } from "@/features/select-topic"
+import { useConceptSelection, useCurrentConcept } from "@/features/select-concept"
 
 const props = defineProps<{
   topicId: string
   conceptId: string
 }>()
 
-const studyStore = useStudyStore()
-const { currentConcept: concept } = storeToRefs(studyStore)
+const topicSelection = useTopicSelection()
+const conceptSelection = useConceptSelection()
+const { currentTopicId } = storeToRefs(topicSelection)
+const concept = useCurrentConcept(currentTopicId)
 
 const userExplanation = ref("")
 const response = ref("")
 
 onMounted(() => {
-  studyStore.selectTopic(props.topicId)
-  studyStore.selectConcept(props.conceptId)
+  topicSelection.selectTopic(props.topicId)
+  conceptSelection.selectConcept(props.conceptId)
 })
 
 function explain() {

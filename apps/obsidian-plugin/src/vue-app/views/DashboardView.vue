@@ -27,48 +27,16 @@
         >
           +
         </button>
-        <button
-          class="dashboard__sync-btn"
-          @click="syncActiveNote"
-          aria-label="Sincronizar nota"
-          title="Sincronizar nota activa"
-        >
-          Sincronizar nota
-        </button>
+        <SyncNoteButton @sync="syncActiveNote" />
       </h2>
 
-      <form
+      <CreateTopicForm
         v-if="showNewTopicForm"
-        class="dashboard__new-form"
-        @submit.prevent="handleCreateTopic"
-      >
-        <input
-          ref="newTopicInputRef"
-          v-model="newTopicName"
-          type="text"
-          class="dashboard__new-input"
-          placeholder="Nombre del tema (ej. DDD, Matemáticas)"
-          :disabled="formSubmitting"
-        />
-        <div class="dashboard__new-actions">
-          <button
-            type="submit"
-            class="dashboard__new-submit"
-            :disabled="formSubmitting || !newTopicName.trim()"
-          >
-            <span v-if="formSubmitting" class="spinner"></span>
-            <span v-else>Guardar</span>
-          </button>
-          <button
-            type="button"
-            class="dashboard__new-cancel"
-            :disabled="formSubmitting"
-            @click="cancelNewTopic"
-          >
-            Cancelar
-          </button>
-        </div>
-      </form>
+        v-model="newTopicName"
+        :submitting="creatingTopic"
+        @submit="handleCreateTopic"
+        @cancel="cancelNewTopic"
+      />
 
       <div v-if="topics.length === 0" class="dashboard__state">
         <p>No hay temas todavía. Sincronizá una nota para crear el primero.</p>
@@ -84,90 +52,72 @@
       </div>
     </section>
 
-    <details class="dashboard__settings">
-      <summary class="dashboard__settings-toggle">⚙️ Configuración</summary>
-      <form class="dashboard__settings-form" @submit.prevent="saveApiBase">
-        <label class="dashboard__settings-label" for="api-base-input">
-          URL del servidor Go
-        </label>
-        <input
-          id="api-base-input"
-          v-model="apiBaseUrl"
-          type="text"
-          class="dashboard__new-input"
-          placeholder="http://192.168.1.50:8080"
-        />
-        <div class="dashboard__new-actions">
-          <button type="submit" class="dashboard__new-submit">
-            Guardar
-          </button>
-          <button
-            type="button"
-            class="dashboard__new-cancel"
-            @click="resetApiBaseUrl"
-          >
-            Restablecer
-          </button>
-        </div>
-      </form>
-    </details>
+    <ApiBaseSettings />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue"
 import { useRouter } from "vue-router"
-import { useStudyStore } from "../stores/study-store"
-import { useReviewStore } from "../stores/review-store"
-import { useMetricsStore } from "../stores/metrics-store"
 import { storeToRefs } from "pinia"
-import { syncConcept, syncFlashcards, setApiBase, resetApiBase, getApiBase } from "../services/api"
-import { parseFlashcards } from "../services/markdown-parser"
+import { TopicCard, useTopicsStore } from "@/entities/topic"
+import { useTopicSelection } from "@/features/select-topic"
+import { useConceptSelection } from "@/features/select-concept"
+import { CreateTopicForm, useCreateTopic } from "@/features/create-topic"
+import { SyncNoteButton, useSyncNote } from "@/features/sync-note"
+import { ApiBaseSettings } from "@/features/configure-api-base"
+import { useReviewSession } from "@/features/review-card"
 import MetricsBar from "../components/MetricsBar.vue"
 import DailyReviewCard from "../components/DailyReviewCard.vue"
-import { TopicCard } from "@/entities/topic"
 
 const router = useRouter()
-const studyStore = useStudyStore()
-const reviewStore = useReviewStore()
-const metricsStore = useMetricsStore()
+const topicsStore = useTopicsStore()
+const topicSelection = useTopicSelection()
+const conceptSelection = useConceptSelection()
+const createTopicStore = useCreateTopic()
+const syncNoteStore = useSyncNote()
+const reviewSession = useReviewSession()
 
-const { topics, loading, error } = storeToRefs(studyStore)
-const { dueCards, loading: dueLoading } = storeToRefs(reviewStore)
+const { topics, loading: topicsLoading, error: topicsError } =
+  storeToRefs(topicsStore)
+const { loading: creatingTopic, error: createTopicError } =
+  storeToRefs(createTopicStore)
+const { loading: syncingNote, error: syncNoteError } =
+  storeToRefs(syncNoteStore)
+const { dueCards } = reviewSession
+
+// The page-level state block reflects whichever topic/create/sync action runs.
+const loading = computed(
+  () => topicsLoading.value || creatingTopic.value || syncingNote.value,
+)
+const error = computed(
+  () => topicsError.value ?? createTopicError.value ?? syncNoteError.value,
+)
 
 const showCTA = computed(() => dueCards.value.length > 0)
 
 const showNewTopicForm = ref(false)
 const newTopicName = ref("")
-const newTopicInputRef = ref<HTMLInputElement | null>(null)
-const formSubmitting = ref(false)
 
-const apiBaseUrl = ref(getApiBase())
-
-function saveApiBase() {
-  const url = apiBaseUrl.value.trim()
-  if (url) {
-    setApiBase(url)
-  }
-}
-
-function resetApiBaseUrl() {
-  resetApiBase()
-  apiBaseUrl.value = getApiBase()
+function clearErrors() {
+  topicsStore.clearError()
+  createTopicStore.clearError()
+  syncNoteStore.clearError()
 }
 
 onMounted(() => {
-  studyStore.loadTopics()
-  reviewStore.fetchDueCards()
+  topicsStore.loadTopics()
+  reviewSession.fetchDueCards()
 })
 
 function retry() {
-  studyStore.clearError()
-  studyStore.loadTopics()
+  clearErrors()
+  topicsStore.loadTopics()
 }
 
 function goToTopic(id: string) {
-  studyStore.selectTopic(id)
+  topicSelection.selectTopic(id)
+  conceptSelection.resetConcept()
   router.push({ name: "topic", params: { topicId: id } })
 }
 
@@ -179,34 +129,32 @@ async function handleCreateTopic() {
   const name = newTopicName.value.trim()
   if (!name) return
 
-  formSubmitting.value = true
-  studyStore.clearError()
+  clearErrors()
 
-  try {
-    await studyStore.createTopic(name)
-    showNewTopicForm.value = false
-    newTopicName.value = ""
-  } finally {
-    formSubmitting.value = false
-  }
+  await createTopicStore.createTopic(name)
+
+  showNewTopicForm.value = false
+  newTopicName.value = ""
 }
 
 function cancelNewTopic() {
   showNewTopicForm.value = false
   newTopicName.value = ""
-  studyStore.clearError()
+  clearErrors()
 }
 
 async function syncActiveNote() {
+  clearErrors()
+
   // Dynamic import to avoid making obsidian a hard dependency in the browser dev mode
   try {
-    const { useObsidian } = await import("../composables/useObsidian")
+    const { useObsidian } = await import("@/shared/obsidian")
 
     const obsidian = useObsidian()
     const filePath = obsidian.getActiveFilePath()
 
     if (!filePath) {
-      studyStore.error = "No hay nota activa. Abrí una nota primero."
+      syncNoteStore.error = "No hay nota activa. Abrí una nota primero."
       return
     }
 
@@ -217,25 +165,33 @@ async function syncActiveNote() {
     try {
       fileContent = await obsidian.getActiveFileContent()
     } catch {
-      studyStore.error = "No hay nota activa. Abrí una nota primero."
+      syncNoteStore.error = "No hay nota activa. Abrí una nota primero."
       return
     }
 
-    await studyStore.syncCurrentNote(topicName, conceptTitle, filePath, fileContent)
+    const result = await syncNoteStore.syncCurrentNote(
+      topicName,
+      conceptTitle,
+      filePath,
+      fileContent,
+    )
 
     // Navigate to flashcards if sync succeeded
-    if (!studyStore.error && studyStore.currentConceptId) {
+    if (result) {
+      topicSelection.selectTopic(result.topicId)
+      conceptSelection.selectConcept(result.conceptId)
+
       router.push({
         name: "flashcards",
         params: {
-          topicId: studyStore.currentTopicId,
-          conceptId: studyStore.currentConceptId,
+          topicId: result.topicId,
+          conceptId: result.conceptId,
         },
       })
     }
   } catch {
     // useObsidian not available in browser dev — show a friendly message
-    studyStore.error =
+    syncNoteStore.error =
       "La sincronización solo funciona dentro de Obsidian. Abrí el plugin en Obsidian para sincronizar notas."
   }
 }
@@ -296,24 +252,6 @@ async function syncActiveNote() {
   background: var(--background-modifier-hover);
 }
 
-.dashboard__sync-btn {
-  margin-left: auto;
-  min-height: 44px;
-  padding: 0.25rem 0.75rem;
-  border: 1px solid var(--interactive-accent);
-  border-radius: 6px;
-  background: var(--interactive-accent);
-  color: var(--text-on-accent, #fff);
-  cursor: pointer;
-  font-size: 0.8rem;
-  font-weight: 500;
-  transition: opacity 0.15s ease;
-}
-
-.dashboard__sync-btn:hover {
-  opacity: 0.9;
-}
-
 .spinner {
   display: inline-block;
   width: 20px;
@@ -355,121 +293,5 @@ async function syncActiveNote() {
 
 .dashboard__add-btn:hover {
   background: var(--background-modifier-hover);
-}
-
-.dashboard__new-form {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  padding: 0.75rem;
-  background: var(--background-secondary);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 8px;
-}
-
-.dashboard__new-input {
-  min-height: 44px;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
-  background: var(--background-primary);
-  color: var(--text-normal);
-  font-size: 0.85rem;
-  font-family: inherit;
-}
-
-.dashboard__new-input:focus {
-  outline: none;
-  border-color: var(--interactive-accent);
-}
-
-.dashboard__new-input:disabled {
-  opacity: 0.5;
-}
-
-.dashboard__new-actions {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.dashboard__new-submit {
-  min-height: 44px;
-  padding: 0.5rem 1rem;
-  border: none;
-  border-radius: 6px;
-  background: var(--interactive-accent);
-  color: var(--text-on-accent, #fff);
-  cursor: pointer;
-  font-size: 0.85rem;
-  font-weight: 500;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  transition: opacity 0.15s ease;
-}
-
-.dashboard__new-submit:hover:not(:disabled) {
-  opacity: 0.9;
-}
-
-.dashboard__new-submit:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.dashboard__new-cancel {
-  min-height: 44px;
-  padding: 0.5rem 1rem;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
-  background: var(--background-secondary);
-  color: var(--text-normal);
-  cursor: pointer;
-  font-size: 0.85rem;
-  transition: background-color 0.15s ease;
-}
-
-.dashboard__new-cancel:hover:not(:disabled) {
-  background: var(--background-modifier-hover);
-}
-
-.dashboard__new-cancel:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.dashboard__settings {
-  margin-top: 0.75rem;
-  padding: 0.5rem 0.75rem;
-  background: var(--background-secondary);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 8px;
-}
-
-.dashboard__settings-toggle {
-  min-height: 44px;
-  display: flex;
-  align-items: center;
-  cursor: pointer;
-  font-size: 0.8rem;
-  color: var(--text-muted);
-  user-select: none;
-}
-
-.dashboard__settings-toggle::marker {
-  font-size: 0.8rem;
-}
-
-.dashboard__settings-form {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  padding-top: 0.5rem;
-}
-
-.dashboard__settings-label {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  margin-bottom: -0.25rem;
 }
 </style>

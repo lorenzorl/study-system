@@ -65,8 +65,11 @@
 <script setup lang="ts">
 import { computed, onMounted } from "vue"
 import { useRouter } from "vue-router"
-import { useStudyStore } from "../stores/study-store"
 import { storeToRefs } from "pinia"
+import { useFlashcardCache } from "@/entities/flashcard"
+import { useTopicsStore } from "@/entities/topic"
+import { useTopicSelection } from "@/features/select-topic"
+import { useConceptSelection, useCurrentConcept } from "@/features/select-concept"
 
 const props = defineProps<{
   topicId: string
@@ -74,21 +77,28 @@ const props = defineProps<{
 }>()
 
 const router = useRouter()
-const studyStore = useStudyStore()
-const { currentConcept: concept, loading, error } = storeToRefs(studyStore)
+const topicsStore = useTopicsStore()
+const topicSelection = useTopicSelection()
+const conceptSelection = useConceptSelection()
+const flashcardCache = useFlashcardCache()
+
+const { loading, error } = storeToRefs(topicsStore)
+const { currentTopicId } = storeToRefs(topicSelection)
+
+const concept = useCurrentConcept(currentTopicId)
 
 const flashcardCount = computed(() => {
-  return studyStore.getCachedFlashcards(props.conceptId).length
+  return flashcardCache.getCachedFlashcards(props.conceptId).length
 })
 
 onMounted(() => {
-  studyStore.selectTopic(props.topicId)
-  studyStore.selectConcept(props.conceptId)
+  topicSelection.selectTopic(props.topicId)
+  conceptSelection.selectConcept(props.conceptId)
 })
 
 function retry() {
-  studyStore.clearError()
-  studyStore.loadTopics()
+  topicsStore.clearError()
+  topicsStore.loadTopics()
 }
 
 function navigateTo(module: "flashcards" | "feynman") {

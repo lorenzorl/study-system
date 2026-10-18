@@ -43,25 +43,23 @@
 <script setup lang="ts">
 import { onMounted } from "vue"
 import { useRouter } from "vue-router"
-import { useReviewStore } from "../stores/review-store"
-import { storeToRefs } from "pinia"
 import { DueCardItem } from "@/entities/review"
+import { useReviewSession } from "@/features/review-card"
 
 const router = useRouter()
-const reviewStore = useReviewStore()
-const { dueCards, loading, error, totalCount, hasCards } =
-  storeToRefs(reviewStore)
+const reviewSession = useReviewSession()
+const { dueCards, loading, error, totalCount, hasCards } = reviewSession
 
 onMounted(() => {
-  reviewStore.fetchDueCards()
+  reviewSession.fetchDueCards()
 })
 
 function retry() {
-  reviewStore.fetchDueCards()
+  reviewSession.fetchDueCards()
 }
 
 function startReview() {
-  reviewStore.startSession()
+  reviewSession.startSession()
   router.push({ name: "review" })
 }
 </script>

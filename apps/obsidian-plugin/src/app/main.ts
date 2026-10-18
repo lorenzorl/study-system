@@ -66,12 +66,7 @@ export default class FlashcardPlugin extends Plugin {
   }
 
   async syncActiveNote(): Promise<void> {
-    const { syncConcept, syncFlashcards } = await import(
-      "@/vue-app/services/api"
-    )
-    const { parseFlashcards } = await import(
-      "@/vue-app/services/markdown-parser"
-    )
+    const { syncNoteToBackend } = await import("@/features/sync-note")
 
     const obsidian = useObsidian()
     const filePath = obsidian.getActiveFilePath()
@@ -93,28 +88,15 @@ export default class FlashcardPlugin extends Plugin {
     }
 
     try {
-      const conceptResponse = await syncConcept({
-        topic_name: topicName,
-        concept_title: conceptTitle,
-        file_path: filePath,
-      })
-
-      const parsedCards = parseFlashcards(fileContent)
-
-      if (parsedCards.length === 0) {
-        new Notice(
-          "No se encontraron tarjetas en la nota. Usá el formato pregunta::respuesta.",
-        )
-        return
-      }
-
-      const flashcardResponse = await syncFlashcards({
-        concept_id: conceptResponse.concept_id,
-        cards: parsedCards,
+      const result = await syncNoteToBackend({
+        topicName,
+        conceptTitle,
+        filePath,
+        fileContent,
       })
 
       new Notice(
-        `Sincronizadas ${flashcardResponse.synced} tarjetas de "${conceptTitle}".`,
+        `Sincronizadas ${result.synced} tarjetas de "${conceptTitle}".`,
       )
 
       // Open the dashboard view to show results

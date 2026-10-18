@@ -1,7 +1,7 @@
 <template>
   <div class="flashcard-session" ref="sessionEl">
     <!-- ═══ Due-Review Mode (FSRS) ═══ -->
-    <template v-if="reviewStore.isSessionActive">
+    <template v-if="reviewIsSessionActive">
       <!-- Review loading -->
       <div v-if="reviewLoading" class="flashcard-session__state loading-state">
         <span class="spinner"></span> Cargando...
@@ -24,10 +24,10 @@
         <div class="flashcard-session__complete-icon">✅</div>
         <h2 class="flashcard-session__complete-title">¡Repaso Completado!</h2>
         <p class="flashcard-session__complete-text">
-          Repasaste {{ reviewStore.completedCount }} de {{ reviewStore.totalCount }} tarjeta{{ reviewStore.totalCount === 1 ? '' : 's' }}.
+          Repasaste {{ reviewCompletedCount }} de {{ reviewTotalCount }} tarjeta{{ reviewTotalCount === 1 ? '' : 's' }}.
         </p>
         <div class="flashcard-session__complete-actions">
-          <button class="flashcard-session__btn" @click="reviewStore.startSession(); currentReviewIndex = 0;">
+          <button class="flashcard-session__btn" @click="restartReview">
             Repasar de nuevo
           </button>
           <button class="flashcard-session__btn flashcard-session__btn--secondary" @click="goBackToDue">
@@ -39,7 +39,7 @@
       <!-- Active review card -->
       <template v-else>
         <div class="flashcard-session__progress">
-          <span>{{ currentReviewIndex + 1 }} / {{ reviewStore.totalCount }}</span>
+          <span>{{ currentReviewIndex + 1 }} / {{ reviewTotalCount }}</span>
         </div>
 
         <FlashcardCard :card="reviewCard" @flip="onCardFlip" />
@@ -77,9 +77,9 @@
         </div>
 
         <!-- Post-grade feedback -->
-        <div v-if="showFeedback && reviewStore.reviewResult" class="flashcard-session__feedback">
+        <div v-if="showFeedback && reviewResult" class="flashcard-session__feedback">
           <span class="flashcard-session__feedback-date">
-            Próximo repaso: {{ formatNextReview(reviewStore.reviewResult.next_review) }}
+            Próximo repaso: {{ formatNextReview(reviewResult.next_review) }}
           </span>
         </div>
 
@@ -179,11 +179,13 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from "vue"
 import { useRouter } from "vue-router"
-import { useStudyStore } from "../stores/study-store"
-import { useReviewStore } from "../stores/review-store"
-import { useSwipe } from "../composables/useSwipe"
 import { storeToRefs } from "pinia"
+import { useSwipe } from "@/shared/lib"
 import { FlashcardCard } from "@/entities/flashcard"
+import { useTopicsStore } from "@/entities/topic"
+import { useTopicSelection } from "@/features/select-topic"
+import { useConceptSelection, useCurrentConcept } from "@/features/select-concept"
+import { useReviewSession } from "@/features/review-card"
 
 const props = defineProps<{
   topicId: string
@@ -191,31 +193,41 @@ const props = defineProps<{
 }>()
 
 const router = useRouter()
-const studyStore = useStudyStore()
-const reviewStore = useReviewStore()
+const topicsStore = useTopicsStore()
+const topicSelection = useTopicSelection()
+const conceptSelection = useConceptSelection()
 
-const { currentConcept: concept, currentFlashcards: flashcards, loading, error } =
-  storeToRefs(studyStore)
+const { loading, error } = storeToRefs(topicsStore)
+const { currentTopicId } = storeToRefs(topicSelection)
+const { currentFlashcards: flashcards } = storeToRefs(conceptSelection)
+
+const concept = useCurrentConcept(currentTopicId)
 
 const {
+  isSessionActive: reviewIsSessionActive,
   currentCard: reviewCard,
   loading: reviewLoading,
   error: reviewError,
   isSessionComplete: isReviewComplete,
   completedCount: reviewCompletedCount,
-} = storeToRefs(reviewStore)
+  totalCount: reviewTotalCount,
+  reviewResult,
+  currentIndex: currentReviewIndex,
+  answerRevealed,
+  showFeedback,
+  isSubmitting,
+  fetchDueCards,
+  restartReview,
+  endSession,
+  onCardFlip,
+  grade,
+  handleReviewKeydown,
+  formatNextReview,
+} = useReviewSession()
 
 const sessionEl = ref<HTMLElement | null>(null)
 const currentIndex = ref(0)
 const isComplete = ref(false)
-
-// ── Due-Review state ─────────────────────────────────────────────────────────
-const currentReviewIndex = ref(0)
-const answerRevealed = ref(false)
-const answerRevealedAt = ref(0)
-const showFeedback = ref(false)
-const isSubmitting = ref(false)
-let feedbackTimer: ReturnType<typeof setTimeout> | null = null
 
 const hasTouch = computed(() => {
   return typeof window !== "undefined" && "ontouchstart" in window
@@ -228,11 +240,11 @@ useSwipe(sessionEl, {
 })
 
 onMounted(() => {
-  if (reviewStore.isSessionActive) {
+  if (reviewIsSessionActive.value) {
     window.addEventListener("keydown", handleReviewKeydown)
   } else {
-    studyStore.selectTopic(props.topicId)
-    studyStore.selectConcept(props.conceptId)
+    topicSelection.selectTopic(props.topicId)
+    conceptSelection.selectConcept(props.conceptId)
     window.addEventListener("keydown", handleKeydown)
   }
 })
@@ -240,14 +252,13 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", handleKeydown)
   window.removeEventListener("keydown", handleReviewKeydown)
-  if (feedbackTimer) clearTimeout(feedbackTimer)
 })
 
 // ── Concept mode handlers ────────────────────────────────────────────────────
 
 function retry() {
-  studyStore.clearError()
-  studyStore.loadTopics()
+  topicsStore.clearError()
+  topicsStore.loadTopics()
 }
 
 function handleKeydown(e: KeyboardEvent) {
@@ -289,63 +300,12 @@ function goBackToConcept() {
 // ── Due-Review mode handlers ──────────────────────────────────────────────────
 
 function retryReview() {
-  reviewStore.fetchDueCards()
+  fetchDueCards()
 }
 
 function goBackToDue() {
-  reviewStore.endSession()
+  endSession()
   router.push({ name: "due-cards" })
-}
-
-function onCardFlip(flipped: boolean) {
-  if (flipped && !answerRevealed.value) {
-    answerRevealed.value = true
-    answerRevealedAt.value = Date.now()
-  }
-}
-
-async function grade(value: number) {
-  if (isSubmitting.value) return
-  isSubmitting.value = true
-
-  const durationMs = Date.now() - answerRevealedAt.value
-
-  try {
-    await reviewStore.submitReview(value, durationMs)
-    showFeedback.value = true
-
-    feedbackTimer = setTimeout(() => {
-      showFeedback.value = false
-      answerRevealed.value = false
-      isSubmitting.value = false
-
-      if (currentReviewIndex.value < reviewStore.totalCount - 1) {
-        currentReviewIndex.value++
-      }
-    }, 1500)
-  } catch {
-    // Error handled by reviewStore.error
-    isSubmitting.value = false
-    showFeedback.value = false
-  }
-}
-
-function handleReviewKeydown(e: KeyboardEvent) {
-  if (!answerRevealed.value || isSubmitting.value) return
-  const key = e.key
-  if (key === "1" || key === "2" || key === "3" || key === "4") {
-    e.preventDefault()
-    grade(Number.parseInt(key, 10))
-  }
-}
-
-function formatNextReview(isoDate: string): string {
-  const d = new Date(isoDate)
-  return d.toLocaleDateString("es-ES", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  })
 }
 </script>
 
@@ -472,31 +432,30 @@ function formatNextReview(isoDate: string): string {
   justify-content: center;
 }
 
-/* ── Empty / Complete / State ────────────────────────────────────────────── */
+/* ── Completion ──────────────────────────────────────────────────────────── */
 
-.flashcard-session__empty,
-.flashcard-session__complete,
-.flashcard-session__state {
+.flashcard-session__complete {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
   padding: 2rem 1rem;
   text-align: center;
 }
 
 .flashcard-session__complete-icon {
   font-size: 2.5rem;
-  min-height: 44px;
-  display: flex;
-  align-items: center;
 }
 
 .flashcard-session__complete-title {
   margin: 0;
-  font-size: 1.2rem;
+  font-size: 1.1rem;
   font-weight: 600;
 }
 
 .flashcard-session__complete-text {
   margin: 0;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   color: var(--text-muted);
 }
 
@@ -505,14 +464,13 @@ function formatNextReview(isoDate: string): string {
   flex-direction: column;
   gap: 0.5rem;
   width: 100%;
-  max-width: 300px;
+  margin-top: 0.5rem;
 }
 
 .flashcard-session__btn {
   min-height: 44px;
-  min-width: 44px;
   padding: 0.5rem 1rem;
-  border: 1px solid var(--interactive-accent);
+  border: none;
   border-radius: 6px;
   background: var(--interactive-accent);
   color: var(--text-on-accent, #fff);
@@ -529,11 +487,28 @@ function formatNextReview(isoDate: string): string {
 .flashcard-session__btn--secondary {
   background: var(--background-secondary);
   color: var(--text-normal);
-  border-color: var(--background-modifier-border);
+  border: 1px solid var(--background-modifier-border);
 }
 
-.flashcard-session__back-btn,
-.flashcard-session__retry-btn {
+/* ── Empty / state ───────────────────────────────────────────────────────── */
+
+.flashcard-session__empty {
+  padding: 2rem 1rem;
+  text-align: center;
+  color: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.flashcard-session__state {
+  padding: 2rem 1rem;
+  text-align: center;
+}
+
+.flashcard-session__retry-btn,
+.flashcard-session__back-btn {
   min-height: 44px;
   min-width: 44px;
   padding: 0.5rem 1rem;
@@ -546,8 +521,8 @@ function formatNextReview(isoDate: string): string {
   transition: background-color 0.15s ease;
 }
 
-.flashcard-session__back-btn:hover,
-.flashcard-session__retry-btn:hover {
+.flashcard-session__retry-btn:hover,
+.flashcard-session__back-btn:hover {
   background: var(--background-modifier-hover);
 }
 
