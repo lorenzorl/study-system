@@ -84,6 +84,20 @@ dónde y cómo se cumple cada spec.
 | W4 | `features/send-message`: builder de prompt puro + orquestación (search → prompt → stream → nota) | S1, S3, S6 | `feat(chat): answer with corpus citations` |
 | W5 | UI: `create-chat`, `select-chat`, `edit-chat-prompt`, `widgets/{chat-list,chat-thread,chat-settings}`, `pages/chat` en 3 zonas, `pages/corpus`, wiring y docs | S1, S7 | `feat(chat): add the three-pane chat UI` |
 
+## Slices (delivery strategy)
+
+The feature is already past 1100 authored lines with W1, so it does not ship as
+one pull request. Each slice below is one reviewable unit and one PR; the next
+slice branches from the previous one's tip, and each slice carries its own
+recorded checks. The line counts are measured with
+`git diff --stat origin/master...HEAD` (lock files excluded).
+
+| Slice | Work units | Commits | Review focus | Lines |
+| --- | --- | --- | --- | --- |
+| **A — El chunk y los ajustes** | W0, W1 | `3c2bc88`, `cdbdf81` | The additive `text` field in the retrieval response, and the credential path: `data.json`, the migration off `localStorage`, and never a key in a URL or a log | 1186 |
+| **B — El cliente del modelo y la nota** | W2, W3 | recorded with them | The SSE parser (a split line must not lose a delta), the note's region surgery (it must never rewrite what the user wrote outside the markers), and the key leaving only in an `Authorization` header | — |
+| **C — La respuesta y la UI de tres zonas** | W4, W5 | recorded with them | The citation frame staying in code and not in the user's prompt, the orchestration order (retrieve, compose, stream, append), and the wiring | — |
+
 ## Log
 
 **L1 (2026-10-18, pedido original)** — "en el plugin, teniendo en cuenta que vamos a seguir
