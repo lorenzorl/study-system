@@ -86,12 +86,14 @@ round-tripea sin prefijo ni markdown.
 
 | ID | Alcance | Specs | Commit |
 | --- | --- | --- | --- |
-| W0 | Backend: `text` aditivo en la respuesta de búsqueda + tests | S3, L4 | `feat(rag): return the full chunk text from search` |
-| W1 | `shared/config` + `app/settings.ts` + `app/settings-tab.ts` + `features/configure-llm`, migración del api base, retiro de `configure-api-base` | S4, S5 | `feat(plugin): own the plugin settings in data.json` |
-| W2 | `shared/llm`: cliente OpenRouter con streaming, parser SSE puro, mapeo de errores, tests | S3, S5 | `feat(llm): stream chat completions from the plugin` |
-| W3 | `shared/obsidian` (vault) + `entities/chat` (tipos, frontmatter, regiones, adapter) + `entities/chat-message` | S2, S6 | `feat(chat): store each chat as a vault note` |
-| W4 | `features/send-message`: builder de prompt puro + orquestación (search → prompt → stream → nota) | S1, S3, S6 | `feat(chat): answer with corpus citations` |
-| W5 | UI: `create-chat`, `select-chat`, `edit-chat-prompt`, `widgets/{chat-list,chat-thread,chat-settings}`, `pages/chat` en 3 zonas, `pages/corpus`, wiring y docs | S1, S7 | `feat(chat): add the three-pane chat UI` |
+| W0 | Backend: `text` aditivo en la respuesta de búsqueda + tests | S3, L4 | `3c2bc88` |
+| W1 | `shared/config` + `app/settings.ts` + `app/settings-tab.ts` + `features/configure-llm`, migración del api base, retiro de `configure-api-base` | S4, S5 | `cdbdf81` |
+| W2 | `shared/llm`: cliente OpenRouter con streaming, parser SSE puro, mapeo de errores, tests | S3, S5 | `4a3cbd1` |
+| W3 | `shared/obsidian` (vault) + `entities/chat` (tipos, frontmatter, regiones, adapter) | S2, S6 | `e4f32b3` |
+| W4 | `features/send-message`: builder de prompt puro + orquestación (search → prompt → stream → nota) | S1, S3, S6 | `063f852` |
+| W5a | `create-chat`, `select-chat`, `edit-chat-prompt`, `widgets/{chat-list,chat-thread,chat-settings}`, `MessageComposer` | S1, S7 | `aca2464` |
+| W5b | `pages/chat` en tres zonas, `pages/corpus`, retiro de `ask-chat`/`chat-panel`/`chat-message`, wiring y docs | S1, S7 | `aca2464` |
+| W6 | El arreglo de los dos caminos que perdían datos que encontró la verificación independiente (L6) | S2, S6 | `8d0f51b` |
 
 ## Slices (delivery strategy)
 
@@ -105,7 +107,46 @@ recorded checks. The line counts are measured with
 | --- | --- | --- | --- | --- |
 | **A — El chunk y los ajustes** | W0, W1 | `3c2bc88`, `cdbdf81` (+ 2 docs) | The additive `text` field in the retrieval response, and the credential path: `data.json`, the migration off `localStorage`, and never a key in a URL or a log | 1200 |
 | **B — El cliente del modelo y la nota** | W2, W3 | `4a3cbd1`, `e4f32b3` | The SSE parser (a split line must not lose a delta), the note's region surgery (it must never rewrite what the user wrote outside the markers), and the key leaving only in an `Authorization` header | +2252 |
-| **C — La respuesta y la UI de tres zonas** | W4, W5 | recorded with them | The citation frame staying in code and not in the user's prompt, the orchestration order (retrieve, compose, stream, append), and the wiring | — |
+| **C1 — La respuesta** | W4 | `063f852` | The citation frame staying in code and not in the user's prompt, and the orchestration order (retrieve, compose, stream, append) | +894 |
+| **C2 — La UI y el arreglo** | W5a, W5b, W6 | `aca2464`, `8d0f51b` | The three zones, the retirement of the old chat slices, and the two data-loss paths the independent verification found | +2251 |
+
+**L5 (2026-10-18, W0-W5 implementados y verificados)** — cada unidad se implementó y
+verificó antes de commitear, con el conteo de tests como evidencia:
+
+| Check | Resultado |
+| --- | --- |
+| `go test ./...` (backend, tras W0) | 13 paquetes `ok`; 3 tests nuevos observados RED primero (el campo no existía) |
+| `gofmt -l` / `go vet ./...` | limpios |
+| `npm test` (plugin) | 101 → 135 (W1) → 164 (W2) → 206 (W3) → 241 (W4) → 251 (W5a) → 260 (W6) |
+| `src/architecture.test.ts` | 7 tests, verde en cada commit: ningún import cruzó una capa |
+| `npm run build` (tsc + esbuild) | limpio en cada commit |
+| `.vue` nuevos | sin arnés de componentes: se verificó que cada SFC parsea y su template compila con `@vue/compiler-sfc` |
+| `pages/corpus` | existe porque retirar la subida y la búsqueda del chat habría borrado dos funciones que nadie pidió perder |
+
+**L6 (2026-10-18, verificación independiente: dos caminos que perdían datos del usuario)** — se
+corrió un verificador separado y de sólo lectura contra los dos ítems de riesgo declarados
+(la credencial y la escritura en notas del usuario). La credencial pasó entera: la key sólo
+viaja en el header `Authorization`, no aparece en URLs, cuerpos ni mensajes de error, no llega
+al backend, no se loguea y no está en el diff. La escritura en notas falló, con contraejemplo:
+
+1. `createChatNote` escribía una nota nueva encima de lo que hubiera en el path. Los dos clics
+   por defecto en "Nuevo chat" proponen el título "Chat" y por lo tanto el mismo archivo, así
+   que el segundo clic consumía el transcript del primero. Arreglado en `8d0f51b`
+   (`uniqueChatPath` para la política, `mergeIntoExistingNote` para la garantía), con el input
+   del contraejemplo convertido en test de regresión.
+2. Reescribir el frontmatter descartaba todos los campos que el plugin no posee: una nota con
+   `tags:` o `title:` propios los perdía al guardar un override. Arreglado en el mismo commit:
+   las tres claves propias se mergean dentro del bloque existente y sólo esas tres.
+
+Queda documentado y sin arreglar un caso menor que el mismo verificador reportó: si el prompt
+del usuario contiene literalmente `<!-- prompt:end -->`, los bytes sobreviven pero el prompt se
+re-parsea truncado. No se sanea el texto del usuario en silencio; se deja escrito acá.
+
+Gaps honestos de cobertura: los `.vue` no tienen arnés de componentes (el suite corre en node y
+sólo toma `*.test.ts`), así que el comportamiento visual e interactivo de las tres zonas está
+verificado por lectura, no por test; y `app/settings-store.ts` (la migración de `localStorage`)
+tampoco tiene test propio — su lógica pura sí (`mergeLegacyApiBase`), y el verificador independiente
+la probó end-to-end con un vault y un `localStorage` falsos.
 
 ## Log
 
