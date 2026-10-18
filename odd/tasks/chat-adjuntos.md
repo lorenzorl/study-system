@@ -273,8 +273,9 @@ commit para que el review nativo pueda tomarla sola, sin el resto de su fase.
 
 ## Fases (delivery strategy)
 
-Cada fase es un commit revisable (~400 líneas de diff como techo), con sus tests y su
-documentación al lado del comportamiento.
+Cada fase se entrega en commits de unidad de ~400 líneas de diff como techo, **uno por tarea
+cuando la fase lo supera**, con sus tests y su documentación al lado del comportamiento. La
+fase 3 se pasó de ese techo y es la última que se entrega como una sola unidad (ver L11).
 
 **Fase 1 — El chat deja de necesitar la recuperación.** T1, T2, T3. Es el objetivo original
 del pedido: sin adjuntos, el chat es una llamada directa al modelo. Entrega S1 y S5.
@@ -391,3 +392,45 @@ El commit de la fase 1 son 552 líneas autoradas, por encima del techo de ~400 d
 de revisión: la mayor parte es este documento, que entra con la primera fase por ser su
 especificación. Las fases 2 a 6 van una por commit, y las dos tareas de riesgo alto (T9 y
 T12) van cada una en su propio commit dentro de su fase.
+
+**L11 (2026-10-18, fase 3 implementada, verificada y commiteada)** — T6 y T7 en el commit
+«feat(rag): scope a search to one document and list the corpus».
+
+Verificación independiente (`gentle-ai-verify`, read-only) sobre el diff todavía sin commitear:
+T6 y T7 **satisfechos**, **cero blockers** y **sin regresión** en el camino sin filtro, por
+tres razones que el verificador comprobó por su cuenta y no aceptó del autor:
+
+1. El SQL sin alcance compuesto (`searchColumns` + `searchSQL`) es **idéntico token a token**
+   al de la base `0ca3c2c`, comparado programáticamente.
+2. Base contra worktree, con la misma matriz de consultas y límites sobre un corpus fijo:
+   salida **byte a byte idéntica** en léxico e híbrido. Las únicas diferencias eran los UUID
+   aleatorios de cada corrida, en las mismas posiciones.
+3. El camino sin filtro es literalmente la llamada vieja: `SearchInDocument` con id vacío
+deriva a `Search`, y el filtro semántico está guardado por `documentID != ""`.
+
+Y comprobó que los tests **sí** cubren el SQL sin alcance, de forma conductual y no textual:
+mutando la proyección, la dirección del `ORDER BY`, el `LIMIT` o el orden de los binds, los
+tests fallan. Lo único sin cubrir es el desempate por `ordinal`, que ya era así antes.
+
+Dos hallazgos se cerraron antes de commitear: el README normativo seguía documentando la
+búsqueda como `(q, limit)` y sin ruta para el listado (S9 exige que la doc acompañe al
+comportamiento), y faltaba el test que fija que `limit` acota el conjunto **filtrado en la
+etapa semántica** — el léxico ya lo tenía, pero el semántico rankea en Go, y un filtro aplicado
+después del truncado habría devuelto vacío. Ese test lo aportó el verificador, y es el que
+prueba la propiedad de la que depende el diseño.
+
+Sobre las dos decisiones que el autor tomó por su cuenta y reportó: filtrar la etapa semántica
+en Go es correcto — `semanticRanking` ya cargaba todos los vectores, y el `continue` corre antes
+del orden y del truncado —, y cambiar el tipo del parámetro exportado de `app.NewSearchUseCase`
+a un puerto de la capa `app` es seguro porque `internal/rag/app` es `internal/` de un módulo
+único: no puede haber llamadores fuera del repositorio, y dentro todos compilan.
+
+Anotado y no resuelto: `pages` suma `job_pages` sobre **todos** los jobs del documento, lo que
+hoy coincide con el conteo del endpoint de estado porque el ingest reusa el último job, pero
+divergiría si un documento llegara a acumular dos. Y `ListDocumentsUseCase` hace 2N+1
+consultas, aceptable al tamaño actual del corpus.
+
+Control de tamaño: la fase 3 son ~1040 líneas autoradas, muy por encima del techo de ~400. La
+mayor parte son cinco archivos de test nuevos, y T6 y T7 son dos comportamientos distintos que
+debieron ir en dos commits. Se entrega como una unidad ya verificada y **no se reescribe la
+historia**; de acá en adelante cada fase va en un commit por tarea cuando supere el techo.
