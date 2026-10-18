@@ -45,7 +45,7 @@ import { onMounted } from "vue"
 import { useRouter } from "vue-router"
 import { useReviewStore } from "../stores/review-store"
 import { storeToRefs } from "pinia"
-import DueCardItem from "../components/DueCardItem.vue"
+import { DueCardItem } from "@/entities/review"
 
 const router = useRouter()
 const reviewStore = useReviewStore()

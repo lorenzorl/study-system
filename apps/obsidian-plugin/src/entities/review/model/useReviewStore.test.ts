@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
 import { setActivePinia, createPinia } from "pinia"
-import { useReviewStore } from "../stores/review-store"
-import type { DueCard, ReviewResponse } from "../../types"
+import { useReviewStore } from "./useReviewStore"
+import type { DueCard, ReviewResponse } from "./types"
 
 const mockFetchDueCards = vi.fn()
 const mockSubmitReview = vi.fn()
 
-vi.mock("../services/api", () => ({
+vi.mock("../api/review-api", () => ({
   fetchDueCards: (...args: unknown[]) => mockFetchDueCards(...args),
   submitReview: (...args: unknown[]) => mockSubmitReview(...args),
 }))

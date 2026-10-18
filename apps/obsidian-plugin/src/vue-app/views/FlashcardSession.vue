@@ -183,7 +183,7 @@ import { useStudyStore } from "../stores/study-store"
 import { useReviewStore } from "../stores/review-store"
 import { useSwipe } from "../composables/useSwipe"
 import { storeToRefs } from "pinia"
-import FlashcardCard from "../components/FlashcardCard.vue"
+import { FlashcardCard } from "@/entities/flashcard"
 
 const props = defineProps<{
   topicId: string

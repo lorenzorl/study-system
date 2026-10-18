@@ -125,7 +125,7 @@ import { syncConcept, syncFlashcards, setApiBase, resetApiBase, getApiBase } fro
 import { parseFlashcards } from "../services/markdown-parser"
 import MetricsBar from "../components/MetricsBar.vue"
 import DailyReviewCard from "../components/DailyReviewCard.vue"
-import TopicCard from "../components/TopicCard.vue"
+import { TopicCard } from "@/entities/topic"
 
 const router = useRouter()
 const studyStore = useStudyStore()

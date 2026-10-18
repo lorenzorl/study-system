@@ -11,24 +11,16 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue"
-import type { ConceptSummary } from "../../types"
-import { useStudyStore } from "../stores/study-store"
+import type { ConceptSummary } from "../model/types"
 
-const props = defineProps<{
+defineProps<{
   concept: ConceptSummary
+  flashcardCount: number
 }>()
 
 defineEmits<{
   select: [id: string]
 }>()
-
-const store = useStudyStore()
-
-const flashcardCount = computed(() => {
-  const cached = store.getCachedFlashcards(props.concept.id)
-  return cached.length
-})
 </script>
 
 <style scoped>

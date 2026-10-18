@@ -31,7 +31,7 @@ re-export shims at the old paths are deleted in phase 6.
       `main.ts`/`study-view.ts`/`App.vue`/router; update the esbuild entry,
       tsconfig `paths`, and the Vite/Vitest aliases; keep re-export shims.
       (S2, S3)
-- [ ] T2 — Phase 2 Entities: split `types.ts`/`validation.ts` by entity, move the
+- [x] T2 — Phase 2 Entities: split `types.ts`/`validation.ts` by entity, move the
       stores, `markdown-parser`, the api segments and the entity cards, and
       colocate the tests. (S2, S3)
 - [ ] T3 — Phase 3 Features: extract `create-topic`, `create-concept`,
@@ -66,3 +66,22 @@ alias to the relocated mock. Re-export shims left at
 remaining importers. The parent verified the `@/` alias at Vitest runtime with a
 throwaway probe test (passed, then deleted), because no existing test exercised
 it. No behavior change and no dependency change.
+
+**L3 (2026-10-17, Phase 2 verified and committed)** — implemented by a bounded
+writer and re-verified by the parent. `npm test` stayed at **94 passed**, now
+across **10 files** instead of 3; `npm run build` exited 0 and `npx tsc --noEmit
+-skipLibCheck` was clean. Six entity slices were created — `topic`, `concept`,
+`flashcard`, `review`, `metrics`, `resource` — with `types.ts` and
+`validation.ts` split per §7c, the endpoints split out of `services/api.ts` per
+§7d, and `markdown-parser`, `useReviewStore`, `useMetricsStore` and the four
+entity cards moved into their slices. `ConceptCard` now takes `flashcardCount` as
+a prop, so `entities/concept` no longer reaches into the flashcard state. The
+67-case `types.test.ts` was split into eight colocated suites; six re-export
+shims were left at the old paths.
+
+The parent verified the two rules the contract cares about: `grep` over
+`src/entities/` finds **no cross-import between entity slices**, and only
+`src/app/main.ts`, `src/app/study-view.ts` and `src/shared/obsidian/useObsidian.ts`
+import `obsidian`. `study-store.ts` is untouched, as decided: its decomposition is
+Phase 3, so there is never a second source of topic state. The contract was
+amended in the same commit to move that decomposition from Phase 2 to Phase 3.

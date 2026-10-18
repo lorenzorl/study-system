@@ -9,7 +9,7 @@
 </template>
 
 <script setup lang="ts">
-import type { DueCard } from "../../types"
+import type { DueCard } from "../model/types"
 
 defineProps<{
   card: DueCard

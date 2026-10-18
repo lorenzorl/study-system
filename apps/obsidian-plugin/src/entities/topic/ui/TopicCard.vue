@@ -11,7 +11,7 @@
 </template>
 
 <script setup lang="ts">
-import type { Topic } from "../../types"
+import type { Topic } from "../model/types"
 
 defineProps<{
   topic: Topic

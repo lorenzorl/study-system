@@ -82,6 +82,7 @@
             v-for="concept in currentTopic.concepts"
             :key="concept.id"
             :concept="concept"
+            :flashcard-count="studyStore.getCachedFlashcards(concept.id).length"
             @select="goToConcept"
           />
         </div>
@@ -95,7 +96,7 @@ import { computed, onMounted, ref } from "vue"
 import { useRouter } from "vue-router"
 import { useStudyStore } from "../stores/study-store"
 import { storeToRefs } from "pinia"
-import ConceptCard from "../components/ConceptCard.vue"
+import { ConceptCard } from "@/entities/concept"
 
 const props = defineProps<{
   topicId: string
