@@ -71,6 +71,8 @@ apps/obsidian-plugin/
     │   ├── main.ts
     │   ├── study-view.ts
     │   ├── study-chat-view.ts         # + chat main-area tab (view type study-chat)
+    │   ├── settings-store.ts          # + settings persistence over the plugin's data.json
+    │   ├── settings-tab.ts            # + PluginSettingTab that mounts the settings form
     │   ├── router/index.ts
     │   └── ui/App.vue
     ├── pages/
@@ -92,7 +94,7 @@ apps/obsidian-plugin/
     │   ├── create-topic/{index.ts,model/useCreateTopic.ts,ui/CreateTopicForm.vue}
     │   ├── create-concept/{index.ts,model/useCreateConcept.ts,ui/CreateConceptForm.vue}
     │   ├── sync-note/{index.ts,model/useSyncNote.ts,ui/SyncNoteButton.vue}
-    │   ├── configure-api-base/{index.ts,ui/ApiBaseSettings.vue}
+    │   ├── configure-llm/{index.ts,ui/LlmSettingsForm.vue}   # + global LLM settings (rendered by the settings tab)
     │   ├── select-topic/{index.ts,model/useTopicSelection.ts}
     │   ├── select-concept/{index.ts,model/useConceptSelection.ts}
     │   ├── review-card/{index.ts,model/useReviewSession.ts}
@@ -111,9 +113,16 @@ apps/obsidian-plugin/
     │   └── search-result/{index.ts,model/types.ts,api/search-api.ts}    # +
     └── shared/
         ├── api/client.ts
+        ├── config/{index.ts,settings.ts,settings.test.ts}    # + global settings state and its persistence port
         ├── lib/{guards.ts,useSwipe.ts}
         └── obsidian/{index.ts,useObsidian.ts,useObsidian.test.ts,__mocks__/obsidian.ts}
 ```
+
+> **Retired after this contract.** `features/configure-api-base` was replaced by
+> `features/configure-llm`: the global settings are edited from the plugin's own
+> `PluginSettingTab` and persisted in its `data.json`, and the API base URL moved
+> out of `localStorage` into that same store (`shared/config`). The rows below that
+> name the old slice record where its work landed.
 
 ## 6. File-by-file mapping
 
@@ -206,7 +215,7 @@ Selection is a feature because it is a stateful user interaction that crosses th
 | Topic grid (`v-for TopicCard`) | `widgets/topic-list/ui/TopicList.vue` |
 | Create-topic form (`showNewTopicForm`, `handleCreateTopic`) | `features/create-topic/ui/CreateTopicForm.vue` + `features/create-topic/model/useCreateTopic.ts` |
 | Sync button + `syncActiveNote()` | `features/sync-note/ui/SyncNoteButton.vue` + `features/sync-note/model/useSyncNote.ts` |
-| API-base settings (`<details>`, `saveApiBase`, `resetApiBaseUrl`) | `features/configure-api-base/ui/ApiBaseSettings.vue` + `shared/api/client.ts` |
+| API-base settings (`<details>`, `saveApiBase`, `resetApiBaseUrl`) | `features/configure-llm/ui/LlmSettingsForm.vue`, rendered by `app/settings-tab.ts`, with the value held in `shared/config` and pushed to `shared/api/client.ts` by `app/settings-store.ts` |
 | Page shell: loading/error/retry, layout, `onMounted` loads | `pages/dashboard/ui/DashboardPage.vue` |
 
 `TopicView.vue` has the same grid shape; extract `widgets/concept-list` there for symmetry (recommended, not strictly required by the parent mapping).

@@ -1,18 +1,31 @@
 export const DEFAULT_API_BASE = "http://localhost:8080"
 
+/**
+ * The active API base URL.
+ *
+ * Its persistence and its initial load live in `app/settings-store.ts`: this
+ * segment (`shared/api`) and `shared/config` are siblings of the same layer, so
+ * the boundary test forbids them from importing each other (ARCHITECTURE §3).
+ */
+let apiBase = DEFAULT_API_BASE
+
 /** Get the current API base URL. */
 export function getApiBase(): string {
-  return localStorage.getItem("study-api-base") || DEFAULT_API_BASE
+  return apiBase
 }
 
 /** Override the API base URL at runtime (e.g., for mobile: "http://192.168.1.50:8080"). */
 export function setApiBase(url: string): void {
-  localStorage.setItem("study-api-base", url)
+  const trimmed = url.trim()
+
+  if (trimmed !== "") {
+    apiBase = trimmed
+  }
 }
 
 /** Reset to default localhost. */
 export function resetApiBase(): void {
-  localStorage.removeItem("study-api-base")
+  apiBase = DEFAULT_API_BASE
 }
 
 export class NetworkError extends Error {

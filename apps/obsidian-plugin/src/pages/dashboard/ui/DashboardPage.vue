@@ -44,8 +44,6 @@
 
       <TopicList v-else :topics="topics" @select="goToTopic" />
     </section>
-
-    <ApiBaseSettings />
   </div>
 </template>
 
@@ -58,7 +56,6 @@ import { useTopicSelection } from "@/features/select-topic"
 import { useConceptSelection } from "@/features/select-concept"
 import { CreateTopicForm, useCreateTopic } from "@/features/create-topic"
 import { SyncNoteButton, useSyncNote } from "@/features/sync-note"
-import { ApiBaseSettings } from "@/features/configure-api-base"
 import { useReviewSession } from "@/features/review-card"
 import { MetricsBar } from "@/widgets/metrics-bar"
 import { DailyReviewCard } from "@/widgets/daily-review"

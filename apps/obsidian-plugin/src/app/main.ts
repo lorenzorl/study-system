@@ -1,12 +1,18 @@
 import { Plugin, Notice, normalizePath } from "obsidian"
 import { StudyView, STUDY_VIEW_TYPE } from "./study-view"
 import { StudyChatView, STUDY_CHAT_VIEW_TYPE } from "./study-chat-view"
+import { loadPluginSettings } from "./settings-store"
+import { ChatSettingsTab } from "./settings-tab"
 import { setObsidianApp, useObsidian } from "@/shared/obsidian"
 
 export default class FlashcardPlugin extends Plugin {
   async onload(): Promise<void> {
     // Set the app singleton early so commands can access it
     setObsidianApp(this.app)
+
+    // Own the plugin's global settings (data.json) and expose its settings tab
+    await loadPluginSettings(this)
+    this.addSettingTab(new ChatSettingsTab(this.app, this))
 
     this.registerView(STUDY_VIEW_TYPE, (leaf) => new StudyView(leaf))
     this.registerView(STUDY_CHAT_VIEW_TYPE, (leaf) => new StudyChatView(leaf))
