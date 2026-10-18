@@ -44,6 +44,15 @@
 
       <TopicList v-else :topics="topics" @select="goToTopic" />
     </section>
+
+    <section class="dashboard__footer">
+      <button type="button" class="dashboard__footer-btn" @click="goToCorpus">
+        Corpus de documentos
+      </button>
+      <p class="dashboard__footer-hint">
+        El modelo y la API key se configuran en Ajustes → Study Dashboard.
+      </p>
+    </section>
   </div>
 </template>
 
@@ -114,6 +123,13 @@ function goToTopic(id: string) {
 
 function goToDueCards() {
   router.push({ name: "due-cards" })
+}
+
+// The corpus page holds the upload and the search that used to sit under the
+// chat: the chat is a full three-zone view now, and putting a book into the
+// corpus is a different job.
+function goToCorpus() {
+  router.push({ name: "corpus" })
 }
 
 async function handleCreateTopic() {
@@ -193,6 +209,37 @@ async function syncActiveNote() {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+}
+
+.dashboard__footer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.dashboard__footer-btn {
+  min-height: 44px;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-family: inherit;
+  transition: background-color 0.15s ease;
+}
+
+.dashboard__footer-btn:hover {
+  background: var(--background-modifier-hover);
+}
+
+.dashboard__footer-hint {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--text-muted);
 }
 
 .dashboard__section {

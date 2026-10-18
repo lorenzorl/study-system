@@ -5,6 +5,7 @@ import { ConceptPage } from "@/pages/concept"
 import { FlashcardSessionPage } from "@/pages/flashcard-session"
 import { FeynmanPage } from "@/pages/feynman"
 import { DueCardsPage } from "@/pages/due-cards"
+import { CorpusPage } from "@/pages/corpus"
 
 const routes = [
   {
@@ -45,6 +46,11 @@ const routes = [
     name: "feynman",
     component: FeynmanPage,
     props: true,
+  },
+  {
+    path: "/corpus",
+    name: "corpus",
+    component: CorpusPage,
   },
 ]
 

@@ -82,13 +82,16 @@ apps/obsidian-plugin/
     │   ├── flashcard-session/{index.ts,ui/FlashcardSessionPage.vue}
     │   ├── due-cards/{index.ts,ui/DueCardsPage.vue}
     │   ├── feynman/{index.ts,ui/FeynmanPage.vue}
-    │   └── chat/{index.ts,ui/ChatPage.vue}            # +
+    │   ├── chat/{index.ts,ui/ChatPage.vue}            # + the three zones
+    │   └── corpus/{index.ts,ui/CorpusPage.vue}        # + upload and search, out of the chat
     ├── widgets/
     │   ├── metrics-bar/{index.ts,ui/MetricsBar.vue}
     │   ├── daily-review/{index.ts,ui/DailyReviewCard.vue}
     │   ├── topic-list/{index.ts,ui/TopicList.vue}
     │   ├── concept-list/{index.ts,ui/ConceptList.vue}
-    │   ├── chat-panel/{index.ts,ui/ChatPanel.vue}     # +
+    │   ├── chat-list/{index.ts,ui/ChatList.vue}       # + the chats in the folder
+    │   ├── chat-thread/{index.ts,ui/ChatThread.vue}   # + the turns and the composer
+    │   ├── chat-settings/{index.ts,ui/ChatSettingsPanel.vue}  # + this chat's prompt and overrides
     │   └── search-results/{index.ts,ui/SearchResults.vue}  # +
     ├── features/
     │   ├── create-topic/{index.ts,model/useCreateTopic.ts,ui/CreateTopicForm.vue}
@@ -98,7 +101,10 @@ apps/obsidian-plugin/
     │   ├── select-topic/{index.ts,model/useTopicSelection.ts}
     │   ├── select-concept/{index.ts,model/useConceptSelection.ts}
     │   ├── review-card/{index.ts,model/useReviewSession.ts}
-    │   ├── ask-chat/{index.ts,model/useAskChat.ts,ui/AskChatForm.vue}        # +
+    │   ├── create-chat/{index.ts,model/useCreateChat.ts,ui/NewChatButton.vue}            # +
+    │   ├── select-chat/{index.ts,model/useChatSelection.ts}                              # +
+    │   ├── edit-chat-prompt/{index.ts,model/useChatPrompt.ts,ui/ChatPromptForm.vue}       # +
+    │   ├── send-message/{index.ts,model/{useSendMessage.ts,prompt.ts},ui/MessageComposer.vue}  # +
     │   ├── upload-document/{index.ts,model/useUploadDocument.ts,ui/UploadDocumentForm.vue}  # +
     │   └── search-corpus/{index.ts,model/useSearchCorpus.ts,ui/SearchCorpusForm.vue}        # +
     ├── entities/
@@ -108,21 +114,26 @@ apps/obsidian-plugin/
     │   ├── review/{index.ts,model/{types.ts,validation.ts,useReviewStore.ts},api/review-api.ts,ui/DueCardItem.vue}
     │   ├── metrics/{index.ts,model/{types.ts,validation.ts,useMetricsStore.ts}}
     │   ├── resource/{index.ts,model/{types.ts,validation.ts},api/resource-api.ts}
-    │   ├── chat-message/{index.ts,model/types.ts}                       # +
+    │   ├── chat/{index.ts,model/{types.ts,useChatsStore.ts},lib/{frontmatter.ts,note.ts},api/chat-note.ts}  # + one note per chat
     │   ├── document/{index.ts,model/types.ts,api/document-api.ts}       # +
     │   └── search-result/{index.ts,model/types.ts,api/search-api.ts}    # +
     └── shared/
         ├── api/client.ts
         ├── config/{index.ts,settings.ts,settings.test.ts}    # + global settings state and its persistence port
         ├── lib/{guards.ts,useSwipe.ts}
+        ├── llm/{index.ts,client.ts,sse.ts,errors.ts}          # + the provider's chat completions, streamed
         └── obsidian/{index.ts,useObsidian.ts,useObsidian.test.ts,__mocks__/obsidian.ts}
 ```
 
 > **Retired after this contract.** `features/configure-api-base` was replaced by
 > `features/configure-llm`: the global settings are edited from the plugin's own
 > `PluginSettingTab` and persisted in its `data.json`, and the API base URL moved
-> out of `localStorage` into that same store (`shared/config`). The rows below that
-> name the old slice record where its work landed.
+> out of `localStorage` into that same store (`shared/config`). The chat slices
+> changed shape too: `features/ask-chat`, `widgets/chat-panel` and
+> `entities/chat-message` were replaced by `features/send-message`,
+> `widgets/chat-thread` and `entities/chat`, because a chat is a note and the
+> prompt it uses belongs to that note. The rows below that name the old slices
+> record where their work landed.
 
 ## 6. File-by-file mapping
 
@@ -284,10 +295,17 @@ These slices do not exist today; the tree reserves them. They are **not** implem
 
 | New slice | Layer | Purpose |
 | --- | --- | --- |
-| `pages/chat` | pages | Chat screen inside the persistent main-area tab. |
-| `widgets/chat-panel` | widgets | Conversation panel composed of chat-message entities + ask-chat feature. |
-| `features/ask-chat` | features | Send a question, stream/receive an answer. |
-| `entities/chat-message` | entities | Chat message model/types. |
+| `pages/chat` | pages | Chat screen inside the persistent main-area tab: the list, the thread and the chat's settings. |
+| `pages/corpus` | pages | Upload and search, moved out of the chat page so it can hold three zones. |
+| `widgets/chat-list` | widgets | The chats in the folder; composes `features/create-chat` and `features/select-chat`. |
+| `widgets/chat-thread` | widgets | The current chat's turns and the composer; composes `features/send-message`. |
+| `widgets/chat-settings` | widgets | The current chat's prompt and its model/temperature/top-k overrides. |
+| `features/create-chat` | features | Create a chat note from the global default prompt. |
+| `features/select-chat` | features | Select the current chat. |
+| `features/edit-chat-prompt` | features | Edit the current chat's own prompt (S1). |
+| `features/send-message` | features | Retrieve, compose the prompt, stream the answer, persist the turn. |
+| `entities/chat` | entities | The chat note: its prompt, its overrides and its transcript. |
+| `shared/llm` | shared | The provider's chat-completions transport, with SSE. |
 | `features/upload-document` | features | Upload a document into the corpus. |
 | `entities/document` | entities | Document model/types. |
 | `features/search-corpus` | features | Query the RAG corpus. |
@@ -296,7 +314,14 @@ These slices do not exist today; the tree reserves them. They are **not** implem
 
 **Chat persistent view (important):** the chat's persistent view is a **main-area tab registered from `app/`** — an `ItemView` (file `src/app/study-chat-view.ts`, view type `study-chat`) activated with `workspace.getLeaf("tab")`, mirroring today's `StudyView` sidebar pattern (`getRightLeaf`). Only `app/` may call `getLeaf("tab")` and import `obsidian`.
 
-**Backend gap:** the chat backend endpoint **does not exist yet**. `features/ask-chat` must be scaffolded against a documented contract, and its API call cannot be wired to a live server until the endpoint is added. State this in the feature's README and keep it below the `shared/api/client.ts` boundary.
+**Backend gap (resolved 2026-10-18, differently than planned):** the chat
+endpoint `POST /api/chat` this section once called for was **never built and will
+not be**. The plugin talks to the model provider directly and the backend stays a
+documents service: it serves ingestion, the chunk index, the embeddings and
+`GET /api/rag/search`, and it never sees a chat prompt or an API key.
+`features/ask-chat` is gone, replaced by `features/send-message`;
+`entities/chat-message` is gone, replaced by `entities/chat`, whose note IS the
+conversation. `features/send-message/README.md` is where that contract lives now.
 
 **Backend status (2026-10-17, Phase 5):** the other three endpoints do exist
 (`GET /api/rag/search`, `POST /api/rag/documents`,
@@ -306,12 +331,14 @@ These slices do not exist today; the tree reserves them. They are **not** implem
 §7d is why the calls live in the entity, not in the feature model). The multipart
 upload path is `requestMultipart` in `shared/api/client.ts`, kept apart from
 `request` because only the browser may write the multipart Content-Type and its
-boundary. `features/ask-chat` still documents its contract in its own `README.md`
-and reports the missing endpoint instead of calling the network.
+boundary. `features/send-message` is where a question becomes an answer: it reads
+the chat's note, retrieves through `entities/search-result`, and streams through
+`shared/llm`, which is a separate transport from `shared/api/client.ts` because it
+carries a different credential to a different host.
 
 ## 9. Naming and imports
 
-- **Slice folders**: kebab-case (`entities/chat-message`, `features/upload-document`).
+- **Slice folders**: kebab-case (`entities/chat`, `features/upload-document`).
 - **Public API**: every slice has `index.ts`; nothing outside the slice imports a segment path directly.
 - **Absolute vs relative**: cross-slice imports use the absolute `@/` alias; imports **inside** a slice (between its own segments) use relative paths.
 
