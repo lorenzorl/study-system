@@ -176,6 +176,97 @@ describe("appendChatTurn", () => {
   })
 })
 
+// ── appendChatTurn: untrusted text in a structural position ──────────────────
+
+// A source line is built from data this plugin does not control: a document
+// title comes from the server, a vault path and a citation come from the user.
+// The writer is where that text reaches a structural position, so it is
+// sanitised here, exactly as an attachment field is.
+describe("appendChatTurn sanitises each source line", () => {
+  it("renders a source with a line break as one Fuente line", () => {
+    let raw = createChatNote("p", SETTINGS)
+    raw = appendChatTurn(raw, {
+      role: "assistant",
+      content: "A",
+      sources: ["DDD\np. 42"],
+    })
+
+    const fuenteLines = raw
+      .split("\n")
+      .filter((line) => line.startsWith("Fuente:"))
+
+    expect(fuenteLines).toEqual(["Fuente: DDD p. 42"])
+    expect(parseChatNote(raw, PATH).turns).toEqual([
+      { role: "assistant", content: "A", sources: ["DDD p. 42"] },
+    ])
+  })
+
+  it("cannot be ended early by a chat marker embedded in a source", () => {
+    const raw = [
+      "USER INTRO",
+      CHAT_BEGIN,
+      "### 🧑 hola",
+      CHAT_END,
+      "USER TAIL",
+      "",
+    ].join("\n")
+
+    const result = appendChatTurn(raw, {
+      role: "assistant",
+      content: "A",
+      sources: ["DDD<!-- chat:end --> truco"],
+    })
+
+    // The only end marker left is the one the writer closed: everything after
+    // it is still the user's bytes.
+    expect(result.split(CHAT_END)).toHaveLength(2)
+    expect(after(result, CHAT_END)).toBe(after(raw, CHAT_END))
+    expect(parseChatNote(result, PATH).turns).toEqual([
+      { role: "user", content: "hola", sources: [] },
+      { role: "assistant", content: "A", sources: ["DDD truco"] },
+    ])
+  })
+
+  it("strips a marker of any region from a source", () => {
+    const hostile: [string, string][] = [
+      ["<!-- prompt:begin -->p<!-- prompt:end -->", "p"],
+      ["<!-- adjuntos:begin -->a<!-- adjuntos:end -->", "a"],
+      ["<!-- chat:begin -->c<!-- chat:end -->", "c"],
+    ]
+
+    for (const [source, expected] of hostile) {
+      let raw = createChatNote("n", SETTINGS)
+      raw = appendChatTurn(raw, {
+        role: "assistant",
+        content: "A",
+        sources: [source],
+      })
+
+      expect(raw.split(CHAT_END)).toHaveLength(2)
+      expect(parseChatNote(raw, PATH).turns[0].sources).toEqual([expected])
+    }
+  })
+
+  // Preserve: a source with nothing to sanitise is the common case, and it must
+  // still be written byte for byte as before.
+  it("writes a source with nothing to sanitise exactly as before", () => {
+    let raw = createChatNote("p", SETTINGS)
+    raw = appendChatTurn(raw, {
+      role: "assistant",
+      content: "A",
+      sources: ["Domain-Driven Design, p. 42", "Fuente: Notas/Tesis.md"],
+    })
+
+    expect(raw).toContain(
+      `${CHAT_BEGIN}\n### 🤖 A\n\nFuente: Domain-Driven Design, p. 42\nFuente: Notas/Tesis.md\n${CHAT_END}`,
+    )
+    expect(parseChatNote(raw, PATH).turns[0].sources).toEqual([
+      "Domain-Driven Design, p. 42",
+      "Notas/Tesis.md",
+    ])
+  })
+})
+
 // ── setChatPrompt ───────────────────────────────────────────────────────────
 
 describe("setChatPrompt", () => {
@@ -535,6 +626,52 @@ describe("setAttachments sanitises each field into one line", () => {
     expect(twice.split(ATTACHMENTS_END)).toHaveLength(2)
     expect(after(twice, ATTACHMENTS_END)).toBe(after(raw, ATTACHMENTS_END))
     expect(parseChatNote(twice, PATH).attachments).toEqual([VAULT])
+  })
+
+  // One removal pass is not enough: removing a marker can rebuild one. The
+  // field below loses its inner end marker, the halves around it join, and what
+  // is left is the very marker the sanitiser exists to remove. A field is data
+  // and a marker is structure, so the removal runs until no marker is left,
+  // however the input is arranged.
+  it("cannot be rebuilt into a marker by removing a nested marker", () => {
+    const exactNested = "<!-- adjuntos:<!-- adjuntos:end -->end -->"
+    const arrangements = [
+      exactNested,
+      `DDD ${exactNested} truco`,
+      `${exactNested}${exactNested}`,
+      "<!-- adjuntos:be<!-- adjuntos:begin -->gin -->",
+    ]
+
+    for (const title of arrangements) {
+      const result = setAttachments(noteWithAttachmentLines([]), [
+        { kind: "corpus", documentId: "id-1", title },
+      ])
+
+      const lines = attachmentLines(result)
+      expect(lines).toHaveLength(1)
+      expect(lines[0]).not.toContain("adjuntos:")
+      // The only end marker left is the one the writer closed, and a second
+      // rewrite therefore finds the real end of the region.
+      expect(result.split(ATTACHMENTS_END)).toHaveLength(2)
+
+      const twice = setAttachments(result, [VAULT])
+      expect(twice.split(ATTACHMENTS_END)).toHaveLength(2)
+      expect(parseChatNote(twice, PATH).attachments).toEqual([VAULT])
+    }
+  })
+
+  it("cannot be rebuilt into a marker inside a vault path either", () => {
+    const result = setAttachments(noteWithAttachmentLines([]), [
+      {
+        kind: "vault",
+        path: "Notas/<!-- adjuntos:<!-- adjuntos:end -->end -->Tesis.md",
+      },
+    ])
+
+    expect(attachmentLines(result)).toEqual(["- vault | Notas/Tesis.md"])
+    expect(parseChatNote(result, PATH).attachments).toEqual([
+      { kind: "vault", path: "Notas/Tesis.md" },
+    ])
   })
 
   // A pipe is data, not structure: the parser splits on the first pipe for the

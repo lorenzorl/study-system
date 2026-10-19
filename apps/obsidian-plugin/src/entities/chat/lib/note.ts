@@ -19,6 +19,20 @@ export const ATTACHMENTS_END = "<!-- adjuntos:end -->"
 export const CHAT_BEGIN = "<!-- chat:begin -->"
 export const CHAT_END = "<!-- chat:end -->"
 
+/**
+ * Every marker this module writes is structure, so no field may ever carry one
+ * into a region: a marker written as data ends the region early, and the next
+ * rewrite then truncates what follows it.
+ */
+const REGION_MARKERS = [
+  PROMPT_BEGIN,
+  PROMPT_END,
+  ATTACHMENTS_BEGIN,
+  ATTACHMENTS_END,
+  CHAT_BEGIN,
+  CHAT_END,
+]
+
 const USER_HEADING = "### 🧑"
 const ASSISTANT_HEADING = "### 🤖"
 const SOURCE_PREFIX = "Fuente: "
@@ -261,14 +275,14 @@ function renderPromptRegion(prompt: string): string {
 }
 
 /**
- * Turns one field into one line's worth of text before it is written into the
- * region. Nothing in an attachment is ours: a corpus title comes from the
- * server, a vault path comes from the user.
+ * Turns one field into one line's worth of text before it is written into a
+ * region. Nothing in an attachment or in a citation is ours: a corpus title
+ * comes from the server, a vault path and a source line come from the user.
  *
  * - A line break is collapsed into a space, because a break would inject an
  *   extra line: the parser would read a line nobody wrote, and the next
  *   rewrite would no longer hold what the writer meant.
- * - Both region markers are removed, because a marker is structure and a field
+ * - Every region marker is removed, because a marker is structure and a field
  *   is data: an end marker inside a title makes `setAttachments` find the
  *   region's end early, so the rewrite truncates the region and corrupts the
  *   note around it.
@@ -276,6 +290,17 @@ function renderPromptRegion(prompt: string): string {
  *   class and on the second for a corpus id, so a pipe inside a title or a path
  *   already survives the round trip; stripping it would throw away text for
  *   nothing.
+ *
+ * The removal runs to a fixed point, not once. A single pass is not enough
+ * because removing a marker can rebuild one. This field:
+ *
+ *     <!-- adjuntos:<!-- adjuntos:end -->end -->
+ *
+ * loses its inner end marker, the halves around it join, and what is left is
+ * the very marker the sanitiser exists to remove, so the removal repeats until
+ * no marker is left, however the input is arranged. A changing pass removes at
+ * least one marker and adds nothing, so the field keeps shrinking and the loop
+ * always stops.
  *
  * This sanitises what the plugin writes; it does not make the parser stricter.
  * The note stays hand-editable, and a line the walker cannot read is still
@@ -285,13 +310,35 @@ function renderPromptRegion(prompt: string): string {
  * edge space of its own.
  */
 function toSingleLine(field: string): string {
-  return field
-    .split(ATTACHMENTS_BEGIN)
-    .join("")
-    .split(ATTACHMENTS_END)
-    .join("")
-    .replace(/(?:\r\n|\r|\n)+/g, " ")
-    .trim()
+  return stripRegionMarkers(field).replace(/(?:\r\n|\r|\n)+/g, " ").trim()
+}
+
+/**
+ * Removes every region marker, repeating while a removal can rebuild one.
+ *
+ * Stopping after one pass is the defect the loop closes: a field holding a
+ * nested marker loses the inner one and the surrounding halves join into a
+ * real marker. The loop terminates because a changing pass removes at least
+ * one marker and adds nothing, so the field keeps shrinking.
+ */
+function stripRegionMarkers(field: string): string {
+  let current = field
+  let next = removeRegionMarkersOnce(current)
+
+  while (next !== current) {
+    current = next
+    next = removeRegionMarkersOnce(current)
+  }
+
+  return next
+}
+
+function removeRegionMarkersOnce(field: string): string {
+  let result = field
+  for (const marker of REGION_MARKERS) {
+    result = result.split(marker).join("")
+  }
+  return result
 }
 
 function renderAttachment(attachment: ChatAttachment): string {
@@ -402,9 +449,15 @@ function renderTurn(turn: ChatTurn): string {
   return lines.join("\n")
 }
 
+/**
+ * One `Fuente:` line. The prefix is presentation and belongs to the note; the
+ * source itself is data, so it goes through the same sanitiser as an attachment
+ * field before it is given a structural position inside the chat region. A
+ * break or a marker left in it would inject a line or end the region early.
+ */
 function renderSource(source: string): string {
-  const trimmed = source.trim()
-  return trimmed.startsWith(SOURCE_PREFIX) ? trimmed : `${SOURCE_PREFIX}${trimmed}`
+  const line = toSingleLine(source)
+  return line.startsWith(SOURCE_PREFIX) ? line : `${SOURCE_PREFIX}${line}`
 }
 
 function appendChatRegion(raw: string, rendered: string): string {
