@@ -75,3 +75,84 @@ export function extractDelta(payload: string): string {
 
   return typeof content === "string" ? content : ""
 }
+
+/**
+ * One streamed piece of a tool call inside `choices[0].delta.tool_calls`.
+ *
+ * The provider opens a call with its `index`, `id` and function `name`, then
+ * streams the raw JSON `arguments` in pieces that share the same `index`.
+ * Only `index` is guaranteed; a fragment carries whichever fields it has.
+ */
+export interface ToolCallFragment {
+  index: number
+  id?: string
+  name?: string
+  arguments?: string
+}
+
+/**
+ * The tool-call fragments one SSE JSON payload carries, in arrival order.
+ *
+ * Returns `[]` when the payload carries none (content-only chunks and the final
+ * usage-only chunk). A payload that is not valid JSON throws, exactly as
+ * `extractDelta` does, because skipping it would silently drop a tool call.
+ *
+ * The `arguments` fragments are reported raw and never parsed here: joining and
+ * interpreting them belongs to the caller.
+ */
+export function extractToolCallFragments(payload: string): ToolCallFragment[] {
+  let parsed: unknown
+
+  try {
+    parsed = JSON.parse(payload)
+  } catch {
+    throw new LlmError("El proveedor envió un stream malformado (JSON inválido).", 0)
+  }
+
+  if (typeof parsed !== "object" || parsed === null) return []
+
+  const choices = (parsed as { choices?: unknown }).choices
+
+  if (!Array.isArray(choices) || choices.length === 0) return []
+
+  const delta = (choices[0] as { delta?: unknown }).delta
+
+  if (typeof delta !== "object" || delta === null) return []
+
+  const rawCalls = (delta as { tool_calls?: unknown }).tool_calls
+
+  if (!Array.isArray(rawCalls)) return []
+
+  const fragments: ToolCallFragment[] = []
+
+  for (const raw of rawCalls) {
+    if (typeof raw !== "object" || raw === null) continue
+
+    const index = (raw as { index?: unknown }).index
+
+    // Without an index the fragment cannot be placed in the call it belongs to,
+    // so it is dropped rather than folded into another call.
+    if (typeof index !== "number") continue
+
+    const fragment: ToolCallFragment = { index }
+    const id = (raw as { id?: unknown }).id
+
+    if (typeof id === "string") fragment.id = id
+
+    const fn = (raw as { function?: unknown }).function
+
+    if (typeof fn === "object" && fn !== null) {
+      const name = (fn as { name?: unknown }).name
+
+      if (typeof name === "string") fragment.name = name
+
+      const args = (fn as { arguments?: unknown }).arguments
+
+      if (typeof args === "string") fragment.arguments = args
+    }
+
+    fragments.push(fragment)
+  }
+
+  return fragments
+}

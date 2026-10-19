@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { streamChatCompletion, type ChatRequest } from "./client"
+import { streamChatCompletion, type ChatRequest, type ToolSpec } from "./client"
 import { LlmError, describeLlmError } from "./errors"
 
 const API_KEY = "sk-test-secret-key-123"
@@ -67,6 +67,26 @@ function baseRequest(overrides: Partial<ChatRequest> = {}): ChatRequest {
     ...overrides,
   }
 }
+
+/** One SSE event line for a JSON payload, exactly as the provider emits it. */
+function sseData(payload: unknown): string {
+  return `data: ${JSON.stringify(payload)}\n\n`
+}
+
+const TOOLS: ToolSpec[] = [
+  {
+    type: "function",
+    function: {
+      name: "search_material",
+      description: "Busca en el material del corpus adjunto a este chat.",
+      parameters: {
+        type: "object",
+        properties: { query: { type: "string" } },
+        required: ["query"],
+      },
+    },
+  },
+]
 
 async function captureFailure(operation: Promise<unknown>): Promise<unknown> {
   try {
@@ -162,6 +182,144 @@ describe("streamChatCompletion transport", () => {
 
     expect(result.content).toBe("")
     expect(result.deltas).toBe(0)
+  })
+})
+
+describe("streamChatCompletion tool transport", () => {
+  it("includes the declared tools in the request body", async () => {
+    const { fetchImpl, captured } = captureFetch(sseResponse(["data: [DONE]\n\n"]))
+
+    await streamChatCompletion(baseRequest({ tools: TOOLS }), fetchImpl)
+
+    const body = JSON.parse(String(captured.init?.body))
+    expect(body.tools).toEqual(TOOLS)
+  })
+
+  it("omits tools from the body, byte for byte, when the request declares none", async () => {
+    const { fetchImpl, captured } = captureFetch(sseResponse(["data: [DONE]\n\n"]))
+
+    await streamChatCompletion(baseRequest(), fetchImpl)
+
+    // Pinned verbatim: the chat without material must keep sending exactly this
+    // body, so a new optional field can never leak into it.
+    expect(String(captured.init?.body)).toBe(
+      '{"model":"openai/gpt-4o-mini","messages":[{"role":"system","content":"Sos un tutor."},{"role":"user","content":"¿Qué es una derivada?"}],"stream":true}',
+    )
+  })
+
+  it("returns the assembled tool calls of a tool-only stream instead of calling it empty", async () => {
+    const { fetchImpl } = captureFetch(
+      sseResponse([
+        sseData({
+          choices: [
+            {
+              delta: {
+                role: "assistant",
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: "call_1",
+                    type: "function",
+                    function: { name: "search_material", arguments: "" },
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+        sseData({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '{"query":' } }] } }] }),
+        sseData({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '"DDD"}' } }] } }] }),
+        "data: [DONE]\n\n",
+      ]),
+    )
+
+    const result = await streamChatCompletion(baseRequest({ tools: TOOLS }), fetchImpl)
+
+    expect(result.content).toBe("")
+    expect(result.deltas).toBe(0)
+    expect(result.toolCalls).toEqual([
+      {
+        id: "call_1",
+        type: "function",
+        function: { name: "search_material", arguments: '{"query":"DDD"}' },
+      },
+    ])
+  })
+
+  it("orders the assembled calls by index even when a later call opens first", async () => {
+    const { fetchImpl } = captureFetch(
+      sseResponse([
+        sseData({
+          choices: [
+            {
+              delta: {
+                tool_calls: [
+                  { index: 1, id: "call_b", type: "function", function: { name: "other", arguments: "" } },
+                ],
+              },
+            },
+          ],
+        }),
+        sseData({
+          choices: [
+            {
+              delta: {
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: "call_a",
+                    type: "function",
+                    function: { name: "search_material", arguments: "" },
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+        sseData({ choices: [{ delta: { tool_calls: [{ index: 1, function: { arguments: '{"x":1}' } }] } }] }),
+        sseData({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '{"query":"DDD"}' } }] } }] }),
+        "data: [DONE]\n\n",
+      ]),
+    )
+
+    const result = await streamChatCompletion(baseRequest({ tools: TOOLS }), fetchImpl)
+
+    expect(result.toolCalls).toEqual([
+      {
+        id: "call_a",
+        type: "function",
+        function: { name: "search_material", arguments: '{"query":"DDD"}' },
+      },
+      { id: "call_b", type: "function", function: { name: "other", arguments: '{"x":1}' } },
+    ])
+  })
+
+  it("hands fetch the same URL and headers for a request that carries tools", async () => {
+    const { fetchImpl, captured } = captureFetch(sseResponse(["data: [DONE]\n\n"]))
+
+    await streamChatCompletion(baseRequest({ tools: TOOLS, baseUrl: `${BASE_URL}/` }), fetchImpl)
+
+    expect(captured.url).toBe(`${BASE_URL}/chat/completions`)
+    expect(captured.init?.method).toBe("POST")
+
+    const headers = new Headers(captured.init?.headers)
+    expect(headers.get("Authorization")).toBe(`Bearer ${API_KEY}`)
+    expect(headers.get("Content-Type")).toContain("application/json")
+  })
+
+  it("maps a provider rejection of tools to an LlmError carrying the provider status", async () => {
+    const { fetchImpl } = captureFetch(
+      jsonErrorResponse(400, "No endpoints found that support tool use"),
+    )
+
+    const error = await captureFailure(
+      streamChatCompletion(baseRequest({ tools: TOOLS }), fetchImpl),
+    )
+
+    expect(error).toBeInstanceOf(LlmError)
+    expect((error as LlmError).status).toBe(400)
+    expect((error as Error).message).toContain("tool use")
+    expect((error as Error).message).not.toContain(API_KEY)
   })
 })
 

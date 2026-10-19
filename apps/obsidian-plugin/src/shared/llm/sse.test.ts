@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest"
-import { extractDelta, extractErrorMessage, parseSseChunk } from "./sse"
+import {
+  extractDelta,
+  extractErrorMessage,
+  extractToolCallFragments,
+  parseSseChunk,
+} from "./sse"
 
 /** Collect every complete `data:` payload a buffer produces. */
 function collect(buffer: string): { payloads: string[]; tail: string } {
@@ -86,6 +91,44 @@ describe("extractDelta", () => {
 
   it("throws an LlmError naming a malformed stream payload", () => {
     expect(() => extractDelta("{not json")).toThrow(/malformad/i)
+  })
+})
+
+describe("extractToolCallFragments", () => {
+  it("reports the index, the id and the name of the first fragment of a call", () => {
+    const payload =
+      '{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"search_material"}}]}}]}'
+
+    expect(extractToolCallFragments(payload)).toEqual([
+      { index: 0, id: "call_1", name: "search_material" },
+    ])
+  })
+
+  it("reports only the argument piece of a later fragment for the same index", () => {
+    const payload =
+      '{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\\"query\\\":"}}]}}]}'
+
+    expect(extractToolCallFragments(payload)).toEqual([{ index: 0, arguments: '{"query":' }])
+  })
+
+  it("reports no fragment when the payload carries no tool calls", () => {
+    expect(extractToolCallFragments('{"choices":[{"delta":{"content":"hola"}}]}')).toEqual([])
+    expect(extractToolCallFragments('{"choices":[{"delta":{}}]}')).toEqual([])
+    expect(extractToolCallFragments('{"choices":[]}')).toEqual([])
+  })
+
+  it("reports the content and the tool calls of a payload that carries both", () => {
+    const payload =
+      '{"choices":[{"delta":{"content":"pensando","tool_calls":[{"index":0,"id":"call_1","function":{"name":"search_material","arguments":""}}]}}]}'
+
+    expect(extractDelta(payload)).toBe("pensando")
+    expect(extractToolCallFragments(payload)).toEqual([
+      { index: 0, id: "call_1", name: "search_material", arguments: "" },
+    ])
+  })
+
+  it("throws an LlmError naming a malformed stream payload", () => {
+    expect(() => extractToolCallFragments("{not json")).toThrow(/malformad/i)
   })
 })
 

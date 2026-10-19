@@ -6,11 +6,37 @@
  * the streamed text. `fetch` is injected so tests never touch the network.
  */
 import { LlmError, describeLlmError } from "./errors"
-import { extractDelta, parseSseChunk } from "./sse"
+import { extractDelta, extractToolCallFragments, parseSseChunk } from "./sse"
+
+/** A tool call the model asked for, in the shape the provider expects back. */
+export interface ToolCall {
+  id: string
+  type: "function"
+  function: {
+    name: string
+    /** The raw JSON string the model streamed; the caller parses it. */
+    arguments: string
+  }
+}
+
+/** A tool offered to the model, in the provider's wire shape. */
+export interface ToolSpec {
+  type: "function"
+  function: {
+    name: string
+    description: string
+    /** A JSON Schema for the tool arguments. */
+    parameters: Record<string, unknown>
+  }
+}
 
 export interface LlmMessage {
-  role: "system" | "user" | "assistant"
+  role: "system" | "user" | "assistant" | "tool"
   content: string
+  /** Assistant turn: the calls the model requested, echoed back on the next request. */
+  tool_calls?: ToolCall[]
+  /** Tool turn: the id of the call this message answers. */
+  tool_call_id?: string
 }
 
 export interface ChatRequest {
@@ -18,6 +44,8 @@ export interface ChatRequest {
   baseUrl: string
   model: string
   messages: LlmMessage[]
+  /** Tools offered to the model; omitted entirely when the chat has none. */
+  tools?: ToolSpec[]
   temperature?: number
   signal?: AbortSignal
   onDelta?: (text: string) => void
@@ -26,6 +54,8 @@ export interface ChatRequest {
 export interface ChatResult {
   content: string
   deltas: number
+  /** The assembled tool calls; empty when the stream carried none. */
+  toolCalls: ToolCall[]
 }
 
 /** The SSE payload that closes the stream; it contributes nothing. */
@@ -107,6 +137,7 @@ async function requestCompletion(
   }
 
   if (req.temperature !== undefined) payload.temperature = req.temperature
+  if (req.tools !== undefined) payload.tools = req.tools
 
   try {
     return await fetchImpl(url, {
@@ -159,6 +190,30 @@ async function readBoundedBody(response: Response, limit = MAX_ERROR_BODY): Prom
   return text.slice(0, limit)
 }
 
+/** A tool call being assembled from its streamed fragments. */
+interface PendingToolCall {
+  id: string
+  name: string
+  arguments: string
+}
+
+/**
+ * Fold the accumulated fragments into the assembled calls, ordered by index.
+ *
+ * The provider opens each call with its `index`, `id` and function `name`, then
+ * streams the raw JSON `arguments` in pieces that share the index; the pieces
+ * are concatenated in arrival order.
+ */
+function assembleToolCalls(pending: Map<number, PendingToolCall>): ToolCall[] {
+  return [...pending.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([, call]) => ({
+      id: call.id,
+      type: "function" as const,
+      function: { name: call.name, arguments: call.arguments },
+    }))
+}
+
 async function readStream(
   body: ReadableStream<Uint8Array>,
   onDelta?: (text: string) => void,
@@ -169,12 +224,25 @@ async function readStream(
   let content = ""
   let deltas = 0
   let closed = false
+  const pendingToolCalls = new Map<number, PendingToolCall>()
 
   const handlePayload = (payload: string): void => {
     if (payload === DONE_PAYLOAD) throw new StreamClosed()
 
     const delta = extractDelta(payload)
 
+    for (const fragment of extractToolCallFragments(payload)) {
+      const call = pendingToolCalls.get(fragment.index) ?? { id: "", name: "", arguments: "" }
+
+      if (fragment.id !== undefined) call.id = fragment.id
+      if (fragment.name !== undefined) call.name = fragment.name
+      if (fragment.arguments !== undefined) call.arguments += fragment.arguments
+
+      pendingToolCalls.set(fragment.index, call)
+    }
+
+    // A tool-call chunk carries no content and is not an empty answer, so the
+    // stream must keep reading instead of stopping at the first one.
     if (delta === "") return
 
     content += delta
@@ -212,5 +280,5 @@ async function readStream(
     }
   }
 
-  return { content, deltas }
+  return { content, deltas, toolCalls: assembleToolCalls(pendingToolCalls) }
 }
