@@ -75,6 +75,17 @@ describe("SEARCHABLE_MATERIAL_FRAME", () => {
     expect(SEARCHABLE_MATERIAL_FRAME).toContain("idioma de la pregunta")
   })
 
+  it("asks the model to admit it did not search, without offering that as an option", () => {
+    const admission =
+      "Si no llegaste a buscar el material, no respondas como si lo hubieras hecho: decí explícitamente que no lo consultaste."
+
+    expect(SEARCHABLE_MATERIAL_FRAME).toContain(admission)
+    // The other two frames speak about material that is absent or already in the
+    // message; neither has a search to admit skipping.
+    expect(CITATION_FRAME).not.toContain("no lo consultaste")
+    expect(NO_MATERIAL_FRAME).not.toContain("no lo consultaste")
+  })
+
   it("is neither of the other two frames: the three states are distinct", () => {
     expect(SEARCHABLE_MATERIAL_FRAME).not.toBe(CITATION_FRAME)
     expect(SEARCHABLE_MATERIAL_FRAME).not.toBe(NO_MATERIAL_FRAME)

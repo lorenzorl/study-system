@@ -37,6 +37,17 @@ const USER_HEADING = "### 🧑"
 const ASSISTANT_HEADING = "### 🤖"
 const SOURCE_PREFIX = "Fuente: "
 
+/**
+ * The line that records the third state of the frame: the chat had corpus
+ * material behind the tool, no search ran, and the answer is therefore not
+ * founded on it.
+ *
+ * Only the negative is written. A turn that read its material, or that had none
+ * to consult, writes nothing, because an absent marker claims nothing: older
+ * notes and chats with no material must never show the badge.
+ */
+const UNCONSULTED_MATERIAL_MARKER = "<!-- material: sin consultar -->"
+
 export function parseChatNote(raw: string, path: string): ChatNote {
   const { data } = parseFrontmatter(raw)
   const promptRegion = extractRegion(raw, PROMPT_BEGIN, PROMPT_END)
@@ -446,6 +457,12 @@ function renderTurn(turn: ChatTurn): string {
     }
   }
 
+  // Last line of the turn, after the source lines, so the source block stays
+  // contiguous and the parser can pop the marker before it reads the sources.
+  if (turn.role === "assistant" && turn.consulted === false) {
+    lines.push(UNCONSULTED_MATERIAL_MARKER)
+  }
+
   return lines.join("\n")
 }
 
@@ -509,6 +526,7 @@ function contentAfterHeading(line: string, role: ChatTurnRole): string {
 function buildTurn(role: ChatTurnRole, rawLines: string[]): ChatTurn {
   const lines = [...rawLines]
   const sources: string[] = []
+  let consulted = true
 
   // The region's own trailing newline shows up as an empty final line; drop it
   // before the trailing source lines can be recognized.
@@ -516,7 +534,22 @@ function buildTurn(role: ChatTurnRole, rawLines: string[]): ChatTurn {
     lines.pop()
   }
 
+  // Only an assistant turn is written with either of the two trailing blocks
+  // below, so only an assistant turn can carry them. A user turn's last line is
+  // text the user wrote, and reading it as a marker would drop it.
   if (role === "assistant") {
+    // The marker is popped before the source lines are read, which is what makes
+    // a turn with both parse correctly: a chat can have a vault file in the
+    // message (its source) and a corpus document behind the tool (unconsulted).
+    if (lines.length > 0 && lines[lines.length - 1].trim() === UNCONSULTED_MATERIAL_MARKER) {
+      lines.pop()
+      consulted = false
+    }
+
+    while (lines.length > 0 && lines[lines.length - 1].trim() === "") {
+      lines.pop()
+    }
+
     while (lines.length > 0 && lines[lines.length - 1].startsWith(SOURCE_PREFIX)) {
       // The prefix is presentation, so it belongs to the note and not to the
       // data: a source read back here is what a caller would have passed in.
@@ -528,7 +561,7 @@ function buildTurn(role: ChatTurnRole, rawLines: string[]): ChatTurn {
     }
   }
 
-  return { role, content: lines.join("\n"), sources }
+  return { role, content: lines.join("\n"), sources, consulted }
 }
 
 function settingsFromData(data: Record<string, string>): ChatNoteSettings {

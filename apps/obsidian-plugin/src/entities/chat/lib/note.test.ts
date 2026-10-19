@@ -22,6 +22,7 @@ const CHAT_BEGIN = "<!-- chat:begin -->"
 const CHAT_END = "<!-- chat:end -->"
 const ATTACHMENTS_BEGIN = "<!-- adjuntos:begin -->"
 const ATTACHMENTS_END = "<!-- adjuntos:end -->"
+const UNCONSULTED_MARKER = "<!-- material: sin consultar -->"
 
 /** Everything strictly before the first occurrence of `marker`. */
 function before(raw: string, marker: string): string {
@@ -91,19 +92,22 @@ describe("appendChatTurn", () => {
       role: "user",
       content: "¿Qué es un agregado?",
       sources: [],
+      consulted: true,
     })
     raw = appendChatTurn(raw, {
       role: "assistant",
       content: "Un agregado es…",
       sources: ["Domain-Driven Design, p. 42"],
+      consulted: true,
     })
 
     expect(parseChatNote(raw, PATH).turns).toEqual([
-      { role: "user", content: "¿Qué es un agregado?", sources: [] },
+      { role: "user", content: "¿Qué es un agregado?", sources: [], consulted: true },
       {
         role: "assistant",
         content: "Un agregado es…",
         sources: ["Domain-Driven Design, p. 42"],
+        consulted: true,
       },
     ])
   })
@@ -114,6 +118,7 @@ describe("appendChatTurn", () => {
       role: "assistant",
       content: "A",
       sources: ["Fuente: DDD, p. 1"],
+      consulted: true,
     })
 
     expect(raw).toContain("Fuente: DDD, p. 1")
@@ -141,6 +146,7 @@ describe("appendChatTurn", () => {
       role: "user",
       content: "Hola",
       sources: [],
+      consulted: true,
     })
 
     expect(before(result, CHAT_BEGIN)).toBe(before(raw, CHAT_BEGIN))
@@ -155,18 +161,19 @@ describe("appendChatTurn", () => {
       role: "user",
       content: "Hola",
       sources: [],
+      consulted: true,
     })
 
     expect(result.startsWith(raw)).toBe(true)
     expect(parseChatNote(result, PATH).turns).toEqual([
-      { role: "user", content: "Hola", sources: [] },
+      { role: "user", content: "Hola", sources: [], consulted: true },
     ])
   })
 
   it("parses a turn whose content contains a heading or a comment-like string", () => {
     const content = "# Título\n\nTexto con <!-- comentario --> adentro."
     let raw = createChatNote("p", SETTINGS)
-    raw = appendChatTurn(raw, { role: "assistant", content, sources: [] })
+    raw = appendChatTurn(raw, { role: "assistant", content, sources: [], consulted: true })
 
     const turns = parseChatNote(raw, PATH).turns
 
@@ -189,6 +196,7 @@ describe("appendChatTurn sanitises each source line", () => {
       role: "assistant",
       content: "A",
       sources: ["DDD\np. 42"],
+      consulted: true,
     })
 
     const fuenteLines = raw
@@ -197,7 +205,7 @@ describe("appendChatTurn sanitises each source line", () => {
 
     expect(fuenteLines).toEqual(["Fuente: DDD p. 42"])
     expect(parseChatNote(raw, PATH).turns).toEqual([
-      { role: "assistant", content: "A", sources: ["DDD p. 42"] },
+      { role: "assistant", content: "A", sources: ["DDD p. 42"], consulted: true },
     ])
   })
 
@@ -215,6 +223,7 @@ describe("appendChatTurn sanitises each source line", () => {
       role: "assistant",
       content: "A",
       sources: ["DDD<!-- chat:end --> truco"],
+      consulted: true,
     })
 
     // The only end marker left is the one the writer closed: everything after
@@ -222,8 +231,8 @@ describe("appendChatTurn sanitises each source line", () => {
     expect(result.split(CHAT_END)).toHaveLength(2)
     expect(after(result, CHAT_END)).toBe(after(raw, CHAT_END))
     expect(parseChatNote(result, PATH).turns).toEqual([
-      { role: "user", content: "hola", sources: [] },
-      { role: "assistant", content: "A", sources: ["DDD truco"] },
+      { role: "user", content: "hola", sources: [], consulted: true },
+      { role: "assistant", content: "A", sources: ["DDD truco"], consulted: true },
     ])
   })
 
@@ -240,6 +249,7 @@ describe("appendChatTurn sanitises each source line", () => {
         role: "assistant",
         content: "A",
         sources: [source],
+        consulted: true,
       })
 
       expect(raw.split(CHAT_END)).toHaveLength(2)
@@ -255,6 +265,7 @@ describe("appendChatTurn sanitises each source line", () => {
       role: "assistant",
       content: "A",
       sources: ["Domain-Driven Design, p. 42", "Fuente: Notas/Tesis.md"],
+      consulted: true,
     })
 
     expect(raw).toContain(
@@ -263,6 +274,124 @@ describe("appendChatTurn sanitises each source line", () => {
     expect(parseChatNote(raw, PATH).turns[0].sources).toEqual([
       "Domain-Driven Design, p. 42",
       "Notas/Tesis.md",
+    ])
+  })
+})
+
+// ── consulted: the third state of the frame ──────────────────────────────────
+
+// `consulted` has three readings in one field: there was nothing to consult,
+// the material was read, or the material was behind the tool and no search ran.
+// The note records only the third one, because it is the only one that is a
+// claim about the answer. The other two write nothing: an absent marker claims
+// nothing, so older notes never show the badge.
+describe("the consulted flag in the note", () => {
+  it("renders the marker as the assistant turn's last line when consulted is false", () => {
+    let raw = createChatNote("p", SETTINGS)
+    raw = appendChatTurn(raw, {
+      role: "assistant",
+      content: "No consulté el material, te respondo de memoria.",
+      sources: [],
+      consulted: false,
+    })
+
+    expect(raw).toContain(
+      `${CHAT_BEGIN}\n### 🤖 No consulté el material, te respondo de memoria.\n${UNCONSULTED_MARKER}\n${CHAT_END}`,
+    )
+  })
+
+  it("keeps consulted false and the content through parse → render → parse", () => {
+    const original = [
+      CHAT_BEGIN,
+      "### 🤖 No pude consultar el material.",
+      "",
+      "Fuente: DDD, p. 42",
+      UNCONSULTED_MARKER,
+      CHAT_END,
+    ].join("\n")
+    const parsed = parseChatNote(original, PATH).turns[0]
+
+    const rendered = appendChatTurn(createChatNote("p", SETTINGS), parsed)
+    const again = parseChatNote(rendered, PATH).turns[0]
+
+    expect(parsed.consulted).toBe(false)
+    expect(again.consulted).toBe(false)
+    expect(again.content).toBe("No pude consultar el material.")
+    expect(again.sources).toEqual(["DDD, p. 42"])
+  })
+
+  // A chat can have a vault file in the message and a corpus document behind the
+  // tool, and the model may answer without searching. That turn has sources and
+  // `consulted: false`, which only parses right because the marker is popped
+  // before the source lines are read.
+  it("parses a turn that has both sources and the marker into both of them", () => {
+    const raw = [
+      CHAT_BEGIN,
+      "### 🤖 A",
+      "",
+      "Fuente: DDD, p. 42",
+      "Fuente: Notas/Tesis.md",
+      UNCONSULTED_MARKER,
+      CHAT_END,
+    ].join("\n")
+
+    expect(parseChatNote(raw, PATH).turns).toEqual([
+      {
+        role: "assistant",
+        content: "A",
+        sources: ["DDD, p. 42", "Notas/Tesis.md"],
+        consulted: false,
+      },
+    ])
+  })
+
+  it("writes nothing for a consulted turn, so the marker never appears", () => {
+    let raw = createChatNote("p", SETTINGS)
+    raw = appendChatTurn(raw, {
+      role: "assistant",
+      content: "Un agregado es…",
+      sources: ["Domain-Driven Design, p. 42"],
+      consulted: true,
+    })
+
+    expect(raw).not.toContain(UNCONSULTED_MARKER)
+    expect(raw).not.toContain("material: sin consultar")
+    expect(parseChatNote(raw, PATH).turns[0].consulted).toBe(true)
+  })
+
+  // Hand-written notes and notes written before this field existed carry no
+  // marker, and an absent marker claims nothing.
+  it("reads a note with no marker as consulted true", () => {
+    const raw = [
+      CHAT_BEGIN,
+      "### 🧑 hola",
+      "### 🤖 A",
+      "",
+      "Fuente: DDD, p. 1",
+      CHAT_END,
+    ].join("\n")
+
+    expect(parseChatNote(raw, PATH).turns).toEqual([
+      { role: "user", content: "hola", sources: [], consulted: true },
+      { role: "assistant", content: "A", sources: ["DDD, p. 1"], consulted: true },
+    ])
+  })
+
+  // An accepted collision, pinned so it cannot change by accident. The marker is
+  // a data channel in a hand-editable note, exactly like the `Fuente: ` prefix and
+  // the region markers: an answer whose own last line is the marker loses that
+  // line and reads as unconsulted. What is lost is an HTML comment, invisible in
+  // the reading view, and the misread errs toward warning instead of silence.
+  it("reads an answer whose last line is the marker as the marker", () => {
+    const raw = [
+      CHAT_BEGIN,
+      "### 🤖 A",
+      UNCONSULTED_MARKER,
+      CHAT_END,
+    ].join("\n")
+
+    expect(parseChatNote(raw, PATH).turns).toEqual([
+      { role: "assistant", content: "A", sources: [], consulted: false },
     ])
   })
 })

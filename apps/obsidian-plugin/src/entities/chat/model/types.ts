@@ -6,6 +6,21 @@ export interface ChatTurn {
   content: string
   /** One entry per "Fuente: *Title*, p. N" line the assistant wrote. */
   sources: string[]
+  /**
+   * Whether this turn is founded on the chat's material.
+   *
+   * `true` means there was nothing to consult, or the material was actually
+   * read. `false` means the chat had corpus material behind the tool and no
+   * search executed, so the answer is not founded on it; `false` is the only
+   * value that shows the badge in the thread.
+   *
+   * Required, never optional: the compiler then names every literal that has to
+   * say which state it is, so a new call site cannot leave the question
+   * unanswered. A turn parsed from a note with no marker reads `true`, because
+   * an absent marker claims nothing (an older note, or a chat with no material,
+   * must never show the badge).
+   */
+  consulted: boolean
 }
 
 export interface ChatNoteSettings {

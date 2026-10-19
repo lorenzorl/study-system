@@ -23,6 +23,15 @@
             Fuente: {{ source }}
           </li>
         </ul>
+        <!-- The third state of the frame: the answer exists, but it is not
+             founded on the material the chat has. Next to the sources, because
+             both answer the same question about the turn. -->
+        <p
+          v-if="turn.role === 'assistant' && turn.consulted === false"
+          class="chat-thread__badge"
+        >
+          sin consultar el material
+        </p>
       </template>
 
       <div
@@ -120,6 +129,17 @@ function onCancel(): void {
 
 .chat-thread__source {
   font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* Same tone as a source line: the badge qualifies the answer, it is not an
+   error and must not read like one. */
+.chat-thread__badge {
+  align-self: flex-start;
+  margin: 0;
+  padding-left: 0.5rem;
+  font-size: 0.75rem;
+  font-style: italic;
   color: var(--text-muted);
 }
 

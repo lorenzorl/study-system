@@ -116,9 +116,27 @@ export const useSendMessage = defineStore("send-message", () => {
     // Until a response arrives, a provider rejection may be a refusal of `tools`.
     let toolsAwaitingFirstResponse = searchable
 
+    /**
+     * The third state of the frame, decided here and never asked of the model.
+     *
+     * A search counts as executed only when `decideToolCall` accepted the call
+     * and the tool actually ran: a call whose scope the client rejected read no
+     * material, so it cannot turn a memory answer into a founded one. A chat
+     * that declares no tool has nothing to consult, so its answer is founded by
+     * definition and the badge never shows.
+     */
+    let searchedMaterial = false
+    const materialConsulted = (): boolean => !searchable || searchedMaterial
+
     try {
       // The question is a fact whether or not the model answers: persist it first.
-      await chats.appendTurn({ role: "user", content: trimmed, sources: [] })
+      await chats.appendTurn({
+        role: "user",
+        content: trimmed,
+        sources: [],
+        // Nothing was consulted by asking, so the question claims nothing.
+        consulted: true,
+      })
 
       // The vault files travel whole in this request (S7), so their text is read
       // now and not when they were attached: a note grows. A file that cannot be
@@ -219,6 +237,7 @@ export const useSendMessage = defineStore("send-message", () => {
 
           const outcome = await runSearchTool(decision, { limit: topK })
 
+          searchedMaterial = true
           citable.push(...outcome.blocks)
           messages.push({
             role: "tool",
@@ -232,6 +251,7 @@ export const useSendMessage = defineStore("send-message", () => {
         role: "assistant",
         content: text,
         sources: buildSources(citable),
+        consulted: materialConsulted(),
       })
     } catch (e) {
       // A cancellation is the user's own decision, not an error to report.
@@ -251,7 +271,7 @@ export const useSendMessage = defineStore("send-message", () => {
       // from half of one. It is saved marked as interrupted, from a failure and
       // from their own cancel alike (findings R4-partial-content-dropped and
       // R4-002).
-      await savePartialAnswer(chats)
+      await savePartialAnswer(chats, materialConsulted())
     } finally {
       controller = null
       sending.value = false
@@ -266,6 +286,7 @@ export const useSendMessage = defineStore("send-message", () => {
    */
   async function savePartialAnswer(
     chats: ReturnType<typeof useChatsStore>,
+    consulted: boolean,
   ): Promise<void> {
     const partial = answer.value.trim()
 
@@ -276,6 +297,7 @@ export const useSendMessage = defineStore("send-message", () => {
         role: "assistant",
         content: `${partial}\n\n${INTERRUPTED_MARKER}`,
         sources: [],
+        consulted,
       })
     } catch {
       // The chat store reports its own write failures in its own error, and a

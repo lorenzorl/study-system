@@ -84,7 +84,7 @@ describe("createChatForTitle", () => {
       temperature: null,
       topK: null,
     })
-    await appendTurn(first, { role: "user", content: "hola", sources: [] })
+    await appendTurn(first, { role: "user", content: "hola", sources: [], consulted: true })
 
     const second = await createChatForTitle("Chat", "p", {
       model: null,
@@ -156,7 +156,7 @@ describe("appendTurn", () => {
   it("persists through processVaultFile and the stored note gains the turn", async () => {
     fake.store.set(PATH, baseNote())
 
-    await appendTurn(PATH, { role: "user", content: "Hola", sources: [] })
+    await appendTurn(PATH, { role: "user", content: "Hola", sources: [], consulted: true })
 
     expect(processVaultFile).toHaveBeenCalledWith(PATH, expect.any(Function))
     expect(fake.store.get(PATH)).toContain("### 🧑 Hola")
@@ -179,7 +179,7 @@ describe("appendTurn", () => {
     ].join("\n")
     fake.store.set(PATH, raw)
 
-    await appendTurn(PATH, { role: "user", content: "Hola", sources: [] })
+    await appendTurn(PATH, { role: "user", content: "Hola", sources: [], consulted: true })
 
     const stored = fake.store.get(PATH) as string
     const chatBegin = "<!-- chat:begin -->"

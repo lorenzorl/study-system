@@ -22,7 +22,12 @@ const mocks = vi.hoisted(() => {
           topK: number | null
         }
       }
-      turns: Array<{ role: "user" | "assistant"; content: string; sources: string[] }>
+      turns: Array<{
+        role: "user" | "assistant"
+        content: string
+        sources: string[]
+        consulted: boolean
+      }>
       attachments: Array<
         { kind: "corpus"; documentId: string; title: string } | { kind: "vault"; path: string }
       >
@@ -31,7 +36,12 @@ const mocks = vi.hoisted(() => {
   }
 
   const appendTurn = vi.fn(
-    async (turn: { role: "user" | "assistant"; content: string; sources: string[] }) => {
+    async (turn: {
+      role: "user" | "assistant"
+      content: string
+      sources: string[]
+      consulted: boolean
+    }) => {
       state.calls.push(`append:${turn.role}`)
       state.note?.turns.push(turn)
     },
@@ -274,6 +284,7 @@ describe("useSendMessage.send", () => {
       role: "assistant",
       content: "hola mundo",
       sources: [],
+      consulted: true,
     })
   })
 
@@ -318,8 +329,8 @@ describe("useSendMessage.send", () => {
   it("excludes the question just appended from the history", async () => {
     mocks.state.note = makeNote({
       turns: [
-        { role: "assistant", content: "respuesta anterior", sources: ["Refactoring, p. 7"] },
-        { role: "user", content: "pregunta anterior", sources: [] },
+        { role: "assistant", content: "respuesta anterior", sources: ["Refactoring, p. 7"], consulted: true },
+        { role: "user", content: "pregunta anterior", sources: [], consulted: true },
       ],
     })
     const store = useSendMessage()
@@ -437,6 +448,7 @@ describe("useSendMessage.send", () => {
       role: "assistant",
       content: `Un agregado es\n\n${INTERRUPTED_MARKER}`,
       sources: [],
+      consulted: true,
     })
   })
 
@@ -530,6 +542,7 @@ describe("useSendMessage.send with a corpus attachment", () => {
       role: "assistant",
       content: "El modelo del dominio es la raíz del lenguaje ubicuo.",
       sources: ["Domain-Driven Design, p. 42"],
+      consulted: true,
     })
     expect(store.error).toBeNull()
     expect(store.sending).toBe(false)
@@ -596,6 +609,7 @@ describe("useSendMessage.send with a corpus attachment", () => {
       role: "assistant",
       content: "no tengo ese material",
       sources: [],
+      consulted: false,
     })
   })
 
@@ -640,6 +654,7 @@ describe("useSendMessage.send with a corpus attachment", () => {
       role: "user",
       content: "¿Qué es el lenguaje ubicuo?",
       sources: [],
+      consulted: true,
     })
     expect(store.sending).toBe(false)
   })
@@ -694,7 +709,101 @@ describe("useSendMessage.send with a corpus attachment", () => {
   })
 })
 
+describe("useSendMessage.consulted", () => {
+  /** The assistant turn the store persisted last. */
+  function lastAnswer() {
+    return mocks.appendTurn.mock.calls.at(-1)?.[0]
+  }
+
+  // The third state of the frame: the chat has material behind the tool and no
+  // search ran, so the answer is a memory answer and the note has to say so.
+  it("records consulted false when the model answers without searching the corpus", async () => {
+    mocks.state.note = makeNote({ attachments: [CORPUS_ATTACHMENT] })
+    const store = useSendMessage()
+
+    await store.send("¿Qué es el lenguaje ubicuo?")
+
+    expect(mocks.searchCorpus).not.toHaveBeenCalled()
+    expect(lastAnswer()).toEqual({
+      role: "assistant",
+      content: "hola mundo",
+      sources: [],
+      consulted: false,
+    })
+  })
+
+  it("records consulted true when one tool call actually searched", async () => {
+    mocks.state.note = makeNote({ attachments: [CORPUS_ATTACHMENT] })
+    scriptStream([{ toolCalls: [SEARCH_TOOL_CALL] }, { content: "El modelo del dominio." }])
+    const store = useSendMessage()
+
+    await store.send("¿Qué es el lenguaje ubicuo?")
+
+    expect(mocks.searchCorpus).toHaveBeenCalledTimes(1)
+    expect(lastAnswer()?.consulted).toBe(true)
+  })
+
+  // A call the client refuses for scope read no material: it ran nothing, so it
+  // cannot turn a memory answer into a founded one.
+  it("does not count a call refused for scope as a consultation", async () => {
+    mocks.state.note = makeNote({ attachments: [CORPUS_ATTACHMENT] })
+    const stray: ToolCall = {
+      ...SEARCH_TOOL_CALL,
+      function: {
+        name: "search_material",
+        arguments: JSON.stringify({ query: "secreto", resource_id: "doc-ajeno" }),
+      },
+    }
+
+    scriptStream([{ toolCalls: [stray] }, { content: "no tengo ese material" }])
+    const store = useSendMessage()
+
+    await store.send("¿Qué es el lenguaje ubicuo?")
+
+    expect(mocks.searchCorpus).not.toHaveBeenCalled()
+    expect(lastAnswer()).toEqual({
+      role: "assistant",
+      content: "no tengo ese material",
+      sources: [],
+      consulted: false,
+    })
+  })
+
+  // The flag is one per answer and reaches both places that write a turn, so a
+  // cut short answer is not silently promoted to a founded one.
+  it("records consulted false on the partial answer of an unconsulted chat", async () => {
+    mocks.state.note = makeNote({ attachments: [CORPUS_ATTACHMENT] })
+    mocks.streamChatCompletion.mockImplementation(
+      async (req: { onDelta?: (delta: string) => void }) => {
+        mocks.state.calls.push("stream")
+        req.onDelta?.("Un agregado es")
+        throw new Error("el stream se cortó")
+      },
+    )
+    const store = useSendMessage()
+
+    await store.send("¿Qué es el agregado?")
+
+    expect(lastAnswer()).toEqual({
+      role: "assistant",
+      content: `Un agregado es\n\n${INTERRUPTED_MARKER}`,
+      sources: [],
+      consulted: false,
+    })
+  })
+})
+
+// The pre-existing cases of a vault-only chat, unchanged by the flag: a vault
+// file is in the message, so there is nothing behind the tool to consult.
 describe("useSendMessage.send with a vault attachment", () => {
+  it("records consulted true: a vault file is in the message, not behind the tool", async () => {
+    mocks.state.note = makeNote({ attachments: [VAULT_ATTACHMENT] })
+    const store = useSendMessage()
+
+    await store.send("¿Qué es el estado?")
+
+    expect(mocks.appendTurn.mock.calls.at(-1)?.[0]?.consulted).toBe(true)
+  })
   it("sends the file's text whole, with the citation frame, and declares no tools", async () => {
     mocks.state.note = makeNote({ attachments: [VAULT_ATTACHMENT] })
     const store = useSendMessage()
@@ -736,6 +845,7 @@ describe("useSendMessage.send with a vault attachment", () => {
       role: "assistant",
       content: "hola mundo",
       sources: [VAULT_PATH],
+      consulted: true,
     })
     expect(JSON.stringify(appended)).not.toContain("p. ")
   })
@@ -769,6 +879,7 @@ describe("useSendMessage.send with a vault attachment", () => {
       role: "assistant",
       content: "El modelo del dominio.",
       sources: [VAULT_PATH, "Domain-Driven Design, p. 42"],
+      consulted: true,
     })
   })
 
@@ -792,6 +903,7 @@ describe("useSendMessage.send with a vault attachment", () => {
       role: "user",
       content: "¿Qué es el estado?",
       sources: [],
+      consulted: true,
     })
     expect(store.sending).toBe(false)
   })
@@ -889,6 +1001,7 @@ describe("useSendMessage.cancel", () => {
       role: "assistant",
       content: `Un agregado\n\n${INTERRUPTED_MARKER}`,
       sources: [],
+      consulted: true,
     })
   })
 

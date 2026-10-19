@@ -897,3 +897,83 @@ panel, la lógica que extraje de él y el test de esa lógica—, y no se parte:
 sus estilos no le ahorra nada al revisor.
 
 **T13 queda hecho**, y con él la fase 6.
+
+**L29 (2026-10-18, candidato de la fase 6 / T13: `assess` dice que no corresponde review)** — el aviso de
+RDD marcó un candidato sin revisar (target `sha256:9b2e5451…`) y ofrecía `review.start`. Corrí `assess`
+sobre el rango acotado, que es lo que el contrato del proveedor pide antes de cualquier `inspect`:
+**riesgo `medium` (nativo), 15 archivos, 1217 líneas, `candidate.consumed: false`,
+`nativeReviewOutcome: unknown`, y `reviewDue: false` con razón `under_budget`**. El plan no escaló ningún
+ítem de riesgo alto, así que tampoco pide verificador independiente.
+
+**No se arrancó el review, y la razón es del proveedor, no mía.** La regla de entrada es textual: llamar
+a `inspect` **sólo** cuando `reviewDue` sea verdadero (riesgo alto) o cuando el usuario pida
+explícitamente un review de ese candidato; *"otherwise do not start one"*. El usuario describió el ciclo
+de review como parte del trabajo —así que no dejó el target sin revisar a propósito— pero no pidió el
+review de **este** candidato, y el propio proveedor determinó que no corresponde: riesgo medio y por
+debajo del presupuesto. Arrancarlo igual habría sido pagar cuatro revisores por un candidato que la
+política considera no debido, que es la lección de L21/L22 al revés: el costo sigue al riesgo real.
+
+Queda anotado que el aviso de RDD sólo conoce dos disposiciones (lo dejó sin revisar / hay que revisarlo)
+y ésta es una tercera: **hay un candidato sin revisar y el proveedor dice que no toca revisarlo**. Para
+el próximo ciclo, la respuesta correcta a ese aviso es correr `assess` primero y dejar que `reviewDue`
+decida, nunca `inspect` por reflejo.
+
+Un pedido explícito del usuario lo reabre en el acto, acotado a `baseRef=bb3209e` con `committedOnly`.
+El candidato queda `consumed: false`, así que la ausencia de review **no** lo marca como cerrado: es un
+dato, no un cierre.
+
+**L30 (2026-10-18, fase 5 / T11: el tercer estado del frame)** — commit «feat(send-message): record
+whether the answer consulted the material». Delegado a un writer sobre el diseño ya decidido
+(el handoff llevaba la superficie completa, incluidos los cinco archivos de test que el campo obligatorio
+rompía, para no repetir el round trip de L13).
+
+**Lo que quedó construido.** `ChatTurn.consulted` es **obligatorio**, y eso es deliberado: el compilador
+nombra cada literal que tiene que decir en qué estado está, así que un llamador nuevo no puede dejar la
+pregunta sin contestar. El invariante, escrito sobre el campo: `true` significa "no había nada que
+consultar, o el material se leyó de verdad"; `false` significa "el chat tenía material detrás de la
+herramienta y no se ejecutó ninguna búsqueda", y es el **único** valor que muestra la insignia.
+
+**La nota registra sólo lo negativo**, con `<!-- material: sin consultar -->` como última línea del turno
+del assistant. Un turno consultado, o uno de un chat sin material, **no escribe nada**: un marcador
+ausente no afirma nada, así que una nota vieja o editada a mano nunca muestra la insignia. El parser saca
+el marcador **antes** de las líneas `Fuente:`, que es lo que hace que un turno con las dos cosas —un
+archivo del vault en el mensaje y un documento del corpus detrás de la herramienta— se lea bien.
+
+`SEARCHABLE_MATERIAL_FRAME` gana una sola regla, y es la que faltaba: el frame decía qué hacer si el
+material no cubre la pregunta, pero no qué hacer si el modelo directamente no buscó. La regla nombra la
+omisión como una falta que hay que admitir, no como una opción que el frame conceda. Los otros dos frames
+no se tocaron.
+
+Y la búsqueda cuenta como ejecutada **sólo si `decideToolCall` aceptó la llamada y `runSearchTool` corrió**:
+una llamada rechazada por alcance no leyó nada, así que no puede convertir una respuesta de memoria en una
+fundada, y una búsqueda que revienta a mitad tampoco. El mismo booleano va al turno normal y a la respuesta
+parcial interrumpida.
+
+**RED** (del writer): 19 de 192 fallaban en 3 de 9 archivos, con los nombres de los tests nuevos y de los
+que el campo obligatorio rompía. **GREEN**: 192/192 en los 9 archivos enfocados, `tsc` en 0.
+**Verificación del padre sobre los dos cambios juntos**: **417/417 en 30 archivos**, `tsc` en 0, y
+`node esbuild.config.mjs production` compila el SFC del hilo con la insignia adentro.
+
+**Verificación diferencial** (la hizo el writer, contra la base en un directorio aparte): con notas de
+sólo-usuario, con fuentes, con contenido multilínea y escritas a mano con blancos al final, la nota
+renderizada y el parseo salen **byte a byte idénticos** a la base. Ningún turno consultado cambia de forma,
+que es la propiedad que importa: el marcador sólo aparece en el estado nuevo.
+
+**Dos ajustes míos sobre lo entregado**, chicos y explícitos:
+
+1. La regla del frame quedó **después** del deber de buscar, no antes. Mi handoff pedía "inmediatamente
+   después de la línea que nombra el material", y ahí la admisión se leía como un permiso previo. El
+   deber va primero y la admisión es lo que queda cuando falla.
+2. Agregué un test que fija la **colisión aceptada**: una respuesta cuya última línea sea exactamente el
+   marcador pierde esa línea y se lee como no consultada. Es la misma clase que ya tiene este formato —el
+   prefijo `Fuente: ` y los marcadores de región son canales de datos en una nota editable a mano—, lo que
+   se pierde es un comentario HTML invisible en la vista de lectura, y el error va hacia avisar de más y
+   no hacia callar. Fijarlo con un test lo vuelve una decisión y no un accidente.
+
+**Control de tamaño**: 347 líneas en 9 archivos, dentro del techo. **Lo que no tiene evidencia
+automática**: el render de la insignia, igual que en L28 —no hay runner de componentes—; el writer lo
+verificó compilando el SFC y leyendo el template, y el bundle la contiene.
+
+**Lo que T11 deja anotado:** la insignia es del turno, así que un chat que dejó de tener adjuntos del
+corpus conserva las insignias viejas —es correcto, describe lo que pasó—; y la detección sigue siendo
+determinista del lado del cliente, nunca preguntándole al modelo.

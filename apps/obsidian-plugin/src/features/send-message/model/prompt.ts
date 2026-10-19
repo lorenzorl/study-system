@@ -102,10 +102,17 @@ const EMPTY_CORPUS_MESSAGE =
  * names the tool, and it also says what to do when the search comes back empty,
  * because a model that cannot tell "no material" from "not consulted" invents
  * either a citation or an answer.
+ *
+ * The third rule names a failure instead of offering a choice: not searching is
+ * not an option the frame grants, it is a lapse the model has to admit, because
+ * an answer from memory dressed as a founded one is the failure this state is
+ * detected to catch. It comes after the duty to search for that reason: the
+ * obligation is stated first, and the admission is what is left when it fails.
  */
 export const SEARCHABLE_MATERIAL_FRAME = [
   "Este chat tiene material adjunto, pero el material no está en el mensaje.",
   "Buscá ese material con la herramienta de búsqueda antes de responder.",
+  "Si no llegaste a buscar el material, no respondas como si lo hubieras hecho: decí explícitamente que no lo consultaste.",
   "Si el material cubre la pregunta, no la respondas con tu propio conocimiento.",
   "Si el material no cubre la pregunta, decilo explícitamente en la respuesta.",
   "No inventes títulos, páginas ni datos: usá únicamente los pasajes que devolvió la búsqueda.",
