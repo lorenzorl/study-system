@@ -1,6 +1,7 @@
 # Feature — Adjuntos en el chat: material del corpus por tool-calling, archivos del vault completos
 
-**Status:** implementación autorizada (2026-10-18) — fase 1 en curso
+**Status:** fases 1–6 entregadas y verificadas (T1–T13, 2026-10-18); quedan las tareas de seguimiento
+anotadas en el Log (topes, README, frame de citas por clase, hallazgos F3/N3/N4)
 **Created:** 2026-10-18
 **Branch:** `feat/chat-adjuntos` (base `master` en `f9fa3b4`)
 **Depends on:** `chat-workspaces.md` (el chat ya habla directo con el LLM) y step 5 slice 5.3
@@ -1056,3 +1057,50 @@ fallo de red que coincide con un cancel en el mismo tick se reporta como cancela
 benigna y se deja. **N3** —un `send()` que rechace antes del `try` deja el borrador limpio— y **N4** —el
 texto devuelto puede caer en otro chat si cambiaste de chat durante un bloqueo— se suman a las tareas
 restantes.
+
+**L32 (2026-10-18, tareas 22 y 27: un solo dueño para los topes, y el test que no detectaba la deriva)** —
+commit «refactor(chat): give the attachment size policy one owner». La política de tamaño existía **dos
+veces**: en `features/attach-resource` (la de verdad) y duplicada dentro de `features/send-message/model/vault-text.ts`,
+porque una feature no puede importar a su hermana. Cambiar la política era un cambio de dos archivos, y el
+test que decía detectar la deriva **no la detectaba** (L25, `R2-vault-caps-drift-guard-claim`).
+
+**Dónde fueron, y por qué no a `shared/`.** La nota de las tareas restantes decía `shared/`, y me aparté con
+evidencia del propio repositorio: `ARCHITECTURE.md` §1 define `shared` como *"reusable, **domain-free**
+infrastructure"*, y un tope de tamaño para adjuntos del vault es política de dominio de S8 sobre
+`ChatAttachment` — que `entities/chat` ya posee, y al que las dos features ya dependen. Así que el módulo y
+su test viven en `entities/chat/lib/attachment-limits.ts`, exportados por la raíz de la slice. Ningún test
+tuvo que cambiar de expectativa: el movimiento fue un `mv`, y lo verifiqué comparando los dos archivos
+contra `HEAD` con `diff -q` — **byte a byte idénticos**. `git diff` los muestra como renames de 0 líneas.
+
+**El test de deriva se borró**, no se arregló: cuidaba una duplicación que ya no existe. Con eso el total
+bajó de 447 a **446** tests, y el número es el esperado, no una pérdida silenciosa.
+
+**Un hueco que el worker encontró y vale más que el movimiento.** Ese test era **el único lugar que fijaba
+los números literales**: los seis tests que se movieron usan las constantes de forma simbólica, así que
+cambiar `80_000` por `8_000` pasaría igual. El documento, sin embargo, ya había decidido lo contrario —
+*"el test fija la política, no la calibración"*—, así que no agregué el pin numérico: sería contradecir una
+decisión escrita para tapar un agujero que se descubre en el primer uso real (las notas se rechazan, se ve
+en el acto; no es un fallo silencioso). Queda anotado como trueque, con la salida a mano: si molesta, el
+arreglo es un test que fije los dos valores junto a la política.
+
+**La decisión no mecánica del cambio.** `useSendMessage.test.ts` mockea `@/entities/chat` con un factory
+que ahora **esparce `importOriginal`** y sólo pisa `useChatsStore`. Con el factory pelado, las constantes
+importadas quedaban `undefined` y **la re-comprobación de topes al enviar se desactivaba en silencio**: los
+tests seguían verdes sin estar probando lo que decían. Es un riesgo de clase para cualquier mock de raíz de
+slice que se escriba por reemplazo total, y queda escrito acá.
+
+**Un defecto de proceso mío, otra vez de especificación.** Mi handoff pedía en el punto 6 "actualizá
+cualquier test que importara los topes desde la ruta movida", y la lista de superficies permitidas no
+incluía los dos archivos de test de `attach-resource`. El worker **paró y preguntó** en vez de ampliar su
+alcance, que es lo correcto, y las dos líneas de import las terminé yo como padre. Es el mismo patrón que
+L13 —el compilador le marcó un archivo fuera de superficie y paró— con una diferencia: esa vez me salvó el
+compilador, ésta la contradicción era mía en el mismo handoff.
+
+**Verificación.** `tsc` en 0 (antes de mi arreglo fallaba con dos `TS2307`, exactamente en esos dos
+archivos), **446/446 en 33 archivos**, y `node esbuild.config.mjs production` compilando. Los seis tests de
+la política pasan con los cuerpos sin tocar, que es la evidencia de que la política no cambió: mismos
+valores, mismos mensajes en español, mismo comportamiento. Por eso `features/attach-resource` ya no reexporta los
+topes (el único consumidor de su raíz es `ChatThread.vue`, que importa `AttachmentPanel`).
+
+**Y se cerró el encabezado del documento**, que seguía diciendo *"fase 1 en curso"*: las fases 1–6 y las
+tareas T1–T13 están entregadas y verificadas, y lo que queda son las tareas de seguimiento del Log.

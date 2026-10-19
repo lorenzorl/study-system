@@ -80,7 +80,11 @@ vi.mock("@/entities/document", () => ({
   listDocuments: mocks.listDocuments,
 }))
 
-vi.mock("@/entities/chat", () => ({
+// The real slice root is kept and only the store is replaced: the vault material
+// imports the attachment size policy from here, so a bare factory mock would
+// erase it and the caps would silently become `undefined`.
+vi.mock("@/entities/chat", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/entities/chat")>()),
   useChatsStore: () => ({
     note: mocks.state.note,
     appendTurn: mocks.appendTurn,
@@ -89,8 +93,9 @@ vi.mock("@/entities/chat", () => ({
 
 import { INTERRUPTED_MARKER, useSendMessage } from "./useSendMessage"
 import type { ToolCall } from "@/shared/llm"
+import { MAX_ATTACHMENT_CHARS } from "@/entities/chat"
 import { NO_MATERIAL_FRAME, buildContext, buildSystemMessage } from "./prompt"
-import { MAX_ATTACHMENT_CHARS, setVaultTextReader } from "./vault-text"
+import { setVaultTextReader } from "./vault-text"
 
 const SEARCH_RESULT = {
   chunk_id: "c1",

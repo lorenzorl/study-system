@@ -6,7 +6,7 @@
  * never imports the Obsidian boundary.
  */
 import type { ChatAttachment } from "@/entities/chat"
-import { checkAttachmentLimits } from "./attachment-limits"
+import { checkAttachmentLimits } from "@/entities/chat"
 
 export type AttachResult =
   | { ok: true; attachment: ChatAttachment }

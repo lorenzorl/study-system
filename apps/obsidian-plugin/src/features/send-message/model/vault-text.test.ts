@@ -11,9 +11,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import {
   MAX_ATTACHMENT_CHARS,
   MAX_TOTAL_ATTACHMENT_CHARS,
-  readVaultMaterial,
-  setVaultTextReader,
-} from "./vault-text"
+} from "@/entities/chat"
+import { readVaultMaterial, setVaultTextReader } from "./vault-text"
 
 const THESIS_PATH = "Notas/Tesis.md"
 const THESIS_TEXT = [
@@ -159,15 +158,5 @@ describe("readVaultMaterial", () => {
 
     expect(result.error).toContain(THESIS_PATH)
     expect(result.error).toContain("lector del vault no está disponible")
-  })
-})
-
-describe("the caps", () => {
-  it("mirror the policy the attach path enforces, so a drifted copy fails here", () => {
-    // `features/attach-resource` owns the policy and this slice may not import
-    // it, so the numbers are restated. A change on one side without the other is
-    // the drift this test exists to catch.
-    expect(MAX_ATTACHMENT_CHARS).toBe(80_000)
-    expect(MAX_TOTAL_ATTACHMENT_CHARS).toBe(120_000)
   })
 })

@@ -1,9 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 import type { ChatAttachment } from "@/entities/chat"
-import {
-  MAX_ATTACHMENT_CHARS,
-  MAX_TOTAL_ATTACHMENT_CHARS,
-} from "./attachment-limits"
+import { MAX_ATTACHMENT_CHARS, MAX_TOTAL_ATTACHMENT_CHARS } from "@/entities/chat"
 import { attachVaultFile } from "./useAttachResource"
 
 const CORPUS: ChatAttachment = {

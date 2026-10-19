@@ -3,7 +3,7 @@ import { createPinia, setActivePinia } from "pinia"
 import type { ChatAttachment, ChatNote } from "@/entities/chat"
 import { useChatsStore } from "@/entities/chat"
 import type { DocumentSummary } from "@/entities/document"
-import { MAX_ATTACHMENT_CHARS } from "./attachment-limits"
+import { MAX_ATTACHMENT_CHARS } from "@/entities/chat"
 import { useChatAttachments } from "./useChatAttachments"
 
 // The chat slice's note adapter is mocked, so the real store is exercised and the

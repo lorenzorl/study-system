@@ -2,28 +2,19 @@
  * The vault material of one send: the port that reads a vault file (S7) and the
  * send-time re-check of the size policy (S8).
  *
- * The read is a port for two reasons that meet here. The send path never imports
- * the Obsidian boundary — `readVaultFile` lives in `shared/obsidian` — and
- * Feature-Sliced Design forbids this slice from reaching into
- * `features/attach-resource`, which owns the caps. So the app layer installs the
- * real reader at bootstrap (the same shape as `setSettingsStore` and
- * `setObsidianApp`), and the caps are restated below.
+ * The read is a port because the send path never imports the Obsidian boundary —
+ * `readVaultFile` lives in `shared/obsidian` — so the app layer installs the real
+ * reader at bootstrap (the same shape as `setSettingsStore` and `setObsidianApp`).
+ *
+ * The caps come from `entities/chat`, which owns the policy because it owns the
+ * attachment: one copy of the numbers, not one per feature.
  */
 import type { ChatAttachment } from "@/entities/chat"
+import {
+  MAX_ATTACHMENT_CHARS,
+  MAX_TOTAL_ATTACHMENT_CHARS,
+} from "@/entities/chat"
 import type { ContextBlock } from "./prompt"
-
-/**
- * The size policy, mirrored from
- * `features/attach-resource/model/attachment-limits.ts`.
- *
- * The numbers are restated rather than imported because a slice may not import a
- * sibling of its own layer (`src/architecture.test.ts`). The policy is the same
- * one: 80.000 characters per attachment and 120.000 for all of them together,
- * counted in characters because the plugin has no tokenizer. Change both sides
- * together; `vault-text.test.ts` pins the numbers so a one-sided change fails.
- */
-export const MAX_ATTACHMENT_CHARS = 80_000
-export const MAX_TOTAL_ATTACHMENT_CHARS = 120_000
 
 /** Reads a vault file's text. `app/main.ts` installs `readVaultFile` here. */
 export type VaultTextReader = (path: string) => Promise<string>
