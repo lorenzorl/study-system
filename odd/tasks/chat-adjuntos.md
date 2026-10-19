@@ -721,3 +721,15 @@ Dos cosas que el proveedor enseñó acá y conviene no volver a aprender a la ma
 
 Es el ciclo más barato de la feature, y deja la lección de que el costo del review sigue al riesgo real
 y no a la cantidad de archivos.
+
+**L22 (2026-10-18, sexto review nativo: aprobado, riesgo bajo)** — otra vez un candidato de solo
+documentación (`39d59a3`, 17 líneas de este archivo). Rango acotado con `baseRef` al commit ya revisado
+(`7d63d51`) y **sin lentes**, que es lo que el proveedor exige a riesgo bajo: cerró en `approved` en el
+acto, con cero lentes y cero corridas.
+
+El patrón quedó confirmado dos veces: **un candidato sin código no paga revisores**, y el costo del
+review sigue al riesgo y no a la cantidad de archivos ni de commits.
+
+Una observación de proceso que vale: **cada commit de `docs(odd)` genera un candidato nuevo**, así que
+cada review arrastra su propio ciclo de acuse. Es barato —cero corridas de modelo— pero es un ciclo. Si
+molesta, los registros de review se pueden agrupar en un solo commit en vez de uno por ciclo.
