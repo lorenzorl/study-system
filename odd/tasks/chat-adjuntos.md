@@ -778,3 +778,19 @@ arquitectura (que prueba que no se agregó ningún import cruzado entre slices).
 - **El frame de citas exige `Fuente: <título>, p. <página>`**, y una cita del vault no tiene página. El
   código cita bien (solo la ruta), pero el modelo podría agregar una página en su prosa. Esa línea del
   frame tendría que ramificar por clase.
+
+**L25 (2026-10-18, octavo review nativo: aprobado)** — linaje `review-4b48b4fd9e792268`, medium, 9
+archivos, 834 líneas. Los 4 reviewers corrieron y el review **aprobó**; autoridad quemada. **No encontró
+nada grave**: los tres arreglos de L24 quedaron bien.
+
+Seis hallazgos no bloqueantes. Los que valen:
+
+- **`R4-refusal-retry-duplicates-persisted-question`** (`useSendMessage.ts:128-134`, WARNING): el rechazo
+  ocurre **después** de persistir la pregunta, así que reintentar la duplica. Es real, y es la
+  consecuencia de la decisión deliberada "la pregunta no se pierde".
+- **`R4-unreadable-file-cause-dropped`** (`vault-text.ts:115-119`, WARNING): el mensaje de rechazo no dice
+  **por qué** falló la lectura, así que no se distingue "no existe" de "no tengo permiso".
+- **`R2-vault-caps-drift-guard-claim`** (`vault-text.test.ts:166-171`, WARNING): el test que dice detectar
+  la deriva de los topes **no la detecta de verdad**. Refuerza la tarea de moverlos a `shared/`.
+- `R3-001` (`note.ts:311`), `R3-002` (`useSendMessage.ts:143-144`) y `R3-003`
+  (`vault-text.ts:115-119`), los tres de confiabilidad.
