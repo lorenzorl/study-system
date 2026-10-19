@@ -579,3 +579,28 @@ se adivina**. El usuario puede cambiar el modelo cuando quiera, así que no hay 
 sirven; la capa manda `tools` cuando el llamador lo pide y reporta lo que el proveedor conteste,
 incluido un rechazo. La detección es en tiempo de ejecución, y el mensaje claro para el usuario es
 trabajo de T12.
+
+**L18 (2026-10-18, tercer review nativo: aprobado)** — linaje `review-99fa717d052668de`, target
+`sha256:0d86e862…`, riesgo **medium**, 4 lentes, 40 archivos y 2989 líneas. 4/4 reviewers,
+**aprobado**, autoridad quemada. El START pasó **al primer intento** con la razón corta, lo que confirma
+la restricción de L16.
+
+Veinte hallazgos (9 `WARNING`, 11 `SUGGESTION`), todos no bloqueantes. Lo que hay que mirar es que **dos
+subieron de severidad** respecto del review anterior:
+
+- `R1-attachment-region-line-injection` (`note.ts:266-269`) pasó de `SUGGESTION` a **`WARNING`**. La
+  inyección de línea en la región de adjuntos ya la habían marcado dos reviews; la tercera la subió.
+- `R1-keyless-corpus-list` (`router.go:25`) también pasó a **`WARNING`**. El listado sin key.
+
+El resto se concentra en la costura que la fase 5 todavía no cableó: `useSendMessage.ts:93-94` aparece
+en **seis** hallazgos (`R2-inert-material-path`, `R3-001`, `R3-007`, `R4-003`, `R4-004`) por el
+`grounded: false` y los `blocks: []` fijos, y `documents.go:68-78` en cuatro (`R3-002`, `R3-003`,
+`R4-001`, `R4-002`). No es un defecto: es exactamente lo que T10-T12 vienen a conectar. Que cuatro
+lentes señalen el mismo punto es la confirmación de que es la costura principal que queda abierta.
+
+`WARNING`: `R2-inert-material-path`, `R3-001`, `R3-002`, `R4-001`, `R4-002`, `R4-003`, `R4-004`.
+`SUGGESTION`: `R2-broad-chunk-port` (`documents.go:37-41`), `R2-redundant-docid-branch`
+(`search_handler.go:46-50`), `R2-variadic-filter-binding` (`chunk_repo.go:221-226`), `R3-003`
+(`documents.go:68-77`), `R3-004` (`search.go:215-220`), `R3-005` (`page_repo.go:111-116`), `R3-006`
+(`note.ts:263-268`), `R3-007`, `R4-005` (`search.go:215-220`), `R4-006` (`page_repo.go:111-122`) y
+`R4-007` (`shared/llm/client.ts:234-242`, el transporte nuevo).
