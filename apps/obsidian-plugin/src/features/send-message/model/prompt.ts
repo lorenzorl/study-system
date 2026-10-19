@@ -63,12 +63,19 @@ export interface PromptInput {
 /**
  * The rules the model always receives, in Spanish because the user's questions
  * are Spanish. They are deliberately not editable by a chat's prompt.
+ *
+ * The citation rule names both forms because the material in front of the model
+ * can be either class, and they are cited differently: a vault file is cited by
+ * its path, which is its identity and the only thing it has, while a passage that
+ * came from a search is a book or paper and is cited by title and page. Asking for
+ * a page from a note would make the model invent one, exactly what the third rule
+ * forbids.
  */
 export const CITATION_FRAME = [
   "Respondé la pregunta usando solamente el contexto que aparece a continuación.",
   "Si el contexto no alcanza para responderla, decilo explícitamente; no respondas con tu propio conocimiento.",
   "No inventes títulos, páginas ni datos: usá únicamente lo que figura en el contexto.",
-  "Cerrá la respuesta con una línea por cada pasaje que hayas usado, con este formato exacto: Fuente: <título>, p. <página>.",
+  "Cerrá la respuesta con una línea por cada pasaje que hayas usado: si el pasaje es un archivo del vault, citá su ruta como Fuente: <ruta de la nota>; si el pasaje vino de una búsqueda, citá título y página como Fuente: <título>, p. <página>.",
   "Respondé en el idioma de la pregunta.",
 ].join("\n")
 
@@ -78,8 +85,8 @@ export const CITATION_FRAME = [
  * The difference with `CITATION_FRAME` is not cosmetic. That frame forbids the
  * model's own knowledge, which is right when there is material and wrong when
  * there is none: forbidding it would turn every answer into an "I can't". And
- * it mandates the citation format, which a model with no pages to cite will
- * satisfy by inventing them, so here the format has to be forbidden by name.
+ * it mandates the citation format, which a model with nothing to cite will
+ * satisfy by inventing sources, so here every citation is forbidden by name.
  */
 export const NO_MATERIAL_FRAME = [
   "Este chat no tiene material adjunto: respondé con tu propio conocimiento.",

@@ -1132,3 +1132,41 @@ los dos son superficie pública de la slice y nada lo documentaba.
 Es sólo documentación: no toca código, no cambia comportamiento, y la suite no se vuelve a correr para
 verificarla porque no hay nada que verificar. Lo que sí hice fue contrastar cada afirmación contra el código
 antes de escribirla, que es el trabajo real de este commit.
+
+**L34 (2026-10-18, tarea 24: el frame de citas nombra la forma de cada clase, y un hueco que encontré
+leyéndolo)** — `CITATION_FRAME` exigía `Fuente: <título>, p. <página>` para todo. Un archivo del vault **no
+tiene página**: su identidad es la ruta, y así lo renderiza `buildSources` desde T8. O sea que el frame pedía
+un formato que, para esa clase, sólo se puede cumplir **inventando una página** — exactamente lo que su
+propia tercera regla prohíbe.
+
+Se arregló en el mismo frame, sin cuarta constante y sin cuarto `MaterialMode`: ese frame es el de "el
+material está en frente del modelo", y el material en frente puede ser de cualquiera de las dos clases. La
+regla ahora nombra las dos formas y dice cuál es cuál. `NO_MATERIAL_FRAME` sigue prohibiendo citas (ahora
+dicho como "nada que citar", no "sin páginas") y `SEARCHABLE_MATERIAL_FRAME` sigue pidiendo título y página,
+porque ahí el material sí es corpus.
+
+**Dos cuidados que no eran obvios.** La regla sigue siendo **una sola** (el frame tiene 5 reglas y una de
+citas: hay un test que lo fija), para que no se convierta en una lista de formatos. Y comprobé que
+`CITATION_FRAME` **no queda muerta**: sigue alcanzable desde el modo `in-message`.
+
+**Un caveat sobre el test, que prefiero decir que tapar.** El caso que ata cada forma a su clase lo hace con
+aritmética de `indexOf` sobre la oración, o sea fija el **orden de la prosa**. Si alguien reescribe la regla
+sin cambiar el significado, el test rompe aunque no haya regresión. Los otros tres casos del bloque son
+semánticos y no tienen ese problema. No lo toqué porque pasa y porque afirma una propiedad verdadera, pero
+queda anotado.
+
+**Y el hallazgo, que vale más que el arreglo.** Al leer la regla nueva se me hizo evidente un hueco que **no
+encontró ninguno de los nueve reviews nativos ni los dos verificadores independientes**: en un **chat mixto**
+—un archivo del vault y un documento del corpus— el modo que se elige es `in-message`, así que el frame es
+`CITATION_FRAME`, cuya primera regla dice *"Respondé la pregunta usando solamente el contexto que aparece a
+continuación"*, **y al mismo tiempo `tools` sí se declara**. El frame le prohíbe al modelo exactamente lo que
+la herramienta existe para hacer, y el panel de T13 permite adjuntar las dos clases al mismo chat.
+
+No es un error de diff que un revisor pueda ver leyendo un cambio: es una **ausencia** —falta el frame para
+"material en el mensaje **y** material buscable"— y los reviews miran diffs. Va como unidad propia, porque el
+arreglo toca también `useSendMessage.ts` al elegir el modo. Es el tipo de cosa que justifica leer el código de
+al lado en vez de sólo el diff propio.
+
+**Verificación.** RED del worker: 2 fallos nombrados. GREEN: 62/62 en `prompt.test.ts` + `tool.test.ts`, `tsc`
+en 0. Sobre todo junto con la unidad siguiente: **456/456 en 33 archivos**, `tsc` en 0 y el bundle compilando
+los SFC. El commit del frame va solo, para que la corrección de formato se lea sin el reordenamiento al lado.

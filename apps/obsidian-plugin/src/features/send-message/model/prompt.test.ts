@@ -47,6 +47,33 @@ describe("CITATION_FRAME", () => {
     expect(CITATION_FRAME).toContain("Fuente: <título>, p. <página>")
     expect(CITATION_FRAME).toContain("idioma de la pregunta")
   })
+
+  it("names both citation forms, because the material in front of the model can be either class", () => {
+    expect(CITATION_FRAME).toContain("Fuente: <ruta de la nota>")
+    expect(CITATION_FRAME).toContain("Fuente: <título>, p. <página>")
+  })
+
+  it("says which form belongs to which class: the vault by path, the search by title and page", () => {
+    const pathForm = CITATION_FRAME.indexOf("Fuente: <ruta de la nota>")
+    const pageForm = CITATION_FRAME.indexOf("Fuente: <título>, p. <página>")
+    const vault = CITATION_FRAME.indexOf("vault")
+    const search = CITATION_FRAME.indexOf("búsqueda")
+
+    // Both forms are stated, and each one is tied to the class it belongs to.
+    expect(vault).toBeGreaterThanOrEqual(0)
+    expect(search).toBeGreaterThanOrEqual(0)
+    expect(pathForm).toBeGreaterThan(vault)
+    expect(pathForm).toBeLessThan(search)
+    expect(pageForm).toBeGreaterThan(search)
+  })
+
+  it("states both forms in a single rule, so the frame keeps its list of rules", () => {
+    const rules = CITATION_FRAME.split("\n")
+    const citationRules = rules.filter((rule) => rule.includes("Fuente:"))
+
+    expect(rules).toHaveLength(5)
+    expect(citationRules).toHaveLength(1)
+  })
 })
 
 describe("NO_MATERIAL_FRAME", () => {
@@ -55,6 +82,13 @@ describe("NO_MATERIAL_FRAME", () => {
     expect(NO_MATERIAL_FRAME).toContain("Fuente:")
     expect(NO_MATERIAL_FRAME).toContain("idioma de la pregunta")
     expect(NO_MATERIAL_FRAME).not.toBe(CITATION_FRAME)
+  })
+
+  it("forbids both citation forms: no note path and no title with page", () => {
+    expect(NO_MATERIAL_FRAME).toContain("No escribas líneas «Fuente: …» ni cites páginas")
+    // Neither accepted format may appear as something to write.
+    expect(NO_MATERIAL_FRAME).not.toContain("<ruta de la nota>")
+    expect(NO_MATERIAL_FRAME).not.toContain("<título>, p. <página>")
   })
 })
 
@@ -73,6 +107,12 @@ describe("SEARCHABLE_MATERIAL_FRAME", () => {
   it("asks for the citation format and the language of the question", () => {
     expect(SEARCHABLE_MATERIAL_FRAME).toContain("Fuente: <título>, p. <página>")
     expect(SEARCHABLE_MATERIAL_FRAME).toContain("idioma de la pregunta")
+  })
+
+  it("keeps title and page, its only class: it never offers the note-path form", () => {
+    // Its material is corpus, so a path citation would name something the search
+    // never returned.
+    expect(SEARCHABLE_MATERIAL_FRAME).not.toContain("<ruta de la nota>")
   })
 
   it("asks the model to admit it did not search, without offering that as an option", () => {
@@ -259,6 +299,12 @@ describe("buildSources", () => {
 
   it("cites a vault file by its path, which is its identity", () => {
     expect(buildSources([VAULT_BLOCK])).toEqual(["Notas/Tesis.md"])
+  })
+
+  it("renders the pair: the corpus passage with its page, the vault file by its path", () => {
+    expect(
+      buildSources([{ ...CORPUS_BLOCK, title: "DDD" }, VAULT_BLOCK]),
+    ).toEqual(["DDD, p. 42", "Notas/Tesis.md"])
   })
 
   it("deduplicates in block order across both classes", () => {
