@@ -43,6 +43,9 @@ const OTHER_RESULT: SearchResult = {
   text: "Reemplazar el valor mágico por una constante con nombre.",
 }
 
+/** A passage with a strictly better score, so a merge has an order to respect. */
+const REF_TOP: SearchResult = { ...OTHER_RESULT, chunk_id: "c0", page_number: 3, bm25: 4, similarity: 0.9 }
+
 const DDD_BLOCK: ContextBlock = {
   kind: "corpus",
   title: "Domain-Driven Design",
@@ -95,18 +98,19 @@ describe("SEARCH_MATERIAL_TOOL", () => {
 })
 
 describe("decideToolCall", () => {
-  it("accepts a call with no resource id and runs it unscoped", () => {
+  it("accepts a call with no resource id, covering every attached document", () => {
+    // Unscoped means "all of the chat's material", never "the whole corpus".
     expect(decideToolCall(toolCall({ query: "lenguaje ubicuo" }), ATTACHMENTS)).toEqual({
       ok: true,
       query: "lenguaje ubicuo",
-      documentId: null,
+      documentIds: ["doc-ddd", "doc-ref"],
     })
   })
 
   it("accepts a resource id that is one of the chat's corpus attachments", () => {
     expect(
       decideToolCall(toolCall({ query: "ubicuo", resource_id: "doc-ddd" }), ATTACHMENTS),
-    ).toEqual({ ok: true, query: "ubicuo", documentId: "doc-ddd" })
+    ).toEqual({ ok: true, query: "ubicuo", documentIds: ["doc-ddd"] })
   })
 
   it("refuses a resource id that is not attached, with a message the model can read", () => {
@@ -137,8 +141,19 @@ describe("decideToolCall", () => {
     expect(decideToolCall(toolCall({ query: "ubicuo", resource_id: "" }), ATTACHMENTS)).toEqual({
       ok: true,
       query: "ubicuo",
-      documentId: null,
+      documentIds: ["doc-ddd", "doc-ref"],
     })
+  })
+
+  it("refuses every call when the chat has no corpus attachment", () => {
+    // The tool is only declared when the chat has material, so this is the belt to
+    // that braces: no attachment means no path to the corpus at all.
+    const decision = decideToolCall(toolCall({ query: "ubicuo" }), [VAULT])
+
+    expect(decision.ok).toBe(false)
+    if (decision.ok) throw new Error("unreachable")
+    expect(decision.error).toContain("no tiene material")
+    expect(decideToolCall(toolCall({ query: "ubicuo" }), []).ok).toBe(false)
   })
 
   it("refuses a call whose arguments are not a JSON object", () => {
@@ -163,27 +178,60 @@ describe("runSearchTool", () => {
     const search = fakeSearch()
 
     await runSearchTool(
-      { ok: true, query: "lenguaje ubicuo", documentId: "doc-ddd" },
+      { ok: true, query: "lenguaje ubicuo", documentIds: ["doc-ddd"] },
       { search: search as never, limit: 6 },
     )
 
+    expect(search).toHaveBeenCalledTimes(1)
     expect(search).toHaveBeenCalledWith("lenguaje ubicuo", 6, "doc-ddd")
   })
 
-  it("searches the whole attached material when the model did not narrow", async () => {
-    const search = fakeSearch()
+  it("searches only the chat's attachments even when the model names nothing", async () => {
+    // The regression: the corpus holds `doc-ref` too, but this chat attached
+    // only `doc-ddd`. Asserting on the ids that reach `searchCorpus`, not on the
+    // text, because a whole-corpus call also answers with a passage.
+    const searched: Array<string | undefined> = []
+    const search = vi.fn(async (_query: string, _limit?: number, documentId?: string) => {
+      searched.push(documentId)
 
-    await runSearchTool(
-      { ok: true, query: "lenguaje ubicuo", documentId: null },
-      { search: search as never, limit: 6 },
+      return documentId === "doc-ddd" ? [SEARCH_RESULT] : [OTHER_RESULT]
+    })
+    const decision = decideToolCall(toolCall({ query: "lenguaje ubicuo" }), [DDD])
+
+    if (!decision.ok) throw new Error("unreachable")
+
+    const outcome = await runSearchTool(decision, { search: search as never })
+
+    expect(searched).toEqual(["doc-ddd"])
+    expect(outcome.blocks).toEqual([DDD_BLOCK])
+  })
+
+  it("covers every attached document, merges by score and applies the limit", async () => {
+    const search = vi.fn(async (_query: string, _limit?: number, documentId?: string) =>
+      documentId === "doc-ddd" ? [SEARCH_RESULT] : [OTHER_RESULT, REF_TOP],
     )
+    const decision = decideToolCall(toolCall({ query: "lenguaje ubicuo" }), [DDD, REFACTORING])
 
-    expect(search).toHaveBeenCalledWith("lenguaje ubicuo", 6, undefined)
+    if (!decision.ok) throw new Error("unreachable")
+
+    const outcome = await runSearchTool(decision, { search: search as never, limit: 2 })
+
+    // One scoped search per attached document, each asking for the same limit.
+    expect(search.mock.calls.map(([, limit, id]) => [limit, id])).toEqual([
+      [2, "doc-ddd"],
+      [2, "doc-ref"],
+    ])
+    // Best score first (`bm25` plus `similarity`): p. 3 scores 4.9. Then the tie
+    // at 1.5, which `document_id` breaks for `doc-ddd`, so the order never depends
+    // on which document answered first. The limit drops the third passage.
+    expect(outcome.blocks.map((block) => (block.kind === "corpus" ? block.page : 0))).toEqual([
+      3, 42,
+    ])
   })
 
   it("turns the passages into blocks and into the text of a tool result", async () => {
     const outcome = await runSearchTool(
-      { ok: true, query: "lenguaje ubicuo", documentId: null },
+      { ok: true, query: "lenguaje ubicuo", documentIds: ["doc-ddd"] },
       { search: fakeSearch() as never },
     )
 
@@ -195,7 +243,7 @@ describe("runSearchTool", () => {
 
   it("keeps the order and the page of every passage it got", async () => {
     const outcome = await runSearchTool(
-      { ok: true, query: "modelo", documentId: null },
+      { ok: true, query: "modelo", documentIds: ["doc-ddd"] },
       { search: fakeSearch([SEARCH_RESULT, OTHER_RESULT]) as never },
     )
 
@@ -213,7 +261,7 @@ describe("runSearchTool", () => {
 
   it("says plainly when the search returned nothing, and carries no block", async () => {
     const outcome = await runSearchTool(
-      { ok: true, query: "algo que no está", documentId: null },
+      { ok: true, query: "algo que no está", documentIds: ["doc-ddd"] },
       { search: fakeSearch([]) as never },
     )
 

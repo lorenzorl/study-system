@@ -6,9 +6,10 @@
  * chat's scope, and how the accepted call becomes the text of a tool result.
  *
  * The scope invariant lives in `decideToolCall`: the chat's attachments fix what
- * the model may read, and a call naming anything else is refused instead of
- * executed. Without it, "attach a document to this chat" would mean nothing —
- * the model could reach the whole corpus with one invented id.
+ * the model may read — a call that names nothing covers exactly those, and a call
+ * that names anything else is refused instead of executed. Without it, "attach a
+ * document to this chat" would mean nothing — the model could reach the whole
+ * corpus with one invented id, or by naming nothing at all.
  */
 import type { ChatAttachment } from "@/entities/chat"
 import { searchCorpus } from "@/entities/search-result"
@@ -33,6 +34,7 @@ export const SEARCH_MATERIAL_TOOL: ToolSpec = {
     description: [
       "Busca pasajes en el material adjunto a este chat.",
       "Usala antes de responder cuando la pregunta pueda estar cubierta por ese material.",
+      "Sin resource_id busca en todo ese material, y solo en él: nunca en el resto del corpus.",
       "Devuelve los pasajes encontrados con su título y su página.",
       "Si la búsqueda no devuelve nada, el material adjunto no cubre la pregunta.",
     ].join(" "),
@@ -63,8 +65,11 @@ type CorpusAttachment = Extract<ChatAttachment, { kind: "corpus" }>
 export interface AcceptedToolCall {
   ok: true
   query: string
-  /** `null` means unscoped: the whole attached material. */
-  documentId: string | null
+  /**
+   * The attached documents this call may read, never empty: the one the model
+   * named, or every one the chat has when it named none.
+   */
+  documentIds: string[]
 }
 
 /** A refused call, with the message the model reads instead of a result. */
@@ -109,6 +114,13 @@ function missingQueryMessage(): string {
   return 'Falta "query": la búsqueda necesita el texto que hay que buscar.'
 }
 
+function noAttachmentsMessage(): string {
+  return (
+    "No se puede buscar: este chat no tiene material del corpus adjunto. " +
+    "Adjuntá un documento del corpus para que el modelo pueda leerlo."
+  )
+}
+
 function notAttachedMessage(documentId: string, attachments: CorpusAttachment[]): string {
   const available = attachments
     .map((attachment) => `${attachment.title} (${attachment.documentId})`)
@@ -144,10 +156,11 @@ function argumentsOf(call: ToolCall): Record<string, unknown> | null {
 /**
  * Decide whether a call the model made is inside the chat's scope.
  *
- * The optional `resource_id` may narrow the search to a document the chat has
- * attached, and nothing else: an id that is not attached is refused with a
- * message the model can read, never executed. A blank id narrows nothing, so it
- * is treated as absent — that cannot widen the scope.
+ * The scope is the chat's corpus attachments on every path. The optional
+ * `resource_id` may narrow it to one of them and nothing else: an id that is not
+ * attached is refused with a message the model can read, never executed. When no
+ * id is named — absent or blank — the call covers all of the attachments, which
+ * is the corpus the chat owns and not the corpus the server holds.
  */
 export function decideToolCall(
   call: ToolCall,
@@ -161,19 +174,26 @@ export function decideToolCall(
 
   if (query === "") return { ok: false, error: missingQueryMessage() }
 
+  const attached = corpusAttachments(attachments)
+
+  // The tool is only declared when the chat has material; if that state is ever
+  // reachable, this refusal is what keeps the whole corpus out of reach.
+  if (attached.length === 0) return { ok: false, error: noAttachmentsMessage() }
+
   const requested =
     typeof args.resource_id === "string" ? args.resource_id.trim() : ""
 
-  if (requested === "") return { ok: true, query, documentId: null }
+  if (requested === "") {
+    return { ok: true, query, documentIds: attached.map((attachment) => attachment.documentId) }
+  }
 
-  const attached = corpusAttachments(attachments)
   const match = attached.find((attachment) => attachment.documentId === requested)
 
   if (match === undefined) {
     return { ok: false, error: notAttachedMessage(requested, attached) }
   }
 
-  return { ok: true, query, documentId: match.documentId }
+  return { ok: true, query, documentIds: [match.documentId] }
 }
 
 /** One search result as a context block: the corpus class, with its page. */
@@ -187,7 +207,31 @@ function toBlock(result: SearchResult): ContextBlock {
 }
 
 /**
+ * Merge the per-document result lists into one ranking.
+ *
+ * `bm25 + similarity` is a crude composition of the two stages the server
+ * usually merges itself, and it is acceptable here because it is monotone in
+ * what the server already ranked (both scores are bigger-is-better) and because
+ * it is deterministic: equal scores break on `document_id` and then `chunk_id`,
+ * so the same inputs always produce the same order.
+ */
+function mergeRanked(results: SearchResult[]): SearchResult[] {
+  return [...results].sort((a, b) => {
+    const byScore = b.bm25 + b.similarity - (a.bm25 + a.similarity)
+
+    if (byScore !== 0) return byScore
+    if (a.document_id !== b.document_id) return a.document_id < b.document_id ? -1 : 1
+
+    return a.chunk_id === b.chunk_id ? 0 : a.chunk_id < b.chunk_id ? -1 : 1
+  })
+}
+
+/**
  * Run an accepted call and turn its results into the text of a tool result.
+ *
+ * `searchCorpus` narrows one document at a time, so a call that covers several
+ * attachments is one scoped search per document, run concurrently. The merge and
+ * the caller's limit happen here, on the merged list.
  *
  * The rendering is `buildContext`, the same composer the prompt uses, so a
  * passage reads identically whether it arrived in the message or through the
@@ -199,7 +243,13 @@ export async function runSearchTool(
   options: ToolRunOptions = {},
 ): Promise<ToolResult> {
   const search = options.search ?? searchCorpus
-  const results = await search(decision.query, options.limit, decision.documentId ?? undefined)
+  const searched = await Promise.all(
+    decision.documentIds.map((documentId) =>
+      search(decision.query, options.limit, documentId),
+    ),
+  )
+  const ranked = mergeRanked(searched.flat())
+  const results = options.limit === undefined ? ranked : ranked.slice(0, options.limit)
   const blocks = results.map(toBlock)
 
   return {

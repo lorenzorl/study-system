@@ -463,7 +463,7 @@ describe("useSendMessage.send with a corpus attachment", () => {
       "stream",
       "append:assistant",
     ])
-    expect(mocks.searchCorpus).toHaveBeenCalledWith("lenguaje ubicuo", 6, undefined)
+    expect(mocks.searchCorpus).toHaveBeenCalledWith("lenguaje ubicuo", 6, "doc-ddd")
 
     const first = mocks.streamChatCompletion.mock.calls[0][0] as {
       messages: Array<{ role: string }>
@@ -537,7 +537,7 @@ describe("useSendMessage.send with a corpus attachment", () => {
 
     await store.send("¿Qué es el lenguaje ubicuo?")
 
-    expect(mocks.searchCorpus).toHaveBeenCalledWith("lenguaje ubicuo", 3, undefined)
+    expect(mocks.searchCorpus).toHaveBeenCalledWith("lenguaje ubicuo", 3, "doc-ddd")
   })
 
   it("refuses a resource id that is not attached and never searches for it", async () => {
