@@ -9,4 +9,4 @@ export {
   buildSystemMessage,
   trimHistory,
 } from "./model/prompt"
-export type { PromptInput, PromptPassage, PromptTurn } from "./model/prompt"
+export type { ContextBlock, PromptInput, PromptTurn } from "./model/prompt"

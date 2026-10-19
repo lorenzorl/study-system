@@ -1,19 +1,26 @@
 /**
  * The pure prompt builder for a chat answer.
  *
- * No I/O: given a chat's own prompt, its previous turns, the passages retrieval
- * returned and the question, it produces the messages the provider receives.
+ * No I/O: given a chat's own prompt, its previous turns, the material blocks
+ * and the question, it produces the messages the provider receives.
  * The citation rules live here, in code, so a chat's prompt (S1: a prompt that
  * works for that chat only) can never replace them — it is appended inside the
  * frame, never substituted for it.
  */
 import type { LlmMessage } from "@/shared/llm"
 
-export interface PromptPassage {
-  title: string
-  page: number
-  text: string
-}
+/**
+ * One block of material the model can ground on.
+ *
+ * Two classes, because they are cited differently and that asymmetry is the
+ * whole reason for the union. A corpus document is a book or paper the server
+ * indexed, so it is cited by title and page. A vault file has no pages at all,
+ * so it is cited by its path, which is also its identity — giving it a title
+ * or a page would mean inventing data the note does not have (L14).
+ */
+export type ContextBlock =
+  | { kind: "corpus"; title: string; page: number; text: string }
+  | { kind: "vault"; path: string; text: string }
 
 export interface PromptTurn {
   role: "user" | "assistant"
@@ -25,14 +32,14 @@ export interface PromptInput {
   chatPrompt: string
   /** The note's previous turns, oldest first. */
   history: PromptTurn[]
-  /** What retrieval returned. */
-  passages: PromptPassage[]
+  /** The material to ground on, in the order it should be numbered. */
+  blocks: ContextBlock[]
   /**
    * Whether the chat has material the model can ground on.
    *
-   * An explicit input and not `passages.length === 0`, because those are not the
+   * An explicit input and not `blocks.length === 0`, because those are not the
    * same thing: a chat whose material the model chose not to consult has no
-   * passages and still has material, and it owes the user a different frame.
+   * blocks and still has material, and it owes the user a different frame.
    */
   grounded: boolean
   question: string
@@ -107,22 +114,28 @@ export function trimHistory(turns: PromptTurn[], maxTurns: number): PromptTurn[]
   return kept.slice(start)
 }
 
-/** One numbered block per passage: index, title, exact page, then its text. */
-export function buildContext(passages: PromptPassage[]): string {
-  return passages.map(renderPassage).join("\n\n")
+/**
+ * One numbered block per block of material, in order, from both classes:
+ * index, title and exact page for the corpus, index and path for the vault,
+ * then the text.
+ */
+export function buildContext(blocks: ContextBlock[]): string {
+  return blocks.map(renderBlock).join("\n\n")
 }
 
 /**
- * The citation data in the note's own shape, deduplicated in passage order.
- * A citation is plain data (`Domain-Driven Design, p. 42`); the note adds the
- * `Fuente: ` prefix when it renders.
+ * The citation data in the note's own shape, deduplicated in block order across
+ * both classes. A citation is plain data (`Domain-Driven Design, p. 42`, or
+ * `Notas/Tesis.md` for a vault file); the note adds the `Fuente: ` prefix when
+ * it renders.
  */
-export function buildSources(passages: PromptPassage[]): string[] {
+export function buildSources(blocks: ContextBlock[]): string[] {
   const seen = new Set<string>()
   const sources: string[] = []
 
-  for (const passage of passages) {
-    const source = `${passage.title}, p. ${passage.page}`
+  for (const block of blocks) {
+    const source =
+      block.kind === "corpus" ? `${block.title}, p. ${block.page}` : block.path
 
     if (seen.has(source)) continue
 
@@ -150,18 +163,20 @@ export function buildMessages(input: PromptInput & { maxTurns: number }): LlmMes
   )
   const user: LlmMessage = {
     role: "user",
-    content: buildUserMessage(input.passages, input.question, input.grounded),
+    content: buildUserMessage(input.blocks, input.question, input.grounded),
   }
 
   return [system, ...history, user]
 }
 
-function renderPassage(passage: PromptPassage, index: number): string {
-  return `[${index + 1}] ${passage.title} — p. ${passage.page}\n${passage.text}`
+function renderBlock(block: ContextBlock, index: number): string {
+  const heading = block.kind === "corpus" ? `${block.title} — p. ${block.page}` : block.path
+
+  return `[${index + 1}] ${heading}\n${block.text}`
 }
 
 function buildUserMessage(
-  passages: PromptPassage[],
+  blocks: ContextBlock[],
   question: string,
   grounded: boolean,
 ): string {
@@ -169,7 +184,7 @@ function buildUserMessage(
   // corpus that was never consulted cannot have "returned nothing".
   if (!grounded) return question.trim()
 
-  const context = buildContext(passages)
+  const context = buildContext(blocks)
   const block = context === "" ? EMPTY_CORPUS_MESSAGE : context
 
   return `${block}\n\n${question.trim()}`

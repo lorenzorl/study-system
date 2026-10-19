@@ -9,18 +9,28 @@ import {
   buildSystemMessage,
   trimHistory,
 } from "./prompt"
-import type { PromptPassage, PromptTurn } from "./prompt"
+import type { ContextBlock, PromptTurn } from "./prompt"
 
-const PASSAGE: PromptPassage = {
+const CORPUS_BLOCK: ContextBlock = {
+  kind: "corpus",
   title: "Domain-Driven Design",
   page: 42,
   text: "El modelo del dominio es la raíz del lenguaje ubicuo.",
 }
 
-const OTHER_PASSAGE: PromptPassage = {
+const OTHER_CORPUS_BLOCK: ContextBlock = {
+  kind: "corpus",
   title: "Refactoring",
   page: 7,
   text: "Reemplazar el valor mágico por una constante con nombre.",
+}
+
+// Deliberately digit-free, so the test can tell "no page anywhere" apart from
+// "no page number this block happens not to contain".
+const VAULT_BLOCK: ContextBlock = {
+  kind: "vault",
+  path: "Notas/Tesis.md",
+  text: "El estado es efímero y se descarta al recargar.",
 }
 
 function turn(role: PromptTurn["role"], content: string): PromptTurn {
@@ -137,46 +147,82 @@ describe("trimHistory", () => {
 })
 
 describe("buildContext", () => {
-  it("renders one numbered block per passage with title, page and text", () => {
-    const context = buildContext([PASSAGE, OTHER_PASSAGE])
+  it("renders a corpus block's title, its page number and its text", () => {
+    const context = buildContext([CORPUS_BLOCK])
 
-    expect(context).toContain("1")
+    expect(context).toBe(
+      `[1] ${CORPUS_BLOCK.title} — p. ${CORPUS_BLOCK.page}\n${CORPUS_BLOCK.text}`,
+    )
     expect(context).toContain("Domain-Driven Design")
     expect(context).toContain("42")
-    expect(context).toContain(PASSAGE.text)
-    expect(context).toContain("2")
-    expect(context).toContain("Refactoring")
-    expect(context).toContain("7")
-    expect(context).toContain(OTHER_PASSAGE.text)
-    expect(context).toContain(`${PASSAGE.text}\n\n`)
+    expect(context).toContain(CORPUS_BLOCK.text)
   })
 
-  it("is built from the passage text, which is the field the caller prompts with", () => {
+  it("renders a vault block's path and its text, and never a page number", () => {
+    const context = buildContext([VAULT_BLOCK])
+
+    expect(context).toBe(`[1] ${VAULT_BLOCK.path}\n${VAULT_BLOCK.text}`)
+    expect(context).toContain(VAULT_BLOCK.path)
+    expect(context).toContain(VAULT_BLOCK.text)
+    expect(context).not.toContain("p. ")
+  })
+
+  it("numbers a mixed list in the order given, one number per block", () => {
+    const context = buildContext([VAULT_BLOCK, CORPUS_BLOCK, OTHER_CORPUS_BLOCK])
+
+    expect(context).toBe(
+      `[1] ${VAULT_BLOCK.path}\n${VAULT_BLOCK.text}` +
+        `\n\n[2] ${CORPUS_BLOCK.title} — p. ${CORPUS_BLOCK.page}\n${CORPUS_BLOCK.text}` +
+        `\n\n[3] ${OTHER_CORPUS_BLOCK.title} — p. ${OTHER_CORPUS_BLOCK.page}\n${OTHER_CORPUS_BLOCK.text}`,
+    )
+    expect(context.startsWith("[1] ")).toBe(true)
+  })
+
+  it("is built from the block text, which is the field the caller prompts with", () => {
     const snippet = "[El] modelo del [dominio]"
 
-    expect(buildContext([{ ...PASSAGE, text: PASSAGE.text }])).toContain(PASSAGE.text)
-    expect(buildContext([{ ...PASSAGE, text: PASSAGE.text }])).not.toContain(snippet)
+    expect(buildContext([{ ...CORPUS_BLOCK, text: CORPUS_BLOCK.text }])).toContain(
+      CORPUS_BLOCK.text,
+    )
+    expect(buildContext([{ ...CORPUS_BLOCK, text: CORPUS_BLOCK.text }])).not.toContain(snippet)
   })
 
-  it("is empty when there are no passages", () => {
+  it("is empty when there are no blocks", () => {
     expect(buildContext([])).toBe("")
   })
 })
 
 describe("buildSources", () => {
   it("returns citation data in the note's own shape", () => {
-    expect(buildSources([PASSAGE])).toEqual(["Domain-Driven Design, p. 42"])
+    expect(buildSources([CORPUS_BLOCK])).toEqual(["Domain-Driven Design, p. 42"])
   })
 
-  it("deduplicates in passage order", () => {
-    expect(buildSources([PASSAGE, OTHER_PASSAGE, PASSAGE])).toEqual([
+  it("cites a vault file by its path, which is its identity", () => {
+    expect(buildSources([VAULT_BLOCK])).toEqual(["Notas/Tesis.md"])
+  })
+
+  it("deduplicates in block order across both classes", () => {
+    expect(
+      buildSources([VAULT_BLOCK, CORPUS_BLOCK, OTHER_CORPUS_BLOCK, VAULT_BLOCK, CORPUS_BLOCK]),
+    ).toEqual([
+      "Notas/Tesis.md",
       "Domain-Driven Design, p. 42",
       "Refactoring, p. 7",
     ])
   })
 
-  it("is empty when there are no passages", () => {
+  it("is empty when there are no blocks", () => {
     expect(buildSources([])).toEqual([])
+  })
+})
+
+describe("ContextBlock", () => {
+  it("never gives a vault block a page: its citation carries no 'p. ' anywhere", () => {
+    const sources = buildSources([VAULT_BLOCK]).join("\n")
+
+    expect(sources).toBe("Notas/Tesis.md")
+    expect(sources).not.toContain("p. ")
+    expect(buildContext([VAULT_BLOCK])).not.toContain("p. ")
   })
 })
 
@@ -190,7 +236,7 @@ describe("buildMessages", () => {
         turn("user", "pregunta más vieja"),
         turn("assistant", "respuesta más vieja"),
       ],
-      passages: [PASSAGE],
+      blocks: [CORPUS_BLOCK],
       grounded: true,
       question: "¿Qué es el lenguaje ubicuo?",
       maxTurns: 2,
@@ -206,7 +252,7 @@ describe("buildMessages", () => {
     const messages = buildMessages({
       chatPrompt: "",
       history: [],
-      passages: [PASSAGE],
+      blocks: [CORPUS_BLOCK],
       grounded: true,
       question: "¿Qué es el lenguaje ubicuo?",
       maxTurns: 4,
@@ -216,16 +262,36 @@ describe("buildMessages", () => {
 
     expect(last?.role).toBe("user")
     expect(last?.content).toBe(
-      `${buildContext([PASSAGE])}\n\n¿Qué es el lenguaje ubicuo?`,
+      `${buildContext([CORPUS_BLOCK])}\n\n¿Qué es el lenguaje ubicuo?`,
     )
-    expect(last?.content).toContain(PASSAGE.text)
+    expect(last?.content).toContain(CORPUS_BLOCK.text)
   })
 
-  it("still carries the question and reports an empty corpus when there are no passages", () => {
+  it("ends a mixed grounded reply with both blocks, a blank line and the question", () => {
     const messages = buildMessages({
       chatPrompt: "",
       history: [],
-      passages: [],
+      blocks: [CORPUS_BLOCK, VAULT_BLOCK],
+      grounded: true,
+      question: "¿Qué es el lenguaje ubicuo?",
+      maxTurns: 4,
+    })
+
+    const last = messages.at(-1)
+
+    expect(last?.role).toBe("user")
+    expect(last?.content).toBe(
+      `${buildContext([CORPUS_BLOCK, VAULT_BLOCK])}\n\n¿Qué es el lenguaje ubicuo?`,
+    )
+    expect(last?.content).toContain(CORPUS_BLOCK.text)
+    expect(last?.content).toContain(VAULT_BLOCK.text)
+  })
+
+  it("still carries the question and reports an empty corpus when there are no blocks", () => {
+    const messages = buildMessages({
+      chatPrompt: "",
+      history: [],
+      blocks: [],
       grounded: true,
       question: "¿Qué es el lenguaje ubicuo?",
       maxTurns: 4,
@@ -242,7 +308,7 @@ describe("buildMessages", () => {
     const messages = buildMessages({
       chatPrompt: "",
       history: [turn("assistant", "arranque prellenado"), turn("user", "hola")],
-      passages: [],
+      blocks: [],
       grounded: true,
       question: "¿Y ahora?",
       maxTurns: 4,
@@ -257,7 +323,7 @@ describe("buildMessages", () => {
     const messages = buildMessages({
       chatPrompt: "Sos un tutor.",
       history: [],
-      passages: [],
+      blocks: [],
       grounded: false,
       question: "¿Qué es el lenguaje ubicuo?",
       maxTurns: 4,

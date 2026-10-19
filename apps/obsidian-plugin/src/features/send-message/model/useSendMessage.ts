@@ -90,7 +90,7 @@ export const useSendMessage = defineStore("send-message", () => {
       const messages = buildMessages({
         chatPrompt: note.chat.prompt,
         history,
-        passages: [],
+        blocks: [],
         grounded: false,
         question: trimmed,
         maxTurns: settings.historyTurns,
