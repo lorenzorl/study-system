@@ -556,3 +556,26 @@ texto completo no viene en el sobre de la facade: se registran por id, lente, ub
 Los dos reviews coinciden: la deuda ya declarada (el `top_k` inerte, el 2N+1, el conteo de páginas por
 jobs) más un puñado de sugerencias. Ninguno encontró nada escondido, y el único hallazgo nuevo con
 consecuencias reales es la inyección de línea en la región de adjuntos.
+
+**L17 (2026-10-18, fase 5 / T9 implementada y verificada)** — commit «feat(llm): teach the transport
+to carry tool calls». RED: 8 de 40 fallaban en `src/shared/llm`. GREEN: 315 de 315 en 26 archivos
+(+11), `tsc` en 0. Verificación diferencial: con una request sin `tools` el **cuerpo es byte a byte
+idéntico** al de la base, y el camino de contenido también; lo único nuevo es la clave `toolCalls`.
+
+Decisiones del writer, reportadas: las formas de `ToolCall` y `ToolSpec` siguen la **forma del cable**
+del proveedor (anidadas), para que el bucle de T10 pueda devolver el turno del assistant tal cual, sin
+un paso de traducción; el fragmento se normaliza a `{index, id?, name?, arguments?}` y se descarta si
+no trae `index` numérico, porque no se puede ubicar; el `index` se descarta en el resultado armado y el
+orden se aplica ordenando, con un test que abre la segunda llamada antes que la primera para que el
+orden quede fijado y no dependa de la inserción; y un `arguments` vacío se concatena como cadena vacía.
+
+Dos cosas que T10 tiene que atender, anotadas por el writer: el mock de `streamChatCompletion` en
+`useSendMessage.test.ts` devuelve `{content, deltas}` y hay que extenderlo cuando el store lea
+`toolCalls`; y el turno del assistant con `tool_calls` tiene que devolverse **tal cual** vino, sin
+traducir.
+
+Y una decisión de diseño que queda resuelta acá y conviene dejar escrita: **la capacidad del modelo no
+se adivina**. El usuario puede cambiar el modelo cuando quiera, así que no hay lista de modelos que
+sirven; la capa manda `tools` cuando el llamador lo pide y reporta lo que el proveedor conteste,
+incluido un rechazo. La detección es en tiempo de ejecución, y el mensaje claro para el usuario es
+trabajo de T12.
