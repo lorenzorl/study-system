@@ -260,11 +260,45 @@ function renderPromptRegion(prompt: string): string {
   return `${PROMPT_BEGIN}\n${prompt}\n${PROMPT_END}`
 }
 
+/**
+ * Turns one field into one line's worth of text before it is written into the
+ * region. Nothing in an attachment is ours: a corpus title comes from the
+ * server, a vault path comes from the user.
+ *
+ * - A line break is collapsed into a space, because a break would inject an
+ *   extra line: the parser would read a line nobody wrote, and the next
+ *   rewrite would no longer hold what the writer meant.
+ * - Both region markers are removed, because a marker is structure and a field
+ *   is data: an end marker inside a title makes `setAttachments` find the
+ *   region's end early, so the rewrite truncates the region and corrupts the
+ *   note around it.
+ * - A pipe is left alone, because the parser splits on the first pipe for the
+ *   class and on the second for a corpus id, so a pipe inside a title or a path
+ *   already survives the round trip; stripping it would throw away text for
+ *   nothing.
+ *
+ * This sanitises what the plugin writes; it does not make the parser stricter.
+ * The note stays hand-editable, and a line the walker cannot read is still
+ * ignored instead of reported as an error.
+ *
+ * The trim runs last so that removing a marker cannot leave the field with an
+ * edge space of its own.
+ */
+function toSingleLine(field: string): string {
+  return field
+    .split(ATTACHMENTS_BEGIN)
+    .join("")
+    .split(ATTACHMENTS_END)
+    .join("")
+    .replace(/(?:\r\n|\r|\n)+/g, " ")
+    .trim()
+}
+
 function renderAttachment(attachment: ChatAttachment): string {
   if (attachment.kind === "corpus") {
-    return `- corpus | ${attachment.documentId.trim()} | ${attachment.title.trim()}`
+    return `- corpus | ${toSingleLine(attachment.documentId)} | ${toSingleLine(attachment.title)}`
   }
-  return `- vault | ${attachment.path.trim()}`
+  return `- vault | ${toSingleLine(attachment.path)}`
 }
 
 /** What goes between the markers: a single newline when the list is empty. */

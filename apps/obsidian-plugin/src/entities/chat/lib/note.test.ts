@@ -299,6 +299,16 @@ function noteWithAttachmentLines(lines: string[]): string {
   return [ATTACHMENTS_BEGIN, ...lines, ATTACHMENTS_END].join("\n")
 }
 
+/** The attachment lines themselves: between the markers, blanks dropped. */
+function attachmentLines(raw: string): string[] {
+  const begin = raw.indexOf(ATTACHMENTS_BEGIN) + ATTACHMENTS_BEGIN.length
+  const end = raw.indexOf(ATTACHMENTS_END)
+  return raw
+    .slice(begin, end)
+    .split("\n")
+    .filter((line) => line.trim() !== "")
+}
+
 const CORPUS: ChatAttachment = {
   kind: "corpus",
   documentId: "279fadac-07d5-442d-97dd-b9d107f97164",
@@ -463,5 +473,108 @@ describe("setAttachments", () => {
 
     expect(result).not.toContain("- roto")
     expect(parseChatNote(result, PATH).attachments).toEqual([VAULT])
+  })
+})
+
+// ── setAttachments: untrusted text in a structural position ──────────────────
+
+// A corpus title comes from the server and a vault path comes from the user.
+// Neither is ours to trust with a newline or with a marker, because both would
+// change the shape of the note instead of the text inside it.
+describe("setAttachments sanitises each field into one line", () => {
+  it("renders a corpus title with a run of line breaks as one line", () => {
+    const result = setAttachments(noteWithAttachmentLines([]), [
+      { kind: "corpus", documentId: "id-1", title: "DDD\n\n\r\ntomo 1" },
+    ])
+
+    expect(attachmentLines(result)).toEqual(["- corpus | id-1 | DDD tomo 1"])
+    expect(parseChatNote(result, PATH).attachments).toEqual([
+      { kind: "corpus", documentId: "id-1", title: "DDD tomo 1" },
+    ])
+  })
+
+  it("renders a vault path with a windows line break as one line", () => {
+    const result = setAttachments(noteWithAttachmentLines([]), [
+      { kind: "vault", path: "Notas/Tesis\r\nv2.md" },
+    ])
+
+    expect(attachmentLines(result)).toEqual(["- vault | Notas/Tesis v2.md"])
+    expect(parseChatNote(result, PATH).attachments).toEqual([
+      { kind: "vault", path: "Notas/Tesis v2.md" },
+    ])
+  })
+
+  it("cannot be ended early by an end marker embedded in a field", () => {
+    const hostile: ChatAttachment = {
+      kind: "corpus",
+      documentId: "id-1",
+      title: "DDD<!-- adjuntos:end --> truco",
+    }
+    const raw = [
+      "USER INTRO",
+      ATTACHMENTS_BEGIN,
+      "- vault | viejo.md",
+      ATTACHMENTS_END,
+      "USER TAIL",
+      "",
+    ].join("\n")
+
+    const once = setAttachments(raw, [hostile])
+
+    // One end marker is left, and it is the one the writer closed: everything
+    // after it is still the user's bytes.
+    expect(once.split(ATTACHMENTS_END)).toHaveLength(2)
+    expect(after(once, ATTACHMENTS_END)).toBe(after(raw, ATTACHMENTS_END))
+    expect(parseChatNote(once, PATH).attachments).toEqual([
+      { kind: "corpus", documentId: "id-1", title: "DDD truco" },
+    ])
+
+    // A second rewrite must not find an injected marker and truncate there.
+    const twice = setAttachments(once, [VAULT])
+
+    expect(twice.split(ATTACHMENTS_END)).toHaveLength(2)
+    expect(after(twice, ATTACHMENTS_END)).toBe(after(raw, ATTACHMENTS_END))
+    expect(parseChatNote(twice, PATH).attachments).toEqual([VAULT])
+  })
+
+  // A pipe is data, not structure: the parser splits on the first pipe for the
+  // class and on the second for a corpus id, so a pipe survives the round trip
+  // and stripping it would throw away text for nothing.
+  it("keeps a pipe inside a title", () => {
+    const titled: ChatAttachment = {
+      kind: "corpus",
+      documentId: "id-1",
+      title: "DDD | tomo 1",
+    }
+
+    const result = setAttachments(noteWithAttachmentLines([]), [titled])
+
+    expect(attachmentLines(result)).toEqual(["- corpus | id-1 | DDD | tomo 1"])
+    expect(parseChatNote(result, PATH).attachments).toEqual([titled])
+  })
+
+  it("renders the same bytes after a parse round trip", () => {
+    const first = setAttachments(noteWithAttachmentLines([]), [
+      { kind: "corpus", documentId: "id-1", title: "DDD\r\ntomo 1" },
+      { kind: "vault", path: "Notas/Tesis\nv2.md" },
+    ])
+
+    const again = setAttachments(first, parseChatNote(first, PATH).attachments)
+
+    expect(again).toBe(first)
+  })
+
+  // Preserve: the render already trimmed each field, and a field with no break
+  // and no marker must still be written exactly as it was before.
+  it("still trims the space around a field", () => {
+    const result = setAttachments(noteWithAttachmentLines([]), [
+      { kind: "corpus", documentId: "  id-1  ", title: "  DDD  " },
+      { kind: "vault", path: "  Notas/Tesis.md  " },
+    ])
+
+    expect(attachmentLines(result)).toEqual([
+      "- corpus | id-1 | DDD",
+      "- vault | Notas/Tesis.md",
+    ])
   })
 })
