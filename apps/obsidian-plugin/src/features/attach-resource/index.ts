@@ -7,3 +7,4 @@ export {
 export type { AttachmentDecision } from "./model/attachment-limits"
 export { attachVaultFile } from "./model/useAttachResource"
 export type { AttachResult } from "./model/useAttachResource"
+export { useChatAttachments } from "./model/useChatAttachments"

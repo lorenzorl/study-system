@@ -803,3 +803,57 @@ El patrón ya es rutina y quedó escrito tres veces: **un candidato sin código 
 
 **Este registro queda SIN commitear a propósito**, para no generar un décimo candidato y su ciclo de
 acuse. Viaja con el próximo cambio de código, que es la fase 6.
+
+**L27 (2026-10-18, fase 6 / T13: la ruta de datos, en dos commits)** — «feat(chat): give the note an
+attachment writer and the app a corpus list» (140 líneas) y «feat(attach-resource): attach and detach
+what a chat brings into context» (~480). La unidad iba a ser una sola de ~590 líneas, por encima del
+techo, así que se partió por capa y no por capricho: primero **las costuras** —lo que habla con la nota,
+con el servidor y con el vault—, después **la interacción** que las usa. Es el mismo corte que L15 ya
+había elegido para la fase 4.
+
+**Lo que quedó construido.** `writeChatAttachments` es el adaptador que faltaba: la cirugía de la región
+ya existía y estaba revisada desde T4, pero nadie la llamaba, así que los adjuntos solo se podían
+escribir a mano. `listDocuments` lee `GET /api/rag/documents`, que el servidor expone desde T7 y ningún
+cliente consumía. `listVaultMarkdownFiles` da los candidatos del vault: `listVaultFiles` lista los hijos
+directos de una carpeta, que es correcto para la carpeta de chats e incorrecto para un selector que
+tiene que cruzar carpetas. Y `useChatAttachments` es la interacción: listar, adjuntar, desadjuntar y
+rechazar con un mensaje en español.
+
+**Tres decisiones que valen.**
+
+1. **La nota es la única fuente de verdad.** El store no guarda copia de la lista: `attachments` es un
+   `computed` sobre `chats.note`, y `saveAttachments` refresca la nota **solo después** de que la
+   escritura salió bien. Así una escritura fallida no deja la UI mostrando un adjunto que la nota no
+   tiene, y una nota editada a mano no puede divergir de lo que muestra el panel.
+2. **Dedupe por identidad**, `documentId` para el corpus y ruta para el vault. Cierra el punto que L13
+   había dejado abierto: adjuntar dos veces el mismo archivo del vault gastaba el tope total dos veces
+   por un solo archivo, porque `attachVaultFile` suma leyendo.
+3. **El rechazo por tamaño llega al usuario tal cual lo escribió la política**, sin reescribirlo en el
+   store. Una sola fuente para el mensaje de S8.
+
+**Dos defectos que encontraron los chequeos, no yo.**
+
+- El test nuevo del chat cerrado falló contra la primera implementación: `attachCorpus` **no** tenía el
+  guard que sí tenían `attachVault` y `detach`. Sin él, adjuntar sin chat abierto escribía en la nada
+  (la escritura salía por `currentPath`, que sobrevive al `note` nulo) en vez de decir que no hay chat.
+- `architecture.test.ts` rechazó el primer test: usaba `await import("@/entities/chat/api/chat-note")`
+  para espiar el adaptador, que es exactamente el import interno que el guard prohíbe. Reescrito con
+  `vi.hoisted` + `vi.mock`, que además es la forma limpia. **El guard hizo su trabajo y no se debilitó.**
+
+RED: el módulo no existía y la suite no colectaba; después, 1 de 13 con el pinia activo (el guard de
+`attachCorpus`); después, 1 de 7 en el guard de arquitectura. GREEN: 26/26 en `features/attach-resource`,
+**399/399 en 29 archivos** (+17 sobre los 382 de L25) y `tsc` en 0.
+
+Verificación diferencial: **no aplica como corrida contra la base**, porque ningún cuerpo existente
+cambió —el diff son altas más cuatro líneas de import y de exportación—. La evidencia es que los 382
+tests previos pasan sin tocarlos y que `listVaultFiles`, `processVaultFile` y `setAttachments` quedaron
+byte a byte iguales.
+
+**Lo que este cambio deja anotado, para las tareas que siguen:**
+
+- La UI del panel es el segundo commit de T13 y todavía no existe: hoy el store se puede usar desde una
+  consola, no desde la pantalla.
+- `loadCorpus` informa el fallo pero no bloquea nada: el chat con adjunto del corpus y el servidor caído
+  sigue fallando en la primera búsqueda, que es T12.
+- El panel no distingue un documento a medio procesar de uno listo; `pages` y `chunks` ya viajan en
+  `DocumentSummary` para que lo pueda mostrar sin pedir el estado de cada uno.

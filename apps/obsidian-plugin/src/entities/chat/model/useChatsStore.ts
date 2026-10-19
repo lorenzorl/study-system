@@ -5,10 +5,16 @@ import {
   createChatForTitle as apiCreateChatForTitle,
   listChatPaths as apiListChatPaths,
   readChatNote as apiReadChatNote,
+  writeChatAttachments as apiWriteChatAttachments,
   writeChatPrompt as apiWriteChatPrompt,
   writeChatSettings as apiWriteChatSettings,
 } from "../api/chat-note"
-import type { ChatNote, ChatNoteSettings, ChatTurn } from "./types"
+import type {
+  ChatAttachment,
+  ChatNote,
+  ChatNoteSettings,
+  ChatTurn,
+} from "./types"
 
 const DEFAULT_SETTINGS: ChatNoteSettings = {
   model: null,
@@ -108,6 +114,28 @@ export const useChatsStore = defineStore("chats", () => {
     }
   }
 
+  /**
+   * Replace the note's whole attachment list.
+   *
+   * It is written as a list and not as a delta because the note's region is the
+   * list: attaching and detaching are both "what the chat should now hold", and
+   * the in-memory note is refreshed from the same value only after the write
+   * succeeded, so a failed write cannot leave the UI showing an attachment the
+   * note does not have.
+   */
+  async function saveAttachments(attachments: ChatAttachment[]) {
+    if (!currentPath.value) return
+    error.value = null
+    try {
+      await apiWriteChatAttachments(currentPath.value, attachments)
+      if (note.value) {
+        note.value = { ...note.value, attachments }
+      }
+    } catch (e) {
+      error.value = messageOf(e, "No se pudieron guardar los adjuntos.")
+    }
+  }
+
   function clearError() {
     error.value = null
   }
@@ -124,6 +152,7 @@ export const useChatsStore = defineStore("chats", () => {
     savePrompt,
     saveSettings,
     appendTurn,
+    saveAttachments,
     clearError,
   }
 })
