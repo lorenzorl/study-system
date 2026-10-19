@@ -704,3 +704,20 @@ rechazo de `tools` es demasiado amplio (`R3-tool-rejection-message-overbroad`,
 (`R4-cancel-does-not-abort-search`). `SUGGESTION`: `R1-tool-call-count-uncapped-per-round`,
 `R4-uncapped-tool-calls-per-round`, `R2-duplicated-corpus-scope`, `R2-generic-system-message-name`,
 `R2-status-check-named-as-tool-rejection`.
+
+**L21 (2026-10-18, quinto review nativo: aprobado, riesgo bajo)** — el candidato sin revisar era **un
+solo commit de documentación** (`7d63d51`, 52 líneas de este archivo), así que se acotó el rango con un
+`baseRef` explícito a la corrección ya revisada (`766968a`) en lugar de reintentar el diff acumulado de
+la rama, que ya se sabe que no entra en el presupuesto (L20).
+
+Dos cosas que el proveedor enseñó acá y conviene no volver a aprender a la mala:
+
+1. **Un candidato sin código es riesgo `low`**, y para riesgo bajo **la selección de lentes es
+   inválida**: el START falla con `invalid_request` y dice que hay que omitirlas. Omitidas, el proveedor
+   elige por el nivel.
+2. Para riesgo bajo **no corre ningún revisor**: el START cerró en `approved` en el acto —cero lentes,
+   cero corridas de modelo, sin refuter ni validador—. Un cambio de solo documentación no paga cuatro
+   revisiones.
+
+Es el ciclo más barato de la feature, y deja la lección de que el costo del review sigue al riesgo real
+y no a la cantidad de archivos.
