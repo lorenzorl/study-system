@@ -1065,10 +1065,14 @@ describe("useSendMessage.send with a vault attachment", () => {
     })
   })
 
-  it("refuses the send and keeps the question when a file cannot be read", async () => {
+  it("refuses the send and persists nothing when a file cannot be read", async () => {
     mocks.state.note = makeNote({ attachments: [VAULT_ATTACHMENT] })
     // The note was moved or deleted after it was attached.
     vaultFiles = {}
+    setVaultTextReader(async (path) => {
+      mocks.state.calls.push("read")
+      throw new Error(`No se encontró la nota "${path}".`)
+    })
     const store = useSendMessage()
 
     const consumed = await store.send("¿Qué es el estado?")
@@ -1076,21 +1080,49 @@ describe("useSendMessage.send with a vault attachment", () => {
     expect(store.error).toContain("No se pudo leer")
     expect(store.error).toContain(VAULT_PATH)
     expect(store.error).toContain("volvé a intentar")
-    // The question was consumed even though no answer came: it is in the note, so
-    // the caller must not hand the text back -- a retry would ask it twice.
-    expect(consumed).toBe(true)
+    // Nothing was persisted, so the caller gets the text back: the user fixes the
+    // file and presses send again, and there is no second question to duplicate.
+    expect(consumed).toBe(false)
+    // The vault is read before the question is written, so a refusal writes
+    // nothing at all -- not even the user's turn.
+    expect(mocks.state.calls).toEqual(["read"])
+    expect(mocks.appendTurn).not.toHaveBeenCalled()
     // Nothing is sent: an answer without the material the chat claims would be
     // an answer that pretends to have read it.
     expect(mocks.streamChatCompletion).not.toHaveBeenCalled()
-    // The question is still a fact, so it stays in the note.
-    expect(mocks.appendTurn.mock.calls.map(([turn]) => turn.role)).toEqual(["user"])
-    expect(mocks.appendTurn.mock.calls[0][0]).toEqual({
-      role: "user",
-      content: "¿Qué es el estado?",
-      sources: [],
-      consulted: true,
-    })
     expect(store.sending).toBe(false)
+  })
+
+  it("reads the vault before persisting the question", async () => {
+    mocks.state.note = makeNote({ attachments: [VAULT_ATTACHMENT] })
+    setVaultTextReader(async (path) => {
+      mocks.state.calls.push("read")
+      return vaultFiles[path] ?? ""
+    })
+    const store = useSendMessage()
+
+    await store.send("¿Qué es el estado?")
+
+    expect(mocks.state.calls).toEqual(["read", "append:user", "stream", "append:assistant"])
+  })
+
+  it("reports the server, not the file, when both are broken", async () => {
+    // A corpus chat with a down server and an unreadable file. The preflight runs
+    // first, so the reason the user reads is the one they can act on first, and
+    // neither the vault nor the note is touched.
+    mocks.state.note = makeNote({ attachments: [VAULT_ATTACHMENT, CORPUS_ATTACHMENT] })
+    vaultFiles = {}
+    mocks.listDocuments.mockImplementation(async () => {
+      throw new Error("No se pudo conectar al servidor. ¿Está corriendo en localhost:8080?")
+    })
+    const store = useSendMessage()
+
+    expect(await store.send("¿Qué es el estado?")).toBe(false)
+
+    expect(store.error).toContain("el servidor del corpus no responde")
+    expect(store.error).not.toContain("No se pudo leer")
+    expect(mocks.state.calls).toEqual([])
+    expect(mocks.appendTurn).not.toHaveBeenCalled()
   })
 
   it("refuses the send when a file grew past the cap after it was attached", async () => {
@@ -1098,13 +1130,14 @@ describe("useSendMessage.send with a vault attachment", () => {
     vaultFiles = { [VAULT_PATH]: "x".repeat(MAX_ATTACHMENT_CHARS + 1) }
     const store = useSendMessage()
 
-    await store.send("¿Qué es el estado?")
+    expect(await store.send("¿Qué es el estado?")).toBe(false)
 
     expect(store.error).toContain(VAULT_PATH)
     expect(store.error).toContain(String(MAX_ATTACHMENT_CHARS))
     expect(store.error).toContain("no se envió")
     expect(mocks.streamChatCompletion).not.toHaveBeenCalled()
-    expect(mocks.appendTurn.mock.calls.map(([turn]) => turn.role)).toEqual(["user"])
+    // Nothing over the cap is sent, and nothing is written either.
+    expect(mocks.appendTurn).not.toHaveBeenCalled()
     expect(store.sending).toBe(false)
   })
 

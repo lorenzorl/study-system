@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({ listDocuments: vi.fn() }))
 
 vi.mock("@/entities/document", () => ({ listDocuments: mocks.listDocuments }))
 
+import { ApiError } from "@/shared/api/client"
 import { checkCorpusReachable } from "./preflight"
 
 const DOWN_ERROR = "No se pudo conectar al servidor. ¿Está corriendo en localhost:8080?"
@@ -19,6 +20,10 @@ const DOWN_ERROR = "No se pudo conectar al servidor. ¿Está corriendo en localh
 const SINGLE_TITLE_MESSAGE =
   "No se pudo consultar «DDD»: el servidor del corpus no responde. " +
   "Encendé el servidor, o quitá ese adjunto para chatear sin él."
+
+const SINGLE_TITLE_HTTP_ERROR_MESSAGE =
+  "No se pudo consultar «DDD»: el servidor del corpus respondió con un error (HTTP 500). " +
+  "Actualizá o revisá el servidor, o quitá ese adjunto para chatear sin él."
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -86,9 +91,35 @@ describe("checkCorpusReachable", () => {
     expect(mocks.listDocuments).toHaveBeenCalledTimes(2)
   })
 
-  it("blocks on the server's own error response, not only on a network failure", async () => {
-    // The server answered, and said no: a 500 is still "the corpus does not
-    // answer", and its wording never reaches the user.
+  // The server answered, and said no. "No responde" would be false -- it did
+  // answer -- and would send the user to start a server that is already running.
+  it("names the status when the server answered with an error", async () => {
+    mocks.listDocuments.mockRejectedValue(
+      new ApiError("Error del servidor al sincronizar.", 500),
+    )
+
+    const decision = await checkCorpusReachable(["DDD"])
+
+    expect(decision).toEqual({ ok: false, error: SINGLE_TITLE_HTTP_ERROR_MESSAGE })
+  })
+
+  it("names the status of a route an older server does not have", async () => {
+    mocks.listDocuments.mockRejectedValue(new ApiError("not found", 404))
+
+    const decision = await checkCorpusReachable(["DDD"])
+
+    expect(decision).toEqual({
+      ok: false,
+      error:
+        "No se pudo consultar «DDD»: el servidor del corpus respondió con un error (HTTP 404). " +
+        "Actualizá o revisá el servidor, o quitá ese adjunto para chatear sin él.",
+    })
+  })
+
+  // The distinction is the thrown value's class, not the presence of a status:
+  // only `ApiError` means the server answered, so a bare error carrying a status
+  // is still a transport failure.
+  it("keeps the transport message for a status-shaped error that is not an ApiError", async () => {
     mocks.listDocuments.mockRejectedValue(
       Object.assign(new Error("Error del servidor al sincronizar."), { status: 500 }),
     )

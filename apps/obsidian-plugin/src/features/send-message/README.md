@@ -22,14 +22,17 @@ model provider directly, and the backend stays a documents service (S3 in
    model call. This is what makes a corpus chat's failure predictable instead of
    discovered halfway through an answer (`S6`). A chat with only vault files, or
    with no attachments, never touches the backend.
-3. **Persist the question.** The user's turn goes into the note before the model
-   call. A question the user asked is a fact whether or not anything downstream
-   succeeds, so it must not be the step that gets lost — and a write the note
-   refuses stops the send, because nothing was written to carry on from.
-4. **Read the vault files.** When the chat has vault attachments their text is
+3. **Read the vault files.** When the chat has vault attachments their text is
    read whole, now and not when they were attached (a note grows). A file that
    cannot be read, or no longer fits the size cap, refuses the send with a message
-   saying which file and why.
+   saying which file and why — and **writes nothing**: the refusal happens before
+   the question is persisted, so the text goes back to the user and a retry after
+   fixing the file duplicates nothing.
+4. **Persist the question.** The user's turn goes into the note before the model
+   call, once every step that can refuse the send has agreed to it. A question the
+   user asked is a fact whether or not anything downstream succeeds, so it must
+   not be the step that gets lost — and a write the note refuses stops the send,
+   because nothing was written to carry on from.
 5. **Compose.** `model/prompt.ts`, which is pure and unit-tested.
 6. **Stream, and search when asked.** `POST {llmBaseUrl}/chat/completions`
    through `shared/llm`, with `stream: true`; the deltas accumulate into `answer`
@@ -85,7 +88,9 @@ an older note, or one from a chat with no material, never shows the badge.
 
 `send()` returns `Promise<boolean>`: `true` once the question reached the note,
 `false` when the send stopped before that (blank, no key, no chat, a blocked
-preflight, a cancel during the probe). `ui/MessageComposer.vue` holds no text of
+preflight, a vault file that cannot be read or no longer fits its cap, a cancel
+during the probe) — and `false` means *nothing* was persisted, not merely that no
+answer came. `ui/MessageComposer.vue` holds no text of
 its own — the draft is the caller's, through `v-model` — so the thread can give
 the question back when it was never consumed. Without that, a blocked send would
 take the user's text with it.

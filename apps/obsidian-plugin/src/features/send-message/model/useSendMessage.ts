@@ -5,8 +5,9 @@
  * lives in `prompt.ts`, every decision about what the model may read lives in
  * `tool.ts` and every decision about whether the corpus can be reached at all
  * lives in `preflight.ts`; this module decides the order of the steps — check the
- * corpus, persist the question, compose, converse, append the answer — and turns
- * every failure into a Spanish message instead of throwing at the UI.
+ * corpus, read the vault, persist the question, compose, converse, append the
+ * answer — and turns every failure into a Spanish message instead of throwing at
+ * the UI. Nothing that can refuse the send runs after the question is written.
  *
  * The conversation is one round trip when the chat has no material behind the
  * tool: no tools are declared and the backend is not touched, which is what lets
@@ -71,11 +72,16 @@ export const useSendMessage = defineStore("send-message", () => {
   /**
    * Ask the question and write down the answer.
    *
-   * Returns whether the question was consumed: `false` when the send was stopped
-   * before anything was persisted or sent -- a blank question, a missing key, no
-   * open chat, an unreachable corpus, a cancel that arrived before the question
-   * was written -- so the caller can give the text back to the user, and `true`
-   * once the question reached the note.
+   * Returns whether the question was consumed, and the sentence means exactly
+   * one thing on both sides: `false` means **nothing was persisted** -- the send
+   * stopped before the question reached the note, so the caller can give the text
+   * back and a retry duplicates nothing -- and `true` means the question reached
+   * the note, so the text is already asked and giving it back would invite a
+   * second copy of it.
+   *
+   * Every step that can refuse the send runs before the write for exactly that
+   * reason: a blank question, a missing key, no open chat, an unreachable corpus,
+   * an unreadable vault file, a vault file that grew past its cap.
    */
   async function send(question: string): Promise<boolean> {
     const trimmed = question.trim()
@@ -174,7 +180,27 @@ export const useSendMessage = defineStore("send-message", () => {
         }
       }
 
-      // The question is a fact whether or not the model answers: persist it first.
+      // The vault files travel whole in this request (S7), so their text is read
+      // now and not when they were attached: a note grows. A file that cannot be
+      // read, or no longer fits its cap, refuses the send instead of going out
+      // over the cap or being dropped quietly -- a chat that answers without
+      // material it claimed to have is the lie this path exists to remove.
+      //
+      // Read before the question is written, because a send that cannot proceed
+      // must leave nothing behind: persisting first would answer "consumed" for a
+      // question that produced no answer, and the retry the error asks for would
+      // duplicate it in the note.
+      const vault = await readVaultMaterial(note.attachments)
+
+      if (!vault.ok) {
+        error.value = vault.error
+        return false
+      }
+
+      const blocks = vault.blocks
+
+      // The question is a fact whether or not the model answers: persist it once
+      // everything that can refuse the send has agreed to it.
       //
       // A write the note refused must not answer "consumed": the caller would keep
       // the textarea empty for a question nobody wrote down. The chat store turns
@@ -190,23 +216,6 @@ export const useSendMessage = defineStore("send-message", () => {
       })
 
       if (!questionPersisted) return false
-
-      // The vault files travel whole in this request (S7), so their text is read
-      // now and not when they were attached: a note grows. A file that cannot be
-      // read, or no longer fits its cap, refuses the send instead of going out
-      // over the cap or being dropped quietly -- a chat that answers without
-      // material it claimed to have is the lie this path exists to remove.
-      const vault = await readVaultMaterial(note.attachments)
-
-      if (!vault.ok) {
-        // The question stays in the note, which is why it is persisted first --
-        // and why the text is not given back: it is already asked, and restoring
-        // it would invite a retry that duplicates the turn.
-        error.value = vault.error
-        return questionPersisted
-      }
-
-      const blocks = vault.blocks
 
       // The vault text is already in the message, so the model grounds on what it
       // can see and cites each file by its path. A chat whose material is only

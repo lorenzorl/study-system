@@ -59,7 +59,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from "vue"
+import { computed, ref, watch } from "vue"
 import { storeToRefs } from "pinia"
 import { useChatsStore } from "@/entities/chat"
 import { AttachmentPanel } from "@/features/attach-resource"
@@ -77,6 +77,17 @@ const turns = computed(() => note.value?.turns ?? [])
 // happened has to leave the question where the user can press send again.
 const draft = ref("")
 
+// The draft belongs to a chat, not to the widget: it outlives the chat that was
+// open, so without this a question held here would travel to whatever chat the
+// user opened next and be sent in the wrong place. A per-chat draft does not
+// exist yet, so a switch clears instead of restoring.
+watch(
+  () => note.value?.chat.path,
+  () => {
+    draft.value = ""
+  },
+)
+
 // The thread is the one place that decides what a submit means: send the
 // question through the feature store and let it own the orchestration.
 //
@@ -88,7 +99,16 @@ const draft = ref("")
 async function onSubmit(question: string): Promise<void> {
   draft.value = ""
 
-  const consumed = await sendStore.send(question)
+  let consumed: boolean
+
+  try {
+    consumed = await sendStore.send(question)
+  } catch {
+    // A rejection that escaped the store means the question never made it out,
+    // and a text that vanishes on a throw is a question the user has to retype.
+    // The store owns error reporting; this guard only protects the text.
+    consumed = false
+  }
 
   if (!consumed) draft.value = question
 }

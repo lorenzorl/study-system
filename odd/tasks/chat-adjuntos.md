@@ -1170,3 +1170,50 @@ al lado en vez de sólo el diff propio.
 **Verificación.** RED del worker: 2 fallos nombrados. GREEN: 62/62 en `prompt.test.ts` + `tool.test.ts`, `tsc`
 en 0. Sobre todo junto con la unidad siguiente: **456/456 en 33 archivos**, `tsc` en 0 y el bundle compilando
 los SFC. El commit del frame va solo, para que la corrección de formato se lea sin el reordenamiento al lado.
+
+**L35 (2026-10-18, tarea 25 + F3 + N3 + N4: nada se escribe para un envío que no puede proceder)** — commit
+«fix(send-message): read the vault before writing the question, and say what really failed». Tres hallazgos
+con un mismo tema: los caminos de fallo de un envío.
+
+**1. La lectura del vault pasa antes de persistir.** Un archivo ilegible rechazaba el envío **después** de
+escribir la pregunta, así que `send()` contestaba "consumida" y reintentar duplicaba el turno (el hallazgo
+`R4-refusal-retry-duplicates-persisted-question` de L25, que T12 sólo había saldado para el bloqueo). Ahora
+el orden es **preflight → vault → persistir**, y el contrato se afina hasta poder decirse en una frase:
+**`false` significa que no se persistió nada**, `true` que la pregunta llegó a la nota. Revisé cada retorno
+contra esa frase. Todo lo que puede rechazar el envío corre antes de la escritura, que es exactamente el
+motivo del reordenamiento.
+
+**Un test se reescribió, y lo digo porque es un cambio de comportamiento, no un test que estaba mal.** El
+caso "rechaza el envío y conserva la pregunta" afirmaba lo viejo: la pregunta quedaba en la nota y
+`send()` contestaba `true`. Ahora fija lo nuevo: **cero** llamadas a `appendTurn`, `send()` contesta `false`,
+el único colaborador tocado es la lectura, y el texto vuelve al compositor. Ese `expect` se fue, no se
+aflojó.
+
+**2. El mensaje del bloqueo deja de afirmar una causa que no conoce (F3).** Con un servidor viejo que no
+tiene `GET /api/rag/documents`, o con un 500, el mensaje decía "el servidor del corpus no responde" — falso:
+**sí respondió**. Ahora el branching decide primero por `signal.aborted` (cancelación), después por
+`instanceof ApiError` (respondió, y se nombra el status), y al final el transporte, cuyo texto queda **byte a
+byte igual** que antes, con sus tests intactos. Un test nuevo fija que decide la **clase** y no la propiedad:
+un `Error` pelado con `status: 500` sigue siendo un fallo de transporte.
+
+**3. El borrador, sus dos bordes.** Si `send()` rechaza —algo que se escape de su propio `try`— el texto
+vuelve en vez de perderse (N3). Y el borrador se limpia al cambiar de chat, para que una pregunta devuelta no
+viaje al chat siguiente (N4).
+
+**Queda un residual, y lo digo yo antes de que lo diga un revisor:** cambiar de chat **mientras un envío está
+en vuelo** todavía puede hacer caer el texto en el compositor del chat nuevo, porque el `watch` limpia al
+cambiar y la devolución ocurre después del `await`. Cerrarlo pide borradores por chat, o comparar la ruta
+capturada antes de devolver y decidir qué hacer con el texto cuando ya no coincide: es una decisión de
+producto, no un detalle de implementación, y no la tomé.
+
+**4. El README no se quedó mintiendo.** El reordenamiento volvía falsos los pasos 3 y 4 que acababa de
+escribir en L33, así que el mismo commit los corrige, y el párrafo de `send()` ahora dice que `false` significa
+que no se persistió nada.
+
+**Verificación.** RED del worker: 5 fallos nombrados. GREEN enfocado: 235/235 en 12 archivos, `tsc` en 0.
+Padre sobre las dos unidades juntas: **456/456 en 33 archivos**, `tsc` en 0 y el bundle compilando.
+
+**Lo que esta verificación NO cubre, dicho sin maquillar.** `tsc -noEmit` **no** typechequea archivos `.vue`
+—el paquete no tiene `vue-tsc`—, así que el cambio de `ChatThread.vue` queda fuera de lo que el typecheck
+prueba; lo que sí lo cubre es el build de esbuild, que compila el SFC. Y no hay runner de componentes: N3 y N4
+están verificados leyendo y por los 235 tests, ninguno de los cuales monta el widget.
