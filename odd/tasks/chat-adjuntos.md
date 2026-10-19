@@ -1331,3 +1331,28 @@ hasta que se decida publicar.
 Con esto el documento de la feature queda cerrado: las nueve specs, las tareas T1–T13, las fases 1–6 y los
 seguimientos del Log. Lo que sigue anotado es deuda declarada, y los tres hallazgos de L38 que esperan texto
 del proveedor para poder verificarse.
+
+**L40 (2026-10-18, `v2.5.0` publicado por el CI)** —
+https://github.com/lorenzorl/study-system/releases/tag/2.5.0. Release **público**, no draft, no prerelease, con los
+tres adjuntos que el workflow declara: `main.js` (696 KB), `manifest.json` (273 B) y `styles.css` (1.383 B), y
+las notas generadas por `--generate-notes` (`compare/2.4.0...2.5.0`).
+
+**Verificado sobre el artefacto publicado, no sobre el repo**: descargué el `manifest.json` del release y
+declara `version: 2.5.0`, `id: obsidian-flashcard-plugin`, `minAppVersion: 1.5.0`. Y el tag local y el remoto
+apuntan al mismo commit, `ce1cda6`.
+
+**Que lo haya construido el CI no es una suposición**: el autor del release es `github-actions[bot]` con
+`target_commitish: master`. Es el dato que decide, porque los timestamps de la API **no cierran entre sí** y
+conviene que quede escrito para el que los lea después: el release dice `created_at 16:15:25Z`, un minuto
+**antes** de que existiera el run (`createdAt 16:16:26Z`), y el endpoint del job seguía diciendo `in_progress`
+con `completed_at: null` cuando el run ya figuraba `completed/success` (16:32:16Z). Es la misma degradación de
+Actions del punto siguiente vista desde la API inconsistente, no un release hecho a mano por otro camino.
+
+**El CI estuvo encolado dieciséis minutos, y no fue culpa del repo.** GitHub estaba en `indicator: minor —
+Partially Degraded Service`, con el componente **Actions** en `degraded_performance`. Las pruebas de que el
+problema era de la plataforma y no nuestro: repo **público** (sin cuota ni facturación de por medio) y **seis
+releases anteriores a ~20 segundos** de punta a punta. No se esquivó el proceso: se esperó, y cuando hubo
+runner el workflow hizo lo suyo.
+
+**Y esto se commitea local, sin empujar.** `master` queda **1 commit adelante de `origin/master`**; publicar
+este registro es decisión del usuario, no la infiero de haber pedido un release.
