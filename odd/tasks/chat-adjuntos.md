@@ -652,3 +652,55 @@ nunca dentro de un `&&`.
 - Si el proveedor sigue pidiendo herramientas después de la última pregunta, queda un turno de assistant
   vacío persistido. T11 o T13 pueden querer saltearlo.
 - `EMPTY_CORPUS_MESSAGE` sigue hablando solo de "pasajes" (la duda de L15), sin tocar.
+
+**L20 (2026-10-18, cuarto review nativo: rechazado por presupuesto, reabierto con alcance chico, y
+APROBADO tras una corrección real)** — el ciclo más importante de la feature. Hay que leerlo entero.
+
+**El candidato entero ya no entra.** El START con el diff acumulado de la rama (43 archivos, 4306
+líneas) falló con `lens_context_budget_exceeded` en fase de preflight: **no se creó autoridad**, y el
+proveedor dice que reintentar ese mismo candidato no puede funcionar. Es exactamente lo que L12, L16 y
+L18 venían anotando —"el candidato es toda la rama, no una unidad"— y el proveedor terminó de
+imponerlo. Se reabrió con un `baseRef` explícito al último commit revisado (`2c0f9ba`), y con eso el
+candidato bajó a **11 archivos y 1393 líneas**. Linaje `review-563560dd564add3c`.
+
+**El review encontró un bug real y serio, y el bug era mi handoff.** Tres lentes (risk, reliability,
+resilience) marcaron el MISMO defecto con severidad **BLOCKER / CRITICAL**: una llamada a
+`search_material` **sin `resource_id`** — la forma por defecto, la que el frame invita — se ejecutaba
+**sin `document_id`**, o sea buscando en **todo el corpus** en vez de en lo adjunto. El invariante
+central de la feature ("el alcance lo fija el chat, no el modelo") no regía en el camino por defecto:
+adjuntar un documento no acotaba nada. El refuter confirmó los tres como causados por el candidato, y
+el review pasó a `correction_required`.
+
+**Y era mi culpa, no del worker.** Mi handoff decía textualmente "acotada cuando el modelo nombra un
+documento, sin acotar cuando no". El worker implementó lo que le pedí. Lección: **una instrucción de
+handoff es una especificación, y una especificación equivocada se implementa fielmente.**
+
+**La corrección** (commit «fix(send-message): an unscoped search covers the chat's attachments, not the
+corpus», 156 de las 160 líneas declaradas en el plan aceptado): la decisión lleva la **lista** de
+documentos a buscar —el nombrado, o todos los adjuntos cuando no nombra nada—; un chat sin adjuntos
+del corpus se rechaza de plano; y ejecutar corre **una búsqueda acotada por documento, en paralelo**,
+con merge determinista por el score que ya traen los resultados y desempate por documento y chunk. El
+test de regresión afirma **los ids que llegaron a `searchCorpus`**, no el texto devuelto, así que no
+puede pasar por accidente.
+
+**El validador dirigido confirmó el cierre** y el review quedó **aprobado**; autoridad quemada.
+
+**Quince hallazgos no bloqueantes**, con tres que valen:
+
+- **`R1-tool-sources-into-persisted-turns-unsanitised`** (`useSendMessage.ts:203-207`, WARNING): las
+  fuentes que van al turno persistido **no se sanean**. Es la misma clase de defecto que se acaba de
+  arreglar en la región de adjuntos, pero del lado de las líneas `Fuente:`. Un título de documento con
+  un salto de línea podría inyectar en la nota. Va como tarea propia.
+- **`R1-attachment-sanitiser-nested-marker-bypass`** (`note.ts:289-292`, WARNING): el saneador recién
+  escrito tiene un bypass con un marcador anidado. Va como tarea propia.
+- **`R3-vault-only-chat-gets-no-material-frame`** (`useSendMessage.ts:125`, WARNING): confirma por su
+  cuenta el hueco de S7 que ya está anotado como tarea.
+
+Y el resto son del bucle: el tope cuenta rondas y no búsquedas (`R3-cap-counts-rounds-not-searches`),
+una búsqueda que falla se lleva el turno entero (`R4-single-search-failure-drops-turn`), quedan turnos
+vacíos después del tope (`R4-empty-turn-after-cap`, `R3-final-ask-persists-empty-turn`), el mensaje de
+rechazo de `tools` es demasiado amplio (`R3-tool-rejection-message-overbroad`,
+`R4-first-request-400-blamed-on-tools`), y cancelar no aborta las búsquedas en vuelo
+(`R4-cancel-does-not-abort-search`). `SUGGESTION`: `R1-tool-call-count-uncapped-per-round`,
+`R4-uncapped-tool-calls-per-round`, `R2-duplicated-corpus-scope`, `R2-generic-system-message-name`,
+`R2-status-check-named-as-tool-rejection`.
