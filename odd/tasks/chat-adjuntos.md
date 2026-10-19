@@ -1294,3 +1294,22 @@ del listado del corpus, el conteo de páginas por jobs, la colisión del conteni
 (fijada por test), el GET extra por envío con corpus, el residual de N4 con el borrador al cambiar de chat
 durante un envío, y la ausencia de runner de componentes —que es lo único que deja sin cobertura automática el
 render del panel y el comportamiento del compositor.
+
+**L38 (2026-10-18, corrección al cierre de L37)** — L37 cierra diciendo que "no queda ningún hallazgo
+abierto de los nueve reviews nativos". **Es más de lo que puedo sostener**, y lo corrijo acá en vez de editarlo
+allá, para que el registro muestre la afirmación y su corrección en vez de tapar la primera.
+
+Hay **tres hallazgos del octavo review (L25) cuyo texto nunca llegó**: el sobre de la facade trae id, lente,
+ubicación y severidad, no el cuerpo. Son `R3-001` (`note.ts:311`), `R3-002` (`useSendMessage.ts:143-144`) y
+`R3-003` (`vault-text.ts:115-119`), los tres de confiabilidad. Lo que sí hice fue arreglar causas **candidatas**
+en esas tres zonas exactas —el saneador de la nota en L24, el camino de `send()` en T12 y N1, el rechazo del
+vault en L37—, pero **no puedo declarar cerrado un hallazgo que nunca leí**. Quedan como **no verificados**, no
+como cerrados.
+
+La diferencia importa: "cerrado" dice que alguien miró el defecto y comprobó que ya no está. "No verificado"
+dice que hay una zona del código que un tercero marcó y que yo toqué por otras razones. Lo segundo es lo que
+pasó.
+
+Para cerrarlos de verdad hace falta el texto, y eso lo tiene el proveedor: si alguien quiere, se puede reabrir
+un review acotado a esas tres ubicaciones, o pedir los cuerpos de esos tres hallazgos en lugar de un review
+nuevo. Es la salida barata, y no la puedo tomar yo.
