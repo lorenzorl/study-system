@@ -1313,3 +1313,21 @@ pasó.
 Para cerrarlos de verdad hace falta el texto, y eso lo tiene el proveedor: si alguien quiere, se puede reabrir
 un review acotado a esas tres ubicaciones, o pedir los cuerpos de esos tres hallazgos en lugar de un review
 nuevo. Es la salida barata, y no la puedo tomar yo.
+
+**L39 (2026-10-18, la feature entra en `master`)** — a pedido explícito del usuario, `feat/chat-adjuntos` se
+integró a `master` con **fast-forward** (`f9fa3b4..9053bc8`): 65 archivos, +8467/−254, sin merge commit. Se usó
+`--ff-only` a propósito: si `master` hubiera tenido trabajo propio, el comando fallaba y la decisión de cómo
+integrar volvía al usuario, en vez de inventar un commit de merge por mi cuenta.
+
+**Estado verificado sobre `master`, no sobre la rama**: `tsc` en 0, **471/471** en 33 archivos, el bundle
+compilando los SFC y **todos los paquetes de Go en verde**. Es la misma foto que la rama porque el
+fast-forward no inventa contenido, pero medido en la rama que importa.
+
+**Lo que NO pasó, y conviene que esté escrito:** `master` quedó **35 commits adelante de `origin/master`** y
+**nada se empujó**. Publicar sigue siendo decisión del usuario, igual que antes del merge. La rama
+`feat/chat-adjuntos` sigue existiendo en `9053bc8`, así que el trabajo se puede revisar o revertir por rama
+hasta que se decida publicar.
+
+Con esto el documento de la feature queda cerrado: las nueve specs, las tareas T1–T13, las fases 1–6 y los
+seguimientos del Log. Lo que sigue anotado es deuda declarada, y los tres hallazgos de L38 que esperan texto
+del proveedor para poder verificarse.
