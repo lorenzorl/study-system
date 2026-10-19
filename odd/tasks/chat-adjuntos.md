@@ -497,3 +497,22 @@ Y una consecuencia del diseño que conviene tener presente: **la mitad del vault
 tool**. Un archivo del vault se manda completo y se cita por ruta, así que S7 se puede entregar sin
 tool-calling y sin servidor. Eso abre una opción de orden que se le plantea al usuario antes de
 seguir, porque cambia qué se puede usar y cuándo.
+
+**L15 (2026-10-18, fase 4 implementada y verificada)** — T8 en el commit «feat(send-message): carry
+context from both attachment classes». Decisión previa del usuario: **A**, la costura primero, sin
+cablear en `send()`. RED: 10 de 47 fallaban en `src/features/send-message`. GREEN: 304 de 304 en 26
+archivos, `tsc` en 0.
+
+Verificación diferencial contra la base: con entradas solo-corpus y vacías, las funciones exportadas
+producen salida **byte a byte idéntica**; cero regresiones en el camino que ya existía. El caso mixto
+(nuevo) rinde `["DDD, p. 42", "Notas/Tesis.md"]`, con deduplicación en orden entre las dos clases.
+
+Decisiones del writer, reportadas: renombró los fixtures de test (`PASSAGE` → `CORPUS_BLOCK`) porque
+el nombre viejo describía el tipo eliminado; el test que fija la unión vive en su propio `describe`,
+porque afirma una propiedad de la forma y no de una función; y el fixture del vault es **a propósito
+sin dígitos**, para que "no hay página en ningún lado" no pueda pasar por accidente.
+
+Duda que el writer dejó anotada y que es real: el comentario de `EMPTY_CORPUS_MESSAGE` sigue hablando
+solo de corpus y de "pasajes", y ahora un chat fundado puede llevar bloques del vault. No se tocó
+para mantener la fase sin cambio de comportamiento; hay que revisarlo en la fase 5, que es cuando el
+estado intermedio se cablea y ese mensaje puede alcanzarse con material del vault.
