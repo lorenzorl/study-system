@@ -39,3 +39,21 @@ export interface DocumentStatus {
   updated_at?: string
   finished_at?: string
 }
+
+/**
+ * One entry in the bare JSON array returned by `GET /api/rag/documents`.
+ *
+ * It is what a caller chooses a document to attach by, so it carries exactly
+ * the columns the server exposes: the artifact id, the source URI and the
+ * content hash are the server's internals and never leave it. `pages` and
+ * `chunks` are there so a chat can show whether a document finished being
+ * ingested without asking for each one's status separately.
+ */
+export interface DocumentSummary {
+  id: string
+  title: string
+  /** When the document was registered, as RFC3339. */
+  createdAt: string
+  pages: number
+  chunks: number
+}

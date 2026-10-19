@@ -3,6 +3,11 @@ export type {
   DocumentPageProgress,
   DocumentState,
   DocumentStatus,
+  DocumentSummary,
   UploadDocumentResponse,
 } from "./model/types"
-export { fetchDocumentStatus, uploadDocument } from "./api/document-api"
+export {
+  fetchDocumentStatus,
+  listDocuments,
+  uploadDocument,
+} from "./api/document-api"

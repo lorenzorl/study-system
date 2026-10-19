@@ -13,12 +13,13 @@ import {
   processVaultFile,
   readVaultFile,
 } from "@/shared/obsidian"
-import type { ChatNote, ChatNoteSettings, ChatTurn } from "../model/types"
+import type { ChatAttachment, ChatNote, ChatNoteSettings, ChatTurn } from "../model/types"
 import {
   appendChatTurn,
   createChatNote as buildChatNote,
   mergeIntoExistingNote,
   parseChatNote,
+  setAttachments,
   setChatPrompt,
   setChatSettings,
   uniqueChatPath,
@@ -81,6 +82,20 @@ export async function writeChatSettings(
   settings: ChatNoteSettings,
 ): Promise<void> {
   await processVaultFile(path, (data) => setChatSettings(data, settings))
+}
+
+/**
+ * Replace the note's attachment region, and nothing else.
+ *
+ * The whole list travels at once because the region is the list: attaching adds
+ * one entry and detaching removes one, and both are a rewrite of what the note
+ * should now hold.
+ */
+export async function writeChatAttachments(
+  path: string,
+  attachments: ChatAttachment[],
+): Promise<void> {
+  await processVaultFile(path, (data) => setAttachments(data, attachments))
 }
 
 export async function appendTurn(path: string, turn: ChatTurn): Promise<void> {

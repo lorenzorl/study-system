@@ -1,4 +1,4 @@
-import type { DocumentStatus, UploadDocumentResponse } from "../model/types"
+import type { DocumentStatus, DocumentSummary, UploadDocumentResponse } from "../model/types"
 import { request, requestMultipart } from "@/shared/api/client"
 
 /**
@@ -23,4 +23,14 @@ export async function fetchDocumentStatus(
   return request<DocumentStatus>(
     `/api/rag/documents/${encodeURIComponent(documentId)}/status`,
   )
+}
+
+/**
+ * List the corpus.
+ *
+ * A bare JSON array, never null: an empty corpus is an empty array, so a caller
+ * ranges over it instead of special-casing "there is nothing to attach".
+ */
+export async function listDocuments(): Promise<DocumentSummary[]> {
+  return request<DocumentSummary[]>("/api/rag/documents")
 }

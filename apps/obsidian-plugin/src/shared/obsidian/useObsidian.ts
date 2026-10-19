@@ -134,6 +134,18 @@ export async function processVaultFile(
   return await vault.process(file, fn)
 }
 
+/** Every `.md` file in the vault, as vault-relative paths, sorted. */
+export function listVaultMarkdownFiles(): string[] {
+  const vault = getVault()
+  if (!vault) return []
+
+  return vault
+    .getFiles()
+    .filter((file) => file.extension === "md")
+    .map((file) => file.path)
+    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+}
+
 /** The `.md` files directly inside `folder`, as vault-relative paths, sorted. */
 export function listVaultFiles(folder: string): string[] {
   const vault = getVault()

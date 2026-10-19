@@ -31,7 +31,13 @@ vi.mock("@/shared/obsidian", () => ({
 }))
 
 import { listVaultFiles, processVaultFile } from "@/shared/obsidian"
-import { appendTurn, createChatForTitle, createChatNote, listChatPaths } from "./chat-note"
+import {
+  appendTurn,
+  createChatForTitle,
+  createChatNote,
+  listChatPaths,
+  writeChatAttachments,
+} from "./chat-note"
 
 const PATH = "Study Dashboard/Chats/tutor.md"
 
@@ -184,5 +190,66 @@ describe("appendTurn", () => {
     expect(
       stored.slice(stored.indexOf(chatEnd) + chatEnd.length),
     ).toBe(raw.slice(raw.indexOf(chatEnd) + chatEnd.length))
+  })
+})
+
+// The attachment list is a region like the prompt and the transcript: one write
+// routes through `processVaultFile`, and nothing outside the region moves.
+describe("writeChatAttachments", () => {
+  it("persists through processVaultFile and the stored note holds the list", async () => {
+    fake.store.set(PATH, baseNote())
+
+    await writeChatAttachments(PATH, [
+      { kind: "corpus", documentId: "d1", title: "DDD" },
+      { kind: "vault", path: "Notas/Tesis.md" },
+    ])
+
+    expect(processVaultFile).toHaveBeenCalledWith(PATH, expect.any(Function))
+    const stored = fake.store.get(PATH) as string
+    expect(stored).toContain("<!-- adjuntos:begin -->\n- corpus | d1 | DDD\n- vault | Notas/Tesis.md\n<!-- adjuntos:end -->")
+  })
+
+  it("leaves user text outside the regions unchanged", async () => {
+    const raw = [
+      "---",
+      "model: m",
+      "---",
+      "USER INTRO",
+      "<!-- prompt:begin -->",
+      "p",
+      "<!-- prompt:end -->",
+      "USER MIDDLE",
+      "<!-- adjuntos:begin -->",
+      "<!-- adjuntos:end -->",
+      "USER TAIL",
+      "<!-- chat:begin -->",
+      "<!-- chat:end -->",
+      "USER END",
+      "",
+    ].join("\n")
+    fake.store.set(PATH, raw)
+
+    await writeChatAttachments(PATH, [{ kind: "vault", path: "Notas/Tesis.md" }])
+
+    const stored = fake.store.get(PATH) as string
+    const before = "<!-- adjuntos:begin -->"
+    const after = "<!-- adjuntos:end -->"
+    expect(stored.slice(0, stored.indexOf(before))).toBe(
+      raw.slice(0, raw.indexOf(before)),
+    )
+    expect(stored.slice(stored.indexOf(after) + after.length)).toBe(
+      raw.slice(raw.indexOf(after) + after.length),
+    )
+  })
+
+  it("empties the region when the last attachment is removed", async () => {
+    fake.store.set(PATH, baseNote())
+
+    await writeChatAttachments(PATH, [{ kind: "vault", path: "Notas/Tesis.md" }])
+    await writeChatAttachments(PATH, [])
+
+    const stored = fake.store.get(PATH) as string
+    expect(stored).toContain("<!-- adjuntos:begin -->\n<!-- adjuntos:end -->")
+    expect(stored).not.toContain("Notas/Tesis.md")
   })
 })

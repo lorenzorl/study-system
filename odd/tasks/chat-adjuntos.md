@@ -794,3 +794,12 @@ Seis hallazgos no bloqueantes. Los que valen:
   la deriva de los topes **no la detecta de verdad**. Refuerza la tarea de moverlos a `shared/`.
 - `R3-001` (`note.ts:311`), `R3-002` (`useSendMessage.ts:143-144`) y `R3-003`
   (`vault-text.ts:115-119`), los tres de confiabilidad.
+
+**L26 (2026-10-18, noveno review nativo: aprobado, riesgo bajo)** — otra vez un candidato de solo
+documentación (`bb3209e`, 16 líneas de este archivo). Rango acotado a `bab950f`, sin lentes, cerrado en
+`approved` en el acto.
+
+El patrón ya es rutina y quedó escrito tres veces: **un candidato sin código no paga revisores.**
+
+**Este registro queda SIN commitear a propósito**, para no generar un décimo candidato y su ciclo de
+acuse. Viaja con el próximo cambio de código, que es la fase 6.
