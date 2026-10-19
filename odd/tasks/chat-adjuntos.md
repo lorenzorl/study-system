@@ -1104,3 +1104,31 @@ topes (el único consumidor de su raíz es `ChatThread.vue`, que importa `Attach
 
 **Y se cerró el encabezado del documento**, que seguía diciendo *"fase 1 en curso"*: las fases 1–6 y las
 tareas T1–T13 están entregadas y verificadas, y lo que queda son las tareas de seguimiento del Log.
+
+**L33 (2026-10-18, tarea 23: el README de `send-message`, que ya era falso en dos frases)** — commit
+«docs(send-message): describe what one send actually does now». El README es la norma de la slice, y estaba
+describiendo el paso 3 como *"Retrieve"* con una llamada a `GET /api/rag/search` que ya no ocurre en `send()`,
+y afirmando que un fallo deja el turno del usuario en la nota — cierto hasta T11, **falso desde T12**, porque
+el bloqueo ocurre antes de persistir. Un documento normativo que dice lo contrario de lo que hace el código
+es peor que no tener documento: alguien lo lee y se equivoca con confianza.
+
+**Lo que ahora dice, y por qué cada cosa está ahí.** Los siete pasos reales, con la comprobación del corpus
+en el segundo lugar y la lectura del vault en el cuarto (el orden importa: es el que decide qué se pierde
+cuando algo falla). Una tabla de qué recibe el modelo según lo que el chat tenga adjunto —los cuatro casos,
+con su frame, si declara `tools` y cuántos round trips cuesta—, porque el invariante central de la feature es
+justamente ese acoplamiento y antes había que deducirlo leyendo tres archivos. El bucle de la herramienta con
+su tope y su invariante de alcance. El tercer estado (`consulted`) con su marcador y su insignia. Y el
+contrato de `send()` devolviendo si la pregunta se consumió, junto con el `v-model` del compositor: sin esas
+dos cosas juntas no se entiende por qué el texto vuelve o no vuelve.
+
+**Una frase que además cambió de significado, no sólo de redacción.** El README decía que si falla la
+escritura al vault el envío continúa. Ahora hay que distinguir: una escritura fallida de la **pregunta**
+detiene el envío (N1: sin eso, `send()` prometía "consumida" sobre una nota que no la tenía), y una escritura
+fallida de la **respuesta** la pierde —llega a la pantalla, no a la nota—. Está dicho así, con las dos.
+
+**N5, cerrado acá:** la firma de `send()` cambió a `Promise<boolean>` y el compositor ahora exige `v-model`;
+los dos son superficie pública de la slice y nada lo documentaba.
+
+Es sólo documentación: no toca código, no cambia comportamiento, y la suite no se vuelve a correr para
+verificarla porque no hay nada que verificar. Lo que sí hice fue contrastar cada afirmación contra el código
+antes de escribirla, que es el trabajo real de este commit.
