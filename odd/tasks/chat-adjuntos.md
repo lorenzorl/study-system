@@ -857,3 +857,43 @@ byte a byte iguales.
   sigue fallando en la primera búsqueda, que es T12.
 - El panel no distingue un documento a medio procesar de uno listo; `pages` y `chunks` ya viajan en
   `DocumentSummary` para que lo pueda mostrar sin pedir el estado de cada uno.
+
+**L28 (2026-10-18, fase 6 / T13: la UI, y con esto la fase cerrada)** — commit «feat(attach-resource): choose
+the material from a panel above the composer». `AttachmentPanel.vue` es lo que deja de exigir editar la
+nota a mano: la lista de lo adjunto con su clase y su etiqueta, el selector del corpus con el estado de
+cada documento, el selector del vault con filtro por ruta, el botón de quitar por adjunto, y los motivos
+en español cuando algo se rechaza.
+
+**Dónde va, y por qué.** Arriba del compositor y no en el panel de ajustes: un adjunto es una propiedad
+del **próximo mensaje**, no de la configuración del chat. Lo que hay que tener a la vista mientras se
+escribe es qué material va a tener la pregunta, el panel de ajustes se colapsa y desaparece en hoja
+angosta, y un adjunto olvidado es un fallo **silencioso** —la respuesta vuelve sin material y el usuario
+no sabe por qué—. Además la insignia de T11 vive en el mismo lugar, así que la afirmación y su evidencia
+quedan juntas en vez de repartidas en dos paneles.
+
+**Dos decisiones de comportamiento.**
+
+1. **El corpus se lista solo cuando se abren los selectores**, nunca al montar. Con el servidor apagado,
+   un chat sin adjuntos del corpus no tiene por qué mostrar un error que nadie pidió: eso sería romper S1
+   desde la UI. El listado del vault es local y no cuesta nada.
+2. **La lógica que decide qué dicen los números vive en el modelo, no en el `.vue`.** `corpusStateLabel`
+   (`model/corpus-state.ts`, 6 tests) traduce `pages`/`chunks` a lo que importa: un documento sin
+   fragmentos **no puede** matchear una búsqueda, así que adjuntarlo todavía no cambia la respuesta, y eso
+   se dice en vez de mostrar un conteo que parece sano. También cubre el singular y el caso "el listado no
+   trae ese documento". Un `.vue` no se puede testear en este repo —`vitest.config.ts` no monta
+   `@vitejs/plugin-vue` y no hay un solo test de componente—, así que **lo decidible se movió a donde sí
+   se puede fijar con un test**, y el componente quedó de presentación.
+
+**Evidencia.** RED observado en `corpus-state.test.ts` (módulo inexistente) antes de implementarlo.
+GREEN: 405/405 en 30 archivos (+6), `tsc` en 0, y `node esbuild.config.mjs production` compila el SFC y
+el texto del panel aparece en el bundle. **Lo que no tiene evidencia automática**: el render del panel en
+sí —qué se ve al abrirlo, si el filtro del vault acota bien, si el botón de un adjunto ya puesto queda
+deshabilitado—. Se verificó leyendo el template y compilando; montarlo en un test pide agregar
+`@vitejs/plugin-vue` al config de vitest, que es infraestructura compartida y no es trabajo de esta tarea.
+Queda anotado como deuda, no como hecho.
+
+Control de tamaño: 552 líneas, de las que unas 250 son CSS del componente. Es una sola unidad —el
+panel, la lógica que extraje de él y el test de esa lógica—, y no se parte: separar un componente de
+sus estilos no le ahorra nada al revisor.
+
+**T13 queda hecho**, y con él la fase 6.

@@ -36,6 +36,10 @@
     <p v-if="chatError" class="chat-thread__error">{{ chatError }}</p>
     <p v-if="sendError" class="chat-thread__error">{{ sendError }}</p>
 
+    <!-- Above the composer, not in the settings pane: an attachment decides what
+         the next message carries, so it belongs next to the send button. -->
+    <AttachmentPanel :has-chat="note !== null" />
+
     <MessageComposer :busy="sending" @submit="onSubmit" @cancel="onCancel" />
   </section>
 </template>
@@ -44,6 +48,7 @@
 import { computed } from "vue"
 import { storeToRefs } from "pinia"
 import { useChatsStore } from "@/entities/chat"
+import { AttachmentPanel } from "@/features/attach-resource"
 import { MessageComposer, useSendMessage } from "@/features/send-message"
 
 const chatsStore = useChatsStore()
