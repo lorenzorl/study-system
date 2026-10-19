@@ -39,10 +39,23 @@ function readerUnavailableMessage(path: string): string {
   )
 }
 
-function unreadableMessage(path: string): string {
+/**
+ * What the user reads when a file they attached cannot be read.
+ *
+ * The vault's own reason is carried through when it has one: "the file could not
+ * be read" is not a diagnosis, and a note that was moved, a note the user cannot
+ * read and a vault that failed are three different problems with one message. When
+ * the failure carries no reason of its own, both remaining causes are named instead
+ * of leaving it as a dead end.
+ */
+function unreadableMessage(path: string, cause: unknown): string {
+  const reason = cause instanceof Error ? cause.message.trim() : ""
+  const why = reason === "" ? "" : ` ${reason}`
+
   return (
-    `No se pudo leer "${path}" del vault, así que el mensaje no se envió. ` +
-    `Verificá que la nota exista y volvé a intentar; si ya no la usás, quitá el adjunto.`
+    `No se pudo leer "${path}" del vault, así que el mensaje no se envió.${why} ` +
+    `Verificá que la nota exista y que tengas permiso para leerla, y volvé a intentar; ` +
+    `si ya no la usás, quitá el adjunto.`
   )
 }
 
@@ -105,8 +118,8 @@ export async function readVaultMaterial(
 
     try {
       text = await read(path)
-    } catch {
-      return { ok: false, error: unreadableMessage(path) }
+    } catch (e) {
+      return { ok: false, error: unreadableMessage(path, e) }
     }
 
     if (text.length > MAX_ATTACHMENT_CHARS) {

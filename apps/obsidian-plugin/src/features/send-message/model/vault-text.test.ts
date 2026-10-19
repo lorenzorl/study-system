@@ -105,6 +105,36 @@ describe("readVaultMaterial", () => {
     expect(result.error).toContain("volvé a intentar")
   })
 
+  // "The file could not be read" is not a diagnosis: a note that was moved, a note
+  // the user cannot read and a vault that failed all look the same, and the reader
+  // cannot act on any of them. The reason the vault gave is carried through, so
+  // "no existe" and "no tengo permiso" stop being the same message.
+  it("carries the vault's own reason, so a missing note differs from a permission problem", async () => {
+    read.mockRejectedValueOnce(new Error("No se encontró la nota \"Notas/Tesis.md\"."))
+
+    const result = await readVaultMaterial([vaultAttachment(THESIS_PATH)])
+
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+
+    expect(result.error).toContain("No se encontró la nota")
+    expect(result.error).toContain(THESIS_PATH)
+  })
+
+  it("names both possible causes when the failure carries no reason of its own", async () => {
+    // A rejected string, or an error with an empty message, has nothing to quote.
+    read.mockRejectedValueOnce("boom")
+
+    const result = await readVaultMaterial([vaultAttachment(THESIS_PATH)])
+
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+
+    expect(result.error).toContain("que la nota exista")
+    expect(result.error).toContain("permiso")
+    expect(result.error).not.toContain("boom")
+  })
+
   it("refuses a file that grew past the per-file cap, saying its size and the cap", async () => {
     const grown = MAX_ATTACHMENT_CHARS + 1
 

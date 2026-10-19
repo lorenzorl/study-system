@@ -1260,3 +1260,37 @@ puede forzar a buscar. Los dos son trueques ya aceptados por la feature, no nuev
 **Corregí además una frase que este cambio volvió falsa**: el README decía "the three frames" en "Where the
 pieces are". Ahora dice cuatro, una por modo de material. Es el mismo patrón que vengo aplicando: un cambio de
 comportamiento arrastra la documentación que describe, o el documento empieza a mentir por acumulación.
+
+**L37 (2026-10-18, el último hallazgo abierto de L25: el rechazo ahora dice por qué)** — commit
+«fix(send-message): carry the vault's own reason into the rejection». Cierra
+`R4-unreadable-file-cause-dropped`.
+
+**El defecto.** Cuando un archivo del vault no se podía leer, el mensaje decía siempre lo mismo: *"No se pudo
+leer «X» del vault, así que el mensaje no se envió. Verificá que la nota exista y volvé a intentar"*. O sea que
+**tres problemas distintos** —la nota se movió, no tenés permiso para leerla, el vault falló— producían **una
+sola frase**, y la frase afirmaba la primera causa. El `catch {}` se tragaba el motivo, así que el usuario
+tenía que adivinar cuál de los tres le tocó.
+
+Es exactamente la misma clase que **F3** del verificador, que arreglé ayer del otro lado del envío: el bloqueo
+del corpus decía "no responde" cuando el servidor sí respondía. Los dos eran mensajes que afirmaban una causa
+que no conocían. Ahora los dos dicen la verdad que tienen: el bloqueo nombra el status HTTP, el rechazo del
+vault cita el motivo que dio el vault.
+
+**La corrección, y qué NO hace.** Se pasa el valor lanzado al mensaje y se incluye su texto **cuando es un
+`Error` con texto propio**; cuando no lo es —un string, un error vacío— no se inventa nada y el mensaje nombra
+las **dos** causas que quedan (que exista y que tengas permiso), en vez de terminar en un callejón. Decide la
+**forma del valor**, no una comparación de textos: no hay `includes("permiso")` en ningún lado, que sería
+adivinar el idioma y el proveedor del error.
+
+**Verificación.** RED: 2 fallos nombrados, con el texto viejo en el mensaje de la aserción (`expected 'No se
+pudo leer "Notas/Tesis.md" del …' to contain 'No se encontró la nota'`). GREEN: 156/156 enfocados en
+`send-message`, **471/471 en 33 archivos**, `tsc` en 0 y el bundle compilando. El test previo que fijaba
+"Verificá que la nota exista" y "volvé a intentar" sigue verde sin tocarse: la frase que el usuario ya conocía
+no desapareció, se completó.
+
+**Con esto no queda ningún hallazgo abierto de los nueve reviews nativos.** Lo que sigue anotado es deuda
+**aceptada y declarada**, no trabajo pendiente: el `top_k` que recuperó efecto en el camino buscable, el 2N+1
+del listado del corpus, el conteo de páginas por jobs, la colisión del contenido con los marcadores de la nota
+(fijada por test), el GET extra por envío con corpus, el residual de N4 con el borrador al cambiar de chat
+durante un envío, y la ausencia de runner de componentes —que es lo único que deja sin cobertura automática el
+render del panel y el comportamiento del compositor.
