@@ -604,3 +604,51 @@ lentes señalen el mismo punto es la confirmación de que es la costura principa
 (`documents.go:68-77`), `R3-004` (`search.go:215-220`), `R3-005` (`page_repo.go:111-116`), `R3-006`
 (`note.ts:263-268`), `R3-007`, `R4-005` (`search.go:215-220`), `R4-006` (`page_repo.go:111-122`) y
 `R4-007` (`shared/llm/client.ts:234-242`, el transporte nuevo).
+
+**L19 (2026-10-18, la inyección arreglada y la fase 5 / T10 implementadas)** — dos commits:
+«fix(chat): sanitise the attachment region so a field cannot inject a line» y «feat(send-message): let
+the model search the material it was given».
+
+**La inyección.** `toSingleLine` en `note.ts`: colapsa los saltos de línea a un espacio, saca los dos
+marcadores de la región y deja el `|` en paz — el parser ya corta por el primer pipe para la clase y el
+segundo para el id, así que sacarlo perdería datos al pedo. El parser **no** se hizo más estricto y la
+nota sigue siendo editable a mano: se sanea lo que el plugin escribe. El RED mostró la corrupción real:
+un título con `\n` producía dos líneas y el round trip dejaba de ser estable, y un campo con el marcador
+de fin hacía que la región se cerrara antes y se truncara en la reescritura siguiente. GREEN 63/63 en
+`src/entities/chat`, con la preservación de bytes intacta.
+
+**T10.** `searchCorpus` gana el `document_id` opcional que el servidor ya aceptaba desde la fase 3 y el
+cliente nunca mandaba. `grounded: boolean` pasa a `MaterialMode` de tres valores (`none`, `searchable`,
+`in-message`) con un frame nuevo para el material buscable, porque el frame de citas dice que el
+contexto viene a continuación y con la herramienta eso habría sido mentira. `tool.ts` es nuevo: la spec
+que recibe el modelo, la decisión de alcance — un id que no está adjunto se rechaza con un mensaje que
+el modelo puede leer y **nunca** se ejecuta — y la ejecución. Y el bucle: `tools` si y solo si hay
+adjunto del corpus, tope de 3 búsquedas, la última pregunta sin `tools`, cancelar corta el bucle entero,
+y el intercambio con la herramienta **no** se escribe en la nota.
+
+RED 20 fallos; GREEN 84/84 en `src/features/send-message` y `src/entities/search-result`. Verificación
+diferencial: con un chat sin adjunto del corpus, la URL de `searchCorpus` y los dos frames dan **1961
+bytes idénticos** contra la base.
+
+**Un error de proceso mío, y queda escrito.** Commiteé T10 con `tsc` **fallando** sin darme cuenta: mi
+comando encadenaba `pnpm exec tsc && echo TSC_OK` bajo `set -e`, y en bash `set -e` **no** corta dentro
+de una lista `&&`, así que el fallo quedó enmascarado y el commit siguió igual. El error real era un mock
+de test declarado sin parámetros (`vi.fn(async () => …)`), cuyo tipo infiere una tupla vacía, y las tres
+líneas que leían `calls[0][0]` no compilaban. Arreglado, y el commit corregido con `--amend`. Lección
+para el resto de la feature: para gatillar con `set -e`, la verificación va como comando **suelto**,
+nunca dentro de un `&&`.
+
+**Lo que T10 deja anotado y no cablea:**
+
+- **S6 no está servido todavía**: con adjunto del corpus y el servidor caído, el fallo ocurre en la
+  primera búsqueda —con el error español y la pregunta a salvo—, no antes de la primera llamada al
+  modelo. Es T12.
+- **El hueco de S7 es peor que "no pasa nada"**: un chat con **solo** adjuntos del vault recibe el frame
+  que dice *"este chat no tiene material adjunto"*, y eso es **falso** — el material está, no se manda.
+  Va como tarea propia: enviar completo el texto del vault, con el lector inyectado como puerto.
+- `consulted` y el aviso "sin consultar el material" son T11.
+- El `top_k` que L9 declaró inerte **volvió a tener efecto** en el camino buscable: la búsqueda usa
+  `topK ?? retrievalTopK` como límite. Eso salda parte de la deuda de L9.
+- Si el proveedor sigue pidiendo herramientas después de la última pregunta, queda un turno de assistant
+  vacío persistido. T11 o T13 pueden querer saltearlo.
+- `EMPTY_CORPUS_MESSAGE` sigue hablando solo de "pasajes" (la duda de L15), sin tocar.
