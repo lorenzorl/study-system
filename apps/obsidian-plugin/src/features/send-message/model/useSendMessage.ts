@@ -2,10 +2,11 @@
  * The send-message interaction: compose, stream, persist.
  *
  * This is orchestration only. Every decision about what the model receives
- * lives in `prompt.ts`, and every decision about what the model may read lives
- * in `tool.ts`; this module decides the order of the steps — persist the
- * question, compose, converse, append the answer — and turns every failure into
- * a Spanish message instead of throwing at the UI.
+ * lives in `prompt.ts`, every decision about what the model may read lives in
+ * `tool.ts` and every decision about whether the corpus can be reached at all
+ * lives in `preflight.ts`; this module decides the order of the steps — check the
+ * corpus, persist the question, compose, converse, append the answer — and turns
+ * every failure into a Spanish message instead of throwing at the UI.
  *
  * The conversation is one round trip when the chat has no material behind the
  * tool: no tools are declared and the backend is not touched, which is what lets
@@ -25,6 +26,7 @@ import type { ChatAttachment } from "@/entities/chat"
 import { buildMessages, buildSources } from "./prompt"
 import type { ContextBlock, MaterialMode, PromptTurn } from "./prompt"
 import { SEARCH_MATERIAL_TOOL, decideToolCall, runSearchTool } from "./tool"
+import { checkCorpusReachable } from "./preflight"
 import { readVaultMaterial } from "./vault-text"
 
 const MISSING_KEY_ERROR =
@@ -66,22 +68,31 @@ export const useSendMessage = defineStore("send-message", () => {
   // stop the next iteration from ever starting.
   let controller: AbortController | null = null
 
-  async function send(question: string): Promise<void> {
+  /**
+   * Ask the question and write down the answer.
+   *
+   * Returns whether the question was consumed: `false` when the send was stopped
+   * before anything was persisted or sent -- a blank question, a missing key, no
+   * open chat, an unreachable corpus, a cancel that arrived before the question
+   * was written -- so the caller can give the text back to the user, and `true`
+   * once the question reached the note.
+   */
+  async function send(question: string): Promise<boolean> {
     const trimmed = question.trim()
 
     // A blank question is not a question.
-    if (!trimmed) return
+    if (!trimmed) return false
 
     // One send at a time. A second question while a stream is in flight would
     // interleave two answers, append four turns for two questions and leave the
     // first request's controller unreachable, so `cancel()` would stop working.
-    if (sending.value) return
+    if (sending.value) return false
 
     const settings = getSettings()
 
     if (settings.llmApiKey.trim() === "") {
       error.value = MISSING_KEY_ERROR
-      return
+      return false
     }
 
     const chats = useChatsStore()
@@ -89,12 +100,28 @@ export const useSendMessage = defineStore("send-message", () => {
 
     if (!note) {
       error.value = NO_CHAT_ERROR
-      return
+      return false
     }
 
     error.value = null
     answer.value = ""
     sending.value = true
+
+    // Created before the preflight, not after it: the probe is a network await in
+    // front of the first request, and a server that accepts the connection and
+    // never answers would otherwise hold `sending` forever with a Stop button that
+    // cannot reach the request it is meant to abort. One controller for the whole
+    // send: the probe and every round after it.
+    controller = new AbortController()
+
+    const signal = controller.signal
+
+    /**
+     * Whether the question reached the note. Everything that returns before it
+     * did never asked anything, so the caller gets the text back instead of
+     * losing it with the send that did not happen.
+     */
+    let questionPersisted = false
 
     // The history excludes the question, which is appended below.
     const history: PromptTurn[] = note.turns.map((turn) => ({
@@ -129,14 +156,40 @@ export const useSendMessage = defineStore("send-message", () => {
     const materialConsulted = (): boolean => !searchable || searchedMaterial
 
     try {
+      // S6: a chat with corpus material cannot answer without it, and learning
+      // that by making the call would spend a round trip on what is already known.
+      // This runs before the question is persisted and before any request reaches
+      // the model, so a blocked send leaves nothing behind for a retry to
+      // duplicate, and a chat without corpus material never probes the server at
+      // all -- which is what keeps a vault-only chat answering with it down (S1).
+      if (searchable) {
+        const reachable = await checkCorpusReachable(
+          corpusAttachments.map((attachment) => attachment.title),
+          signal,
+        )
+
+        if (!reachable.ok) {
+          error.value = reachable.error
+          return false
+        }
+      }
+
       // The question is a fact whether or not the model answers: persist it first.
-      await chats.appendTurn({
+      //
+      // A write the note refused must not answer "consumed": the caller would keep
+      // the textarea empty for a question nobody wrote down. The chat store turns
+      // its own failure into its own error -- which is what the user reads -- and
+      // answers whether the turn landed, so this path can stop before spending a
+      // model call on a question the note does not hold.
+      questionPersisted = await chats.appendTurn({
         role: "user",
         content: trimmed,
         sources: [],
         // Nothing was consulted by asking, so the question claims nothing.
         consulted: true,
       })
+
+      if (!questionPersisted) return false
 
       // The vault files travel whole in this request (S7), so their text is read
       // now and not when they were attached: a note grows. A file that cannot be
@@ -146,9 +199,11 @@ export const useSendMessage = defineStore("send-message", () => {
       const vault = await readVaultMaterial(note.attachments)
 
       if (!vault.ok) {
-        // The question stays in the note, which is why it is persisted first.
+        // The question stays in the note, which is why it is persisted first --
+        // and why the text is not given back: it is already asked, and restoring
+        // it would invite a retry that duplicates the turn.
         error.value = vault.error
-        return
+        return questionPersisted
       }
 
       const blocks = vault.blocks
@@ -170,9 +225,6 @@ export const useSendMessage = defineStore("send-message", () => {
         maxTurns: settings.historyTurns,
       })
 
-      controller = new AbortController()
-
-      const signal = controller.signal
       const tools = searchable ? [SEARCH_MATERIAL_TOOL] : undefined
       /** The text of every round, which is the answer the user reads. */
       let text = ""
@@ -272,10 +324,17 @@ export const useSendMessage = defineStore("send-message", () => {
       // from their own cancel alike (findings R4-partial-content-dropped and
       // R4-002).
       await savePartialAnswer(chats, materialConsulted())
+
+      // A send cut short before the question was written never asked anything, so
+      // the caller gets the text back; once it is in the note, giving it back
+      // would invite a retry that duplicates the turn.
+      return questionPersisted
     } finally {
       controller = null
       sending.value = false
     }
+
+    return true
   }
 
   /**

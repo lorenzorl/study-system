@@ -30,7 +30,15 @@ export async function fetchDocumentStatus(
  *
  * A bare JSON array, never null: an empty corpus is an empty array, so a caller
  * ranges over it instead of special-casing "there is nothing to attach".
+ *
+ * `signal` is what lets a caller give up on the request. It exists for the
+ * corpus preflight: that probe is a network await in front of the first model
+ * call, so a server that accepts the connection and never answers has to be
+ * abandonable, or the whole send hangs behind it. Optional, so every existing
+ * caller keeps the request it already made.
  */
-export async function listDocuments(): Promise<DocumentSummary[]> {
-  return request<DocumentSummary[]>("/api/rag/documents")
+export async function listDocuments(
+  signal?: AbortSignal,
+): Promise<DocumentSummary[]> {
+  return request<DocumentSummary[]>("/api/rag/documents", { signal })
 }

@@ -101,16 +101,27 @@ export const useChatsStore = defineStore("chats", () => {
     }
   }
 
-  async function appendTurn(turn: ChatTurn) {
-    if (!currentPath.value) return
+  /**
+   * Append one turn, answering whether the note took it.
+   *
+   * The answer is not decoration: the send path decides with it whether the user's
+   * question was consumed, and a caller that assumed success on a failed write
+   * would clear a question nobody wrote down. The failure still lives in this
+   * store's own error, which is what the user reads; the boolean is how a caller
+   * learns to stop instead of carrying on as if the note held the question.
+   */
+  async function appendTurn(turn: ChatTurn): Promise<boolean> {
+    if (!currentPath.value) return false
     error.value = null
     try {
       await apiAppendTurn(currentPath.value, turn)
       if (note.value) {
         note.value = { ...note.value, turns: [...note.value.turns, turn] }
       }
+      return true
     } catch (e) {
       error.value = messageOf(e, "No se pudo anexar el turno.")
+      return false
     }
   }
 

@@ -977,3 +977,82 @@ verificó compilando el SFC y leyendo el template, y el bundle la contiene.
 **Lo que T11 deja anotado:** la insignia es del turno, así que un chat que dejó de tener adjuntos del
 corpus conserva las insignias viejas —es correcto, describe lo que pasó—; y la detección sigue siendo
 determinista del lado del cliente, nunca preguntándole al modelo.
+
+**L31 (2026-10-18, fase 5 / T12: el bloqueo temprano, y las dos correcciones que el verificador obligó)** —
+un solo commit, porque T12 es riesgo alto declarado y su commit tiene que poder revisarse solo.
+
+**Lo construido.** `preflight.ts` responde una sola pregunta —¿se puede llegar al corpus ahora?— y nada
+más. La sonda es `listDocuments()`, que es el mismo contexto RAG que la tool lee: el backend no expone
+endpoint de salud (verificado), y listar es la pregunta más barata cuya respuesta sólo existe con el
+servidor arriba. Cualquier excepción bloquea, sin importar su tipo: la pregunta es "¿contesta?", y no hay
+clase de error que merezca un caso especial. Nada se cachea entre envíos, porque un servidor que volvió
+tiene que verse arriba en el envío siguiente. En `send()`, con `searchable`, la sonda corre **antes de
+persistir la pregunta y antes de cualquier llamada al modelo**; un chat sin material del corpus no sondea
+nunca el servidor (S1/S7).
+
+**El verificador independiente: cero blockers y 8/8 afirmaciones sostenidas**, con mutación y no leyendo:
+mover la sonda después de `appendTurn` hace fallar el test; `if (true)` en el guard hace fallar los dos
+casos "nunca sondea"; cachear la sonda hace fallar cinco. La pregunta que importaba —¿hay algún camino de
+`send()` a una llamada al modelo con corpus sin sonda?— la contestó leyendo el archivo entero:
+`searchable` es la **misma** variable `const` que decide la sonda y que declara `tools`, y
+`streamChatCompletion` tiene un solo llamador en todo el plugin. Confirmó además que el payload sin
+adjuntos y vault-only sale **byte a byte idéntico**, con sonda propia además del test pineado.
+
+**Y encontró dos defectos que eran de mi diseño, no del worker.**
+
+- **F2, el serio.** El `AbortController` se creaba **después** de la sonda, así que `cancel()` era un
+  no-op durante ella; con `shared/api/client.ts` sin timeout, un servidor que acepta la conexión y no
+  contesta dejaba el compositor trabado en `sending` **para siempre**. T12 había metido un `await` de red
+  delante del controller en cada envío con corpus: un modo de fallo nuevo. Ahora hay **un** controller,
+  creado antes de la sonda y reusado por el bucle, y la señal llega hasta `fetch` (`listDocuments(signal?)`
+  → `request` → `fetch`). Como el cliente compartido convierte **cualquier** fallo de `fetch` —un abort
+  incluido— en su propio `NetworkError`, el valor lanzado no distingue una cancelación de un servidor
+  muerto: el preflight decide por `signal.aborted` y relanza un `Error` con `name: "AbortError"`, que es
+  la forma que `isAbort` ya reconoce. El verificador confirmó esa premisa leyendo el cliente y **no pudo
+  construir ningún camino** donde una cancelación real se reporte como "el servidor no responde".
+- **F1.** El compositor limpiaba el textarea al emitir, y como el bloqueo ahora ocurre antes de persistir,
+  se comía la pregunta tecleada. No fue una decisión: se me pasó que el compositor se vacía sola, y es la
+  misma clase de pérdida silenciosa que esta feature ya arregló tres veces. `MessageComposer` pasó a un
+  `v-model` cuyo borrador es del padre y ya no se limpia solo; `ChatThread` limpia optimista y **devuelve
+  la pregunta** cuando `send()` contesta que no se consumió.
+
+**Re-verificación del delta: cero blockers, 7/7.** Mutación (a) controller devuelto después de la sonda →
+fallan los dos tests de cancelación con el síntoma original de F2 (timeout); mutación (b) el camino
+bloqueado devolviendo `true` → fallan tres. Mutación (c): borrar el "devolver el texto" en `ChatThread`
+**no lo detecta ningún test** —no hay runner de componentes en este repo— y queda dicho así, no como un
+pase.
+
+**N1, encontrado en la re-verificación, corregido después.** `send()` prometía "la pregunta se consumió"
+aunque `useChatsStore.appendTurn` **se tragaba** el fallo de escritura: el contrato decía algo que no podía
+sostener. Ahora `appendTurn` contesta si la nota tomó el turno, y `send()` se detiene si no. Es un cambio
+de contrato en `entities/chat` (de `Promise<void>` a `Promise<boolean>`, compatible con sus llamadores) y
+trae el primer test de ese store, que no tenía ninguno. Verifiqué que muerde: el store mintiendo → falla su
+test; el envío siguiendo tras una escritura fallida → falla el del envío. **Lo hice yo después del informe
+del verificador, no un tercero**: es una corrección pequeña y testeada en cuatro lugares, y lo digo para
+que se sepa cuál evidencia es independiente y cuál es mía.
+
+**Un accidente de proceso, para no repetirlo.** Al mutar para comprobar que los tests de N1 muerden usé
+`set -eo pipefail` y encadené la restauración después del test: el test **falló** —que era el punto— y
+`set -e` abortó el script **antes de restaurar**, dejando las mutaciones en el árbol hasta que las vi.
+Segunda vez que un idioma de shell me muerde en esta feature (la primera fue L19). La restauración va
+**antes** del comando que puede fallar, o en un `trap`.
+
+**RED/GREEN.** Worker: RED 2 fallos → GREEN 203/203 enfocados. Correcciones: RED 8 + 6 → GREEN 219/219.
+Padre, sobre todo junto: **447/447 en 33 archivos** (+30 sobre los 417 de L30), `tsc` en 0 y
+`node esbuild.config.mjs production` compilando los dos SFC. Diferencial: ningún test previo cambió de
+expectativa, y el verificador midió el payload sin adjuntos byte a byte contra la base.
+
+**Control de tamaño:** 406 líneas en archivos modificados más 469 en cuatro archivos nuevos — por encima
+del techo de ~400. La mayor parte son tests (283 solo en `useSendMessage.test.ts`, 192 en `preflight.test.ts`),
+y T12 no se parte: es riesgo alto y su commit tiene que tomarla entera.
+
+**Lo que queda anotado y agrupado, no arreglado acá.** **F3** —un servidor viejo que responde `/search`
+pero no `GET /api/rag/documents` bloquea con un diagnóstico falso: dice "no responde" cuando sí responde—
+va con la tarea de L25 que arregla justo eso, un rechazo que no dice la causa real. **F4** —
+`checkCorpusReachable([])` rendiría `«undefined»`— es inalcanzable desde `send()` y no se testea un defecto
+inalcanzable. **F5** —el README de `send-message` ya es falso en dos frases más— es la tarea 23. **F6** —un
+`GET /documents` extra por envío con corpus, sobre el 2N+1 de L11— queda como deuda declarada. **N2** —un
+fallo de red que coincide con un cancel en el mismo tick se reporta como cancelación— va en la dirección
+benigna y se deja. **N3** —un `send()` que rechace antes del `try` deja el borrador limpio— y **N4** —el
+texto devuelto puede caer en otro chat si cambiaste de chat durante un bloqueo— se suman a las tareas
+restantes.

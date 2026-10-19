@@ -1,7 +1,7 @@
 <template>
   <form class="message-composer" @submit.prevent="onSubmit">
     <textarea
-      v-model="message"
+      v-model="draft"
       class="message-composer__input"
       placeholder="Preguntá algo sobre tu corpus"
       aria-label="Mensaje"
@@ -22,7 +22,7 @@
       v-else
       type="submit"
       class="message-composer__submit"
-      :disabled="!message.trim()"
+      :disabled="!draft.trim()"
     >
       Enviar
     </button>
@@ -30,7 +30,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue"
+/**
+ * The draft belongs to the caller.
+ *
+ * This component used to own the text and clear it on submit, which lost the
+ * question whenever the send never happened: a blocked preflight asks the user to
+ * start the server and press send again, and the text has to still be there. Only
+ * the caller knows whether the send happened, so it owns the draft and this
+ * component does nothing but report the intent to send it.
+ */
+const draft = defineModel<string>({ required: true })
 
 defineProps<{ busy: boolean }>()
 
@@ -39,14 +48,11 @@ const emit = defineEmits<{
   (e: "cancel"): void
 }>()
 
-const message = ref("")
-
 function onSubmit(): void {
-  const text = message.value.trim()
+  const text = draft.value.trim()
   if (!text) return
 
   emit("submit", text)
-  message.value = ""
 }
 
 function onEnter(event: KeyboardEvent): void {

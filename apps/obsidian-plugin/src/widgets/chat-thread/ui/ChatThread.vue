@@ -49,12 +49,17 @@
          the next message carries, so it belongs next to the send button. -->
     <AttachmentPanel :has-chat="note !== null" />
 
-    <MessageComposer :busy="sending" @submit="onSubmit" @cancel="onCancel" />
+    <MessageComposer
+      v-model="draft"
+      :busy="sending"
+      @submit="onSubmit"
+      @cancel="onCancel"
+    />
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue"
+import { computed, ref } from "vue"
 import { storeToRefs } from "pinia"
 import { useChatsStore } from "@/entities/chat"
 import { AttachmentPanel } from "@/features/attach-resource"
@@ -68,10 +73,24 @@ const { sending, answer, error: sendError } = storeToRefs(sendStore)
 
 const turns = computed(() => note.value?.turns ?? [])
 
+// The composer holds this text and never clears it itself: a send that never
+// happened has to leave the question where the user can press send again.
+const draft = ref("")
+
 // The thread is the one place that decides what a submit means: send the
 // question through the feature store and let it own the orchestration.
-function onSubmit(question: string): void {
-  sendStore.send(question)
+//
+// The text is cleared optimistically and given back when `send` answers that the
+// question was never consumed. `send` resolves only when the whole answer is
+// done, so a restore cannot race a second submit: the input is disabled while
+// `sending` is true, and the restore only happens on a send that was blocked
+// before anything was persisted.
+async function onSubmit(question: string): Promise<void> {
+  draft.value = ""
+
+  const consumed = await sendStore.send(question)
+
+  if (!consumed) draft.value = question
 }
 
 function onCancel(): void {

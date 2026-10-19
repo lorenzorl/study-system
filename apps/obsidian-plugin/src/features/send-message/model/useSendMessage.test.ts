@@ -2,9 +2,10 @@
  * The orchestration order of `useSendMessage`.
  *
  * The network is mocked at the module boundary (`@/shared/llm`,
- * `@/entities/search-result`) so this test can assert the sequence the store
- * performs and what it hands each collaborator. The prompt content itself is
- * covered by `prompt.test.ts`; here we check that the right inputs reach it.
+ * `@/entities/search-result`, `@/entities/document`) so this test can assert the
+ * sequence the store performs and what it hands each collaborator. The prompt
+ * content itself is covered by `prompt.test.ts`; here we check that the right
+ * inputs reach it.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { createPinia, setActivePinia } from "pinia"
@@ -33,6 +34,8 @@ const mocks = vi.hoisted(() => {
       >
     },
     calls: [] as string[],
+    /** Set by the cases that assert what happens when the note refuses a turn. */
+    writeFails: false,
   }
 
   const appendTurn = vi.fn(
@@ -42,8 +45,10 @@ const mocks = vi.hoisted(() => {
       sources: string[]
       consulted: boolean
     }) => {
+      if (state.writeFails) return false
       state.calls.push(`append:${turn.role}`)
       state.note?.turns.push(turn)
+      return true
     },
   )
 
@@ -51,6 +56,7 @@ const mocks = vi.hoisted(() => {
     state,
     appendTurn,
     searchCorpus: vi.fn(),
+    listDocuments: vi.fn(),
     streamChatCompletion: vi.fn(),
     getSettings: vi.fn(),
   }
@@ -66,6 +72,12 @@ vi.mock("@/shared/config", () => ({
 
 vi.mock("@/entities/search-result", () => ({
   searchCorpus: mocks.searchCorpus,
+}))
+
+// The preflight's probe of the corpus. Reachable by default: the pre-existing
+// corpus cases are about what the model is offered, not about reachability.
+vi.mock("@/entities/document", () => ({
+  listDocuments: mocks.listDocuments,
 }))
 
 vi.mock("@/entities/chat", () => ({
@@ -167,6 +179,7 @@ beforeEach(() => {
   setActivePinia(createPinia())
   vi.clearAllMocks()
   mocks.state.calls.length = 0
+  mocks.state.writeFails = false
   mocks.state.note = makeNote()
   mocks.getSettings.mockReturnValue(settings())
   vaultFiles = { [VAULT_PATH]: VAULT_TEXT }
@@ -177,6 +190,7 @@ beforeEach(() => {
 
     return text
   })
+  mocks.listDocuments.mockImplementation(async () => [])
   mocks.searchCorpus.mockImplementation(async () => {
     mocks.state.calls.push("search")
     return [SEARCH_RESULT]
@@ -464,6 +478,58 @@ describe("useSendMessage.send", () => {
     expect(mocks.state.calls).not.toContain("append:assistant")
     expect(store.error).toContain("sin red")
   })
+
+  it("answers false for every guard that stops the send before anything is persisted", async () => {
+    const store = useSendMessage()
+
+    expect(await store.send("   ")).toBe(false)
+
+    mocks.getSettings.mockReturnValue(settings({ llmApiKey: "" }))
+
+    expect(await store.send("una pregunta")).toBe(false)
+
+    mocks.getSettings.mockReturnValue(settings())
+    mocks.state.note = null
+
+    expect(await store.send("una pregunta")).toBe(false)
+  })
+
+  it("answers true when the send proceeded", async () => {
+    const store = useSendMessage()
+
+    expect(await store.send("¿Qué es el lenguaje ubicuo?")).toBe(true)
+    expect(mocks.appendTurn.mock.calls.map(([turn]) => turn.role)).toEqual([
+      "user",
+      "assistant",
+    ])
+  })
+
+  it("answers false for a second question while the first one is still in flight", async () => {
+    let openGate: () => void = () => {}
+    const gate = new Promise<void>((resolve) => {
+      openGate = resolve
+    })
+
+    mocks.streamChatCompletion.mockImplementation(async () => {
+      mocks.state.calls.push("stream")
+      await gate
+      return { content: "", deltas: 0, toolCalls: [] }
+    })
+    const store = useSendMessage()
+
+    const first = store.send("primera")
+
+    await vi.waitFor(() => {
+      expect(mocks.state.calls).toContain("stream")
+    })
+
+    // The second question was never asked, so its text must come back to the
+    // composer instead of vanishing behind the guard.
+    expect(await store.send("segunda")).toBe(false)
+
+    openGate()
+    expect(await first).toBe(true)
+  })
 })
 
 describe("useSendMessage.send with a corpus attachment", () => {
@@ -709,6 +775,117 @@ describe("useSendMessage.send with a corpus attachment", () => {
   })
 })
 
+describe("useSendMessage.preflight", () => {
+  const UNREACHABLE = async () => {
+    throw new Error("No se pudo conectar al servidor. ¿Está corriendo en localhost:8080?")
+  }
+
+  // S6: the block happens before the first model call, and before the question is
+  // written, so there is nothing a retry could duplicate.
+  it("blocks a corpus chat before the first model call when the server is down", async () => {
+    mocks.state.note = makeNote({ attachments: [CORPUS_ATTACHMENT] })
+    mocks.listDocuments.mockImplementation(UNREACHABLE)
+    const store = useSendMessage()
+
+    await store.send("¿Qué es el lenguaje ubicuo?")
+
+    expect(mocks.streamChatCompletion).not.toHaveBeenCalled()
+    expect(mocks.appendTurn).not.toHaveBeenCalled()
+    expect(store.error).toContain(`«${CORPUS_ATTACHMENT.title}»`)
+    expect(store.error).toContain("el servidor del corpus no responde")
+    expect(store.sending).toBe(false)
+  })
+
+  it("sends when the corpus answers", async () => {
+    mocks.state.note = makeNote({ attachments: [CORPUS_ATTACHMENT] })
+    const store = useSendMessage()
+
+    await store.send("¿Qué es el lenguaje ubicuo?")
+
+    expect(mocks.listDocuments).toHaveBeenCalledTimes(1)
+    expect(mocks.streamChatCompletion).toHaveBeenCalledTimes(1)
+    expect(store.error).toBeNull()
+    expect(mocks.appendTurn.mock.calls.map(([turn]) => turn.role)).toEqual([
+      "user",
+      "assistant",
+    ])
+  })
+
+  it("never probes the corpus for a vault-only chat, even with the server down", async () => {
+    mocks.state.note = makeNote({ attachments: [VAULT_ATTACHMENT] })
+    mocks.listDocuments.mockImplementation(UNREACHABLE)
+    const store = useSendMessage()
+
+    await store.send("¿Qué es el estado?")
+
+    expect(mocks.listDocuments).not.toHaveBeenCalled()
+    expect(mocks.streamChatCompletion).toHaveBeenCalledTimes(1)
+    expect(store.error).toBeNull()
+  })
+
+  it("never probes the corpus for a chat with no attachments, even with the server down", async () => {
+    mocks.listDocuments.mockImplementation(UNREACHABLE)
+    const store = useSendMessage()
+
+    await store.send("¿Qué es el lenguaje ubicuo?")
+
+    expect(mocks.listDocuments).not.toHaveBeenCalled()
+    expect(mocks.streamChatCompletion).toHaveBeenCalledTimes(1)
+    expect(store.error).toBeNull()
+  })
+
+  it("answers false and leaves nothing in flight or persisted when the corpus is unreachable", async () => {
+    mocks.state.note = makeNote({ attachments: [CORPUS_ATTACHMENT] })
+    mocks.listDocuments.mockImplementation(UNREACHABLE)
+    const store = useSendMessage()
+
+    const persisted = await store.send("¿Qué es el lenguaje ubicuo?")
+
+    // Nothing was asked, so the text goes back to the composer: the user starts
+    // the server and presses send again, and no question is duplicated.
+    expect(persisted).toBe(false)
+    expect(store.sending).toBe(false)
+    expect(store.answer).toBe("")
+    expect(mocks.appendTurn).not.toHaveBeenCalled()
+    expect(mocks.streamChatCompletion).not.toHaveBeenCalled()
+  })
+
+  it("recovers on the next send after a block, without duplicating the question", async () => {
+    mocks.state.note = makeNote({ attachments: [CORPUS_ATTACHMENT] })
+    mocks.listDocuments.mockImplementationOnce(UNREACHABLE)
+    const store = useSendMessage()
+
+    expect(await store.send("primera")).toBe(false)
+    expect(store.error).toContain("el servidor del corpus no responde")
+    expect(mocks.state.note?.turns).toHaveLength(0)
+
+    // The same question, asked again once the server is up: exactly one user turn.
+    expect(await store.send("primera")).toBe(true)
+    expect(store.error).toBeNull()
+    expect(mocks.listDocuments).toHaveBeenCalledTimes(2)
+    expect(mocks.state.note?.turns.map((turn) => `${turn.role}:${turn.content}`)).toEqual([
+      "user:primera",
+      "assistant:hola mundo",
+    ])
+  })
+
+  it("names only the corpus title in the error when the chat also has a vault file", async () => {
+    mocks.state.note = makeNote({ attachments: [VAULT_ATTACHMENT, CORPUS_ATTACHMENT] })
+    mocks.listDocuments.mockImplementation(UNREACHABLE)
+    const store = useSendMessage()
+
+    expect(await store.send("¿Qué es el estado?")).toBe(false)
+    expect(store.error).toContain(`«${CORPUS_ATTACHMENT.title}»`)
+    expect(store.error).not.toContain(VAULT_PATH)
+    // The vault file is in the message and needs no server, so only the corpus
+    // half is named, and the model is never reached with a material claim it
+    // cannot honour.
+    expect(store.error).toContain("el servidor del corpus no responde")
+    expect(mocks.streamChatCompletion).not.toHaveBeenCalled()
+    expect(mocks.appendTurn).not.toHaveBeenCalled()
+  })
+})
+
 describe("useSendMessage.consulted", () => {
   /** The assistant turn the store persisted last. */
   function lastAnswer() {
@@ -889,11 +1066,14 @@ describe("useSendMessage.send with a vault attachment", () => {
     vaultFiles = {}
     const store = useSendMessage()
 
-    await store.send("¿Qué es el estado?")
+    const consumed = await store.send("¿Qué es el estado?")
 
     expect(store.error).toContain("No se pudo leer")
     expect(store.error).toContain(VAULT_PATH)
     expect(store.error).toContain("volvé a intentar")
+    // The question was consumed even though no answer came: it is in the note, so
+    // the caller must not hand the text back -- a retry would ask it twice.
+    expect(consumed).toBe(true)
     // Nothing is sent: an answer without the material the chat claims would be
     // an answer that pretends to have read it.
     expect(mocks.streamChatCompletion).not.toHaveBeenCalled()
@@ -937,7 +1117,96 @@ describe("useSendMessage.send with a vault attachment", () => {
   })
 })
 
+// The send path's other promise: it answers whether the question was consumed, and
+// the note is what decides that -- not the caller, and not the fact that it tried.
+describe("useSendMessage when the note refuses the turn", () => {
+  it("answers that nothing was consumed, and spends no model call", async () => {
+    // The note could not be written: no paths, a read-only vault, a failed write.
+    mocks.state.writeFails = true
+    const store = useSendMessage()
+
+    const consumed = await store.send("¿Qué es el agregado?")
+
+    expect(consumed).toBe(false)
+    // Nothing is asked of the model: its answer would have nowhere to live.
+    expect(mocks.streamChatCompletion).not.toHaveBeenCalled()
+    // The question was attempted once and the assistant never answered.
+    expect(mocks.appendTurn.mock.calls.map(([turn]) => turn.role)).toEqual(["user"])
+    expect(store.sending).toBe(false)
+  })
+})
+
+describe("useSendMessage.cancel during the preflight", () => {
+  /** A server that accepted the connection and never answers. */
+  function hangingProbe(rejectWith: () => Error) {
+    return (signal?: AbortSignal) =>
+      new Promise((_resolve, reject) => {
+        signal?.addEventListener("abort", () => reject(rejectWith()))
+      })
+  }
+
+  it("ends the send without an error when the probe is cancelled", async () => {
+    mocks.state.note = makeNote({ attachments: [CORPUS_ATTACHMENT] })
+    mocks.listDocuments.mockImplementation(
+      hangingProbe(() => {
+        const error = new Error("La respuesta se canceló.")
+
+        error.name = "AbortError"
+        return error
+      }),
+    )
+    const store = useSendMessage()
+
+    const pending = store.send("¿Qué es el lenguaje ubicuo?")
+
+    await vi.waitFor(() => {
+      expect(mocks.listDocuments).toHaveBeenCalledTimes(1)
+    })
+
+    store.cancel()
+
+    // Cancelling is the user's own decision: no message, nothing written, and
+    // the composer back to idle instead of wedged behind a stopped probe.
+    expect(await pending).toBe(false)
+    expect(store.error).toBeNull()
+    expect(store.sending).toBe(false)
+    expect(mocks.appendTurn).not.toHaveBeenCalled()
+    expect(mocks.streamChatCompletion).not.toHaveBeenCalled()
+  })
+
+  it("stays quiet even when the client reported the cancel as a network failure", async () => {
+    // `shared/api/client.ts` maps every fetch failure, an abort included, to its
+    // own `NetworkError`. The signal is what tells the two apart, which is why the
+    // probe decides from it and not from the thrown value.
+    mocks.state.note = makeNote({ attachments: [CORPUS_ATTACHMENT] })
+    mocks.listDocuments.mockImplementation(
+      hangingProbe(() => Object.assign(new Error("no responde"), { name: "NetworkError" })),
+    )
+    const store = useSendMessage()
+
+    const pending = store.send("¿Qué es el lenguaje ubicuo?")
+
+    await vi.waitFor(() => {
+      expect(mocks.listDocuments).toHaveBeenCalledTimes(1)
+    })
+
+    store.cancel()
+    await pending
+
+    expect(store.error).toBeNull()
+    expect(store.sending).toBe(false)
+    expect(mocks.appendTurn).not.toHaveBeenCalled()
+  })
+
+})
+
 describe("useSendMessage.cancel", () => {
+  it("is a no-op when nothing is in flight", () => {
+    const store = useSendMessage()
+
+    expect(() => store.cancel()).not.toThrow()
+  })
+
   it("aborts the stream in flight without reporting an error", async () => {
     mocks.streamChatCompletion.mockImplementation(
       (req: { signal?: AbortSignal }) => {
@@ -1003,12 +1272,6 @@ describe("useSendMessage.cancel", () => {
       sources: [],
       consulted: true,
     })
-  })
-
-  it("is a no-op when nothing is in flight", () => {
-    const store = useSendMessage()
-
-    expect(() => store.cancel()).not.toThrow()
   })
 
   it("stops the loop between iterations instead of starting the next request", async () => {
