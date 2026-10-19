@@ -28,19 +28,29 @@ export interface PromptTurn {
 }
 
 /**
- * What the model has to work with, in the three states the chat can be in.
+ * What the model has to work with, in the four states the chat can be in.
  *
- * The three are not a boolean because "has material" and "has it in the message"
- * are different facts, and the model owes the user a different frame for each:
+ * They are not a boolean because "has material" and "has it in the message" are
+ * different facts, and the model owes the user a different frame for each. The
+ * two facts are independent, so their four combinations are all reachable:
  *
  * - `none`: the chat has no material. The model answers from its own knowledge
  *   and must not write citations it cannot support.
- * - `searchable`: the chat has material attached, but it is not in the message.
- *   The model is expected to search it with the tool before answering.
+ * - `searchable`: the chat has material attached, but none of it is in the
+ *   message. The model is expected to search it with the tool before answering.
  * - `in-message`: the material travels in this request, so the model grounds on
  *   it directly (the vault files sent whole).
+ * - `in-message-and-searchable`: both at once. The chat has material in the
+ *   message **and** material that is not in it, so it needs one frame that says
+ *   both: ground on what it can see and search for the rest. Neither neighbour
+ *   frame can speak for this state -- `in-message` would forbid the search its
+ *   own request declares, and `searchable` would deny the text it is carrying.
  */
-export type MaterialMode = "none" | "searchable" | "in-message"
+export type MaterialMode =
+  | "none"
+  | "searchable"
+  | "in-message"
+  | "in-message-and-searchable"
 
 export interface PromptInput {
   /** The chat's own system prompt, read from its note. */
@@ -128,6 +138,38 @@ export const SEARCHABLE_MATERIAL_FRAME = [
 ].join("\n")
 
 /**
+ * The rules the model receives when the chat has material in the message and
+ * material behind the tool at the same time.
+ *
+ * This is the fourth state, and it exists because the other two frames
+ * contradict one of its halves. `CITATION_FRAME` opens by asking for the context
+ * that appears below "solamente", which forbids reading the corpus the same
+ * request declares a tool for; `SEARCHABLE_MATERIAL_FRAME` says the material is
+ * not in the message, which is false for the vault files it carries. So this
+ * frame states both facts and splits the duties: ground on what is there, search
+ * for what is not.
+ *
+ * It reuses text instead of paraphrasing it, so the states cannot drift apart.
+ * The admission rule ("Si no llegaste a buscar el material ... no lo
+ * consultaste") is copied verbatim from `SEARCHABLE_MATERIAL_FRAME`: it is what
+ * keeps the `consulted` badge coherent. The citation rule is copied verbatim
+ * from `CITATION_FRAME`, which already names both forms and ties each one to its
+ * class. The prohibition on inventing titles, pages and data is `CITATION_FRAME`'s
+ * rule extended with `SEARCHABLE_MATERIAL_FRAME`'s "pasajes que devolvió la
+ * búsqueda" -- both places the material can come from. The closing rule is the
+ * language rule all three share, word for word.
+ */
+export const IN_MESSAGE_AND_SEARCHABLE_FRAME = [
+  "Este chat tiene material en el mensaje y material que no está en el mensaje.",
+  "Buscá ese otro material con la herramienta de búsqueda antes de responder.",
+  "Si no llegaste a buscar el material, no respondas como si lo hubieras hecho: decí explícitamente que no lo consultaste.",
+  "Si el material no cubre la pregunta, decilo explícitamente en la respuesta; no respondas con tu propio conocimiento.",
+  "No inventes títulos, páginas ni datos: usá únicamente lo que figura en el contexto y en los pasajes que devolvió la búsqueda.",
+  "Cerrá la respuesta con una línea por cada pasaje que hayas usado: si el pasaje es un archivo del vault, citá su ruta como Fuente: <ruta de la nota>; si el pasaje vino de una búsqueda, citá título y página como Fuente: <título>, p. <página>.",
+  "Respondé en el idioma de la pregunta.",
+].join("\n")
+
+/**
  * The frame followed by the chat's prompt. An empty prompt leaves the frame
  * alone, with no trailing separator.
  */
@@ -152,6 +194,11 @@ export function buildSearchableSystemMessage(chatPrompt: string): string {
   return composeSystemMessage(SEARCHABLE_MATERIAL_FRAME, chatPrompt)
 }
 
+/** The system message for a chat with material in the message and behind the tool. */
+export function buildInMessageAndSearchableSystemMessage(chatPrompt: string): string {
+  return composeSystemMessage(IN_MESSAGE_AND_SEARCHABLE_FRAME, chatPrompt)
+}
+
 /** The frame that belongs to each state; the composer only appends the prompt. */
 function systemMessageFor(mode: MaterialMode, chatPrompt: string): string {
   switch (mode) {
@@ -161,6 +208,8 @@ function systemMessageFor(mode: MaterialMode, chatPrompt: string): string {
       return buildSearchableSystemMessage(chatPrompt)
     case "in-message":
       return buildSystemMessage(chatPrompt)
+    case "in-message-and-searchable":
+      return buildInMessageAndSearchableSystemMessage(chatPrompt)
   }
 }
 
@@ -241,6 +290,18 @@ function renderBlock(block: ContextBlock, index: number): string {
   return `[${index + 1}] ${heading}\n${block.text}`
 }
 
+/**
+ * Whether the material of this mode travels in this request.
+ *
+ * Both modes that carry blocks qualify, and the mixed one is easy to forget: it
+ * is named after the tool, and a mode check that only knows `in-message` drops
+ * the vault text from the message, so the model answers as if the note had never
+ * been attached -- while the frame tells it to search for it.
+ */
+function carriesBlocksInMessage(mode: MaterialMode): boolean {
+  return mode === "in-message" || mode === "in-message-and-searchable"
+}
+
 function buildUserMessage(
   blocks: ContextBlock[],
   question: string,
@@ -249,7 +310,7 @@ function buildUserMessage(
   // Only material that travels in this request has a context block. With no
   // material there is nothing to render, and a corpus that was never consulted
   // cannot have "returned nothing".
-  if (mode !== "in-message") return question.trim()
+  if (!carriesBlocksInMessage(mode)) return question.trim()
 
   const context = buildContext(blocks)
   const block = context === "" ? EMPTY_CORPUS_MESSAGE : context

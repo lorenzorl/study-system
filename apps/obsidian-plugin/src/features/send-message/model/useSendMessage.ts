@@ -217,13 +217,13 @@ export const useSendMessage = defineStore("send-message", () => {
 
       if (!questionPersisted) return false
 
-      // The vault text is already in the message, so the model grounds on what it
-      // can see and cites each file by its path. A chat whose material is only
-      // behind the tool keeps the searchable frame; a chat with both sends the
-      // vault text and still declares the tool, because the frame speaks about the
-      // material in front of the model and the tool is how it reaches the rest.
-      const material: MaterialMode =
-        blocks.length > 0 ? "in-message" : searchable ? "searchable" : "none"
+      // The two facts are independent, so the choice is four-way: material in the
+      // message, material behind the tool, both, or neither. A mixed chat is both,
+      // and it needs its own frame -- the citation frame forbids exactly what the
+      // tool it declares exists for. The blocks still travel either way, because a
+      // mode that carries blocks and does not render them answers as if the note
+      // had never been attached.
+      const material = materialModeOf(blocks.length > 0, searchable)
 
       const messages = buildMessages({
         chatPrompt: note.chat.prompt,
@@ -394,6 +394,16 @@ export const useSendMessage = defineStore("send-message", () => {
 
 function messageOf(e: unknown, fallback: string): string {
   return e instanceof Error && e.message ? e.message : fallback
+}
+
+/**
+ * The frame a chat is held to, from the two facts that decide it: does material
+ * travel in this request, and is there material behind the tool.
+ */
+function materialModeOf(hasBlocks: boolean, searchable: boolean): MaterialMode {
+  if (hasBlocks) return searchable ? "in-message-and-searchable" : "in-message"
+
+  return searchable ? "searchable" : "none"
 }
 
 function isAbort(e: unknown): boolean {

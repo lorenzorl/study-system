@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest"
 import {
   CITATION_FRAME,
+  IN_MESSAGE_AND_SEARCHABLE_FRAME,
   NO_MATERIAL_FRAME,
   SEARCHABLE_MATERIAL_FRAME,
   buildContext,
+  buildInMessageAndSearchableSystemMessage,
   buildMessages,
   buildNoMaterialSystemMessage,
   buildSearchableSystemMessage,
@@ -129,6 +131,84 @@ describe("SEARCHABLE_MATERIAL_FRAME", () => {
   it("is neither of the other two frames: the three states are distinct", () => {
     expect(SEARCHABLE_MATERIAL_FRAME).not.toBe(CITATION_FRAME)
     expect(SEARCHABLE_MATERIAL_FRAME).not.toBe(NO_MATERIAL_FRAME)
+  })
+})
+
+describe("IN_MESSAGE_AND_SEARCHABLE_FRAME", () => {
+  it("says the chat has material in the message and material that is not in it", () => {
+    expect(IN_MESSAGE_AND_SEARCHABLE_FRAME).toContain(
+      "material en el mensaje y material que no está en el mensaje",
+    )
+  })
+
+  it("tells the model to search the other material with the tool before answering", () => {
+    expect(IN_MESSAGE_AND_SEARCHABLE_FRAME).toContain("herramienta de búsqueda")
+    expect(IN_MESSAGE_AND_SEARCHABLE_FRAME).toContain("antes de responder")
+  })
+
+  it("never forbids what the tool exists for: it does not ask for the context alone", () => {
+    // The citation frame's first rule would contradict the tool this state
+    // declares, which is the defect this frame removes.
+    expect(IN_MESSAGE_AND_SEARCHABLE_FRAME).not.toContain(
+      "solamente el contexto que aparece a continuación",
+    )
+  })
+
+  it("names both citation forms exactly as the citation frame does", () => {
+    expect(IN_MESSAGE_AND_SEARCHABLE_FRAME).toContain("Fuente: <ruta de la nota>")
+    expect(IN_MESSAGE_AND_SEARCHABLE_FRAME).toContain("Fuente: <título>, p. <página>")
+  })
+
+  it("keeps the admission rule word for word, so the consulted badge cannot drift from it", () => {
+    const admission =
+      "Si no llegaste a buscar el material, no respondas como si lo hubieras hecho: decí explícitamente que no lo consultaste."
+
+    expect(IN_MESSAGE_AND_SEARCHABLE_FRAME).toContain(admission)
+    // The same sentence, not a paraphrase: the two frames cannot drift apart.
+    expect(SEARCHABLE_MATERIAL_FRAME).toContain(admission)
+  })
+
+  it("forbids answering from its own knowledge when the material does not cover the question", () => {
+    expect(IN_MESSAGE_AND_SEARCHABLE_FRAME).toContain("no cubre la pregunta")
+    expect(IN_MESSAGE_AND_SEARCHABLE_FRAME).toContain("no respondas con tu propio conocimiento")
+  })
+
+  it("forbids inventing titles, pages and data, and asks for the language of the question", () => {
+    expect(IN_MESSAGE_AND_SEARCHABLE_FRAME).toContain("No inventes títulos, páginas ni datos")
+    expect(IN_MESSAGE_AND_SEARCHABLE_FRAME).toContain("Respondé en el idioma de la pregunta.")
+  })
+
+  it("is a fourth state: no other frame speaks of material in the message and behind the tool", () => {
+    const mixed = "material en el mensaje y material que no está en el mensaje"
+
+    // The other three frames are untouched by this state: none of them claims it.
+    for (const frame of [CITATION_FRAME, NO_MATERIAL_FRAME, SEARCHABLE_MATERIAL_FRAME]) {
+      expect(frame).not.toContain(mixed)
+    }
+
+    expect(IN_MESSAGE_AND_SEARCHABLE_FRAME).not.toBe(CITATION_FRAME)
+    expect(IN_MESSAGE_AND_SEARCHABLE_FRAME).not.toBe(NO_MATERIAL_FRAME)
+    expect(IN_MESSAGE_AND_SEARCHABLE_FRAME).not.toBe(SEARCHABLE_MATERIAL_FRAME)
+  })
+})
+
+describe("buildInMessageAndSearchableSystemMessage", () => {
+  it("appends the chat prompt after the frame", () => {
+    const message = buildInMessageAndSearchableSystemMessage("Sos un tutor de estadística.")
+
+    expect(message.startsWith(IN_MESSAGE_AND_SEARCHABLE_FRAME)).toBe(true)
+    expect(message.indexOf(IN_MESSAGE_AND_SEARCHABLE_FRAME)).toBeLessThan(
+      message.indexOf("Sos un tutor de estadística."),
+    )
+  })
+
+  it("returns the frame alone, without a dangling separator, for an empty prompt", () => {
+    expect(buildInMessageAndSearchableSystemMessage("")).toBe(
+      IN_MESSAGE_AND_SEARCHABLE_FRAME,
+    )
+    expect(buildInMessageAndSearchableSystemMessage("   ")).toBe(
+      IN_MESSAGE_AND_SEARCHABLE_FRAME,
+    )
   })
 })
 
@@ -441,6 +521,53 @@ describe("buildMessages", () => {
     })
     // No context block and no empty-corpus line: there was no corpus to consult.
     expect(messages.at(-1)?.content).toBe("¿Qué es el lenguaje ubicuo?")
+  })
+
+  it("uses the mixed frame and still carries the blocks in the user message", () => {
+    const messages = buildMessages({
+      chatPrompt: "Sos un tutor.",
+      history: [],
+      blocks: [VAULT_BLOCK],
+      material: "in-message-and-searchable",
+      question: "¿Qué es el estado?",
+      maxTurns: 4,
+    })
+
+    expect(messages[0]).toEqual({
+      role: "system",
+      content: buildInMessageAndSearchableSystemMessage("Sos un tutor."),
+    })
+    // The mode carries material in the message, so the vault text must be there.
+    expect(messages.at(-1)?.content).toBe(
+      `${buildContext([VAULT_BLOCK])}\n\n¿Qué es el estado?`,
+    )
+    expect(messages.at(-1)?.content).toContain(VAULT_BLOCK.text)
+  })
+
+  it("renders the same user message in the two modes that carry blocks", () => {
+    const question = "¿Qué es el estado?"
+    const blocks = [VAULT_BLOCK, CORPUS_BLOCK]
+    const inMessage = buildMessages({
+      chatPrompt: "",
+      history: [],
+      blocks,
+      material: "in-message",
+      question,
+      maxTurns: 4,
+    })
+    const mixed = buildMessages({
+      chatPrompt: "",
+      history: [],
+      blocks,
+      material: "in-message-and-searchable",
+      question,
+      maxTurns: 4,
+    })
+
+    // A mixed chat that lost its blocks would answer as if the note had never
+    // been attached, with the frame telling the model to search for it instead.
+    expect(mixed.at(-1)?.content).toBe(inMessage.at(-1)?.content)
+    expect(inMessage.at(-1)?.content).toBe(`${buildContext(blocks)}\n\n${question}`)
   })
 
   it("uses the searchable frame and sends the bare question when the material is behind the tool", () => {

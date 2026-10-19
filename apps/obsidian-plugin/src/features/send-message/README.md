@@ -53,7 +53,7 @@ never answers cannot hold the composer.
 | No attachments | `NO_MATERIAL_FRAME`: its own knowledge, and no `Fuente:` lines — the format is forbidden by name, because a model with no pages satisfies it by inventing them | no | 1 |
 | Vault files only | `CITATION_FRAME`: ground on the context, cite by page | no | 1 |
 | Corpus documents | `SEARCHABLE_MATERIAL_FRAME`: grounding is a decision taken by searching, not a duty over material already in front of it | yes | 2+ |
-| Both classes | `CITATION_FRAME` with the vault text in the message, and the tool declared for the rest | yes | 1 or 2+ |
+| Both classes | `IN_MESSAGE_AND_SEARCHABLE_FRAME`: material in the message **and** material behind the tool. It merges the other two states instead of choosing one, because the citation frame's "only the context below" would forbid the search the same request declares | yes | 1 or 2+ |
 
 The chat's own prompt — the one the user edits in the chat's note, and the reason
 this feature exists (S1) — is **appended inside** the frame. It cannot remove it.
@@ -97,7 +97,8 @@ take the user's text with it.
 
 ## Where the pieces are
 
-- `model/prompt.ts` — pure: the three frames, the numbered context, the citations,
+- `model/prompt.ts` — pure: the four frames (one per material mode, including the
+  mixed chat), the numbered context, the citations,
   the history trim. Reads the chunk's `text` (the passage) and never the `snippet`
   (the 12-token marked window a human scans).
 - `model/tool.ts` — the tool's spec, the scope decision and its execution. No

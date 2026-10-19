@@ -1217,3 +1217,46 @@ Padre sobre las dos unidades juntas: **456/456 en 33 archivos**, `tsc` en 0 y el
 —el paquete no tiene `vue-tsc`—, así que el cambio de `ChatThread.vue` queda fuera de lo que el typecheck
 prueba; lo que sí lo cubre es el build de esbuild, que compila el SFC. Y no hay runner de componentes: N3 y N4
 están verificados leyendo y por los 235 tests, ninguno de los cuales monta el widget.
+
+**L36 (2026-10-18, el chat mixto tiene su frame: el hueco que no era un diff)** — commit «fix(send-message):
+give a chat with both material classes its own frame». El hallazgo de L34, corregido.
+
+**El defecto, otra vez para que se lea entero.** Un chat podía tener las dos clases adjuntas —una nota y un
+libro— y el modo se elegía `blocks.length > 0 ? "in-message" : searchable ? "searchable" : "none"`, así que el
+mixto caía en `in-message` y recibía `CITATION_FRAME`, cuya primera regla dice *"Respondé la pregunta usando
+solamente el contexto que aparece a continuación"*, **mientras el mismo pedido declaraba `tools`**. El frame le
+prohibía al modelo exactamente lo que la herramienta existe para hacer. La mitad del corpus de un chat mixto
+estaba contradicha por sus propias instrucciones.
+
+**La corrección.** `MaterialMode` gana `"in-message-and-searchable"` y su frame,
+`IN_MESSAGE_AND_SEARCHABLE_FRAME`, que dice las dos cosas: hay material en el mensaje **y** material que no
+está, buscá ese otro con la herramienta antes de responder, y citá cada forma como corresponde. Las reglas
+que se podían compartir se copiaron **verbatim** y verificado con comparación de strings, no a ojo: la regla
+de citas es la de `CITATION_FRAME` carácter por carácter, y la de admisión —"si no llegaste a buscar…"— es la
+de `SEARCHABLE_MATERIAL_FRAME`, para que la insignia de `consulted` no pueda derivar de la instrucción que la
+produce. `NO_MATERIAL_FRAME` y `SEARCHABLE_MATERIAL_FRAME` no se tocaron.
+
+**La trampa, que era el riesgo real, se arregló en un solo lugar.** `buildUserMessage` devolvía la pregunta
+pelada salvo que el modo fuera exactamente `"in-message"`, así que un cuarto modo sin tocarlo habría hecho
+**desaparecer el texto del vault del pedido con toda la suite en verde** —el chat habría contestado como si la
+nota no estuviera adjunta—. En vez de agregar un segundo `mode === …` en el call site, se extrajo
+`carriesBlocksInMessage(mode)`, que es donde un modo futuro podría volver a perder los bloques. El RED del
+worker lo muestra literalmente: `expected '¿Qué es el estado?' to be '[1] Notas/Tesis.md …'`.
+
+**Verificación.** RED: 12 fallos nombrados (8 del frame, 2 del builder, 2 de `buildMessages`, y el del pedido
+mixto). GREEN enfocado: 248/248 en 12 archivos, `tsc` en 0. Padre sobre todo junto: **469/469 en 33
+archivos**, `tsc` en 0, y el bundle compilando. Los pares de no-regresión pasan sin cambios: un chat
+vault-only sigue recibiendo `CITATION_FRAME` y **sin** `tools`, uno corpus-only sigue recibiendo
+`SEARCHABLE_MATERIAL_FRAME` con la pregunta pelada, y el chat sin adjuntos sigue mandando **byte a byte** el
+mismo pedido.
+
+**Dos cosas quedan dichas y no arregladas.** `buildUserMessage` sigue rindiendo
+`EMPTY_CORPUS_MESSAGE` cuando un modo con bloques recibe cero bloques; es inalcanzable desde `useSendMessage`
+—el modo se deriva de `blocks.length > 0`— pero un llamador futuro de `buildMessages` con el modo mixto y sin
+bloques leería una línea engañosa. Y el frame es instrucción: un chat mixto sigue pagando el preflight más uno
+o dos round trips aunque la nota sola alcance para responder, y a un modelo que ignore la regla 2 no se lo
+puede forzar a buscar. Los dos son trueques ya aceptados por la feature, no nuevos.
+
+**Corregí además una frase que este cambio volvió falsa**: el README decía "the three frames" en "Where the
+pieces are". Ahora dice cuatro, una por modo de material. Es el mismo patrón que vengo aplicando: un cambio de
+comportamiento arrastra la documentación que describe, o el documento empieza a mentir por acumulación.

@@ -94,7 +94,12 @@ vi.mock("@/entities/chat", async (importOriginal) => ({
 import { INTERRUPTED_MARKER, useSendMessage } from "./useSendMessage"
 import type { ToolCall } from "@/shared/llm"
 import { MAX_ATTACHMENT_CHARS } from "@/entities/chat"
-import { NO_MATERIAL_FRAME, buildContext, buildSystemMessage } from "./prompt"
+import {
+  NO_MATERIAL_FRAME,
+  buildContext,
+  buildInMessageAndSearchableSystemMessage,
+  buildSystemMessage,
+} from "./prompt"
 import { setVaultTextReader } from "./vault-text"
 
 const SEARCH_RESULT = {
@@ -1063,6 +1068,35 @@ describe("useSendMessage.send with a vault attachment", () => {
       sources: [VAULT_PATH, "Domain-Driven Design, p. 42"],
       consulted: true,
     })
+  })
+
+  it("sends the mixed frame, the vault text in the message and the tool when the chat has both classes", async () => {
+    mocks.state.note = makeNote({ attachments: [VAULT_ATTACHMENT, CORPUS_ATTACHMENT] })
+    const store = useSendMessage()
+
+    await store.send("¿Qué es el estado?")
+
+    const request = mocks.streamChatCompletion.mock.calls[0][0] as {
+      tools?: Array<{ function: { name: string } }>
+      messages: Array<{ role: string; content: string }>
+    }
+
+    // Neither half's frame can speak for both: the vault half is in the message
+    // and the corpus half is behind the tool.
+    expect(request.messages[0].content).toBe(
+      buildInMessageAndSearchableSystemMessage("Sos un tutor."),
+    )
+    // The in-message frame's first rule would forbid exactly what the declared
+    // tool is for.
+    expect(request.messages[0].content).not.toContain(
+      "solamente el contexto que aparece a continuación",
+    )
+    // The mixed mode carries blocks too, so the vault text must still be there.
+    expect(request.messages.at(-1)?.content).toBe(
+      `${buildContext([{ kind: "vault", path: VAULT_PATH, text: VAULT_TEXT }])}\n\n¿Qué es el estado?`,
+    )
+    expect(request.messages.at(-1)?.content).toContain(VAULT_TEXT)
+    expect(request.tools?.map((tool) => tool.function.name)).toEqual(["search_material"])
   })
 
   it("refuses the send and persists nothing when a file cannot be read", async () => {
