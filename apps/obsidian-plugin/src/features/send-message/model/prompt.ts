@@ -27,6 +27,21 @@ export interface PromptTurn {
   content: string
 }
 
+/**
+ * What the model has to work with, in the three states the chat can be in.
+ *
+ * The three are not a boolean because "has material" and "has it in the message"
+ * are different facts, and the model owes the user a different frame for each:
+ *
+ * - `none`: the chat has no material. The model answers from its own knowledge
+ *   and must not write citations it cannot support.
+ * - `searchable`: the chat has material attached, but it is not in the message.
+ *   The model is expected to search it with the tool before answering.
+ * - `in-message`: the material travels in this request, so the model grounds on
+ *   it directly (the vault files sent whole).
+ */
+export type MaterialMode = "none" | "searchable" | "in-message"
+
 export interface PromptInput {
   /** The chat's own system prompt, read from its note. */
   chatPrompt: string
@@ -35,13 +50,13 @@ export interface PromptInput {
   /** The material to ground on, in the order it should be numbered. */
   blocks: ContextBlock[]
   /**
-   * Whether the chat has material the model can ground on.
+   * Whether the chat has material the model can ground on, and where it is.
    *
    * An explicit input and not `blocks.length === 0`, because those are not the
-   * same thing: a chat whose material the model chose not to consult has no
-   * blocks and still has material, and it owes the user a different frame.
+   * same thing: a chat whose material is behind the tool has no blocks and
+   * still has material, so it cannot receive the no-material frame.
    */
-  grounded: boolean
+  material: MaterialMode
   question: string
 }
 
@@ -78,6 +93,27 @@ const EMPTY_CORPUS_MESSAGE =
   "El corpus no devolvió ningún pasaje para esta pregunta."
 
 /**
+ * The rules the model receives when the chat has material it must search.
+ *
+ * This is the third state, and its difference with `CITATION_FRAME` is that
+ * grounding is a decision the model takes by searching, not a duty it discharges
+ * on material already in front of it: forbidding its own knowledge without giving
+ * it a way to read the material would leave it with nothing to say. So the frame
+ * names the tool, and it also says what to do when the search comes back empty,
+ * because a model that cannot tell "no material" from "not consulted" invents
+ * either a citation or an answer.
+ */
+export const SEARCHABLE_MATERIAL_FRAME = [
+  "Este chat tiene material adjunto, pero el material no está en el mensaje.",
+  "Buscá ese material con la herramienta de búsqueda antes de responder.",
+  "Si el material cubre la pregunta, no la respondas con tu propio conocimiento.",
+  "Si el material no cubre la pregunta, decilo explícitamente en la respuesta.",
+  "No inventes títulos, páginas ni datos: usá únicamente los pasajes que devolvió la búsqueda.",
+  "Cerrá la respuesta con una línea por cada fuente que hayas usado, con este formato exacto: Fuente: <título>, p. <página>.",
+  "Respondé en el idioma de la pregunta.",
+].join("\n")
+
+/**
  * The frame followed by the chat's prompt. An empty prompt leaves the frame
  * alone, with no trailing separator.
  */
@@ -95,6 +131,23 @@ export function buildSystemMessage(chatPrompt: string): string {
 /** The system message for a chat with no material: its own knowledge, no citations. */
 export function buildNoMaterialSystemMessage(chatPrompt: string): string {
   return composeSystemMessage(NO_MATERIAL_FRAME, chatPrompt)
+}
+
+/** The system message for a chat whose material is reachable only through the tool. */
+export function buildSearchableSystemMessage(chatPrompt: string): string {
+  return composeSystemMessage(SEARCHABLE_MATERIAL_FRAME, chatPrompt)
+}
+
+/** The frame that belongs to each state; the composer only appends the prompt. */
+function systemMessageFor(mode: MaterialMode, chatPrompt: string): string {
+  switch (mode) {
+    case "none":
+      return buildNoMaterialSystemMessage(chatPrompt)
+    case "searchable":
+      return buildSearchableSystemMessage(chatPrompt)
+    case "in-message":
+      return buildSystemMessage(chatPrompt)
+  }
 }
 
 /**
@@ -148,22 +201,21 @@ export function buildSources(blocks: ContextBlock[]): string[] {
 
 /**
  * `[system, ...trimmed history, user]`. The last message carries the context
- * block and the question when the chat is grounded, and the bare question when
- * it is not.
+ * block and the question when the material travels in the message, and the bare
+ * question otherwise: when the material is behind the tool, the instruction to
+ * search it belongs in the frame, not in the question.
  */
 export function buildMessages(input: PromptInput & { maxTurns: number }): LlmMessage[] {
   const system: LlmMessage = {
     role: "system",
-    content: input.grounded
-      ? buildSystemMessage(input.chatPrompt)
-      : buildNoMaterialSystemMessage(input.chatPrompt),
+    content: systemMessageFor(input.material, input.chatPrompt),
   }
   const history: LlmMessage[] = trimHistory(input.history, input.maxTurns).map(
     (turn) => ({ role: turn.role, content: turn.content }),
   )
   const user: LlmMessage = {
     role: "user",
-    content: buildUserMessage(input.blocks, input.question, input.grounded),
+    content: buildUserMessage(input.blocks, input.question, input.material),
   }
 
   return [system, ...history, user]
@@ -178,11 +230,12 @@ function renderBlock(block: ContextBlock, index: number): string {
 function buildUserMessage(
   blocks: ContextBlock[],
   question: string,
-  grounded: boolean,
+  mode: MaterialMode,
 ): string {
-  // With no material there is no context block and no empty-corpus line: a
-  // corpus that was never consulted cannot have "returned nothing".
-  if (!grounded) return question.trim()
+  // Only material that travels in this request has a context block. With no
+  // material there is nothing to render, and a corpus that was never consulted
+  // cannot have "returned nothing".
+  if (mode !== "in-message") return question.trim()
 
   const context = buildContext(blocks)
   const block = context === "" ? EMPTY_CORPUS_MESSAGE : context
