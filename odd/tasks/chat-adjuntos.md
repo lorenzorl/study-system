@@ -516,3 +516,43 @@ Duda que el writer dejó anotada y que es real: el comentario de `EMPTY_CORPUS_M
 solo de corpus y de "pasajes", y ahora un chat fundado puede llevar bloques del vault. No se tocó
 para mantener la fase sin cambio de comportamiento; hay que revisarlo en la fase 5, que es cuando el
 estado intermedio se cablea y ese mensaje puede alcanzarse con material del vault.
+
+**L16 (2026-10-18, segundo review nativo: aprobado)** — linaje `review-3f8ccb22da3fa83f`, target
+`sha256:51c25508…`, riesgo **medium**, 4 lentes, 36 archivos y 2566 líneas. Los 4 reviewers corrieron
+(4/4) y el review **aprobó**; autoridad quemada con `gentle-ai.review-acknowledged/v1`.
+
+Dos START fueron rechazados antes con `lenses-invalid` y `lineage_created: false` — ninguno creó
+linaje ni quemó nada. La causa **no** era la lista de lentes ni su orden, que ya era el canónico: era
+el largo del `lensesReason`. Uno de ~640 caracteres falla; el mismo contenido en ~250 pasa. Queda
+anotado como restricción del proveedor.
+
+Diecisiete hallazgos, **todos no bloqueantes** (`disposition: informational`); ninguno abre una
+corrección y el proveedor no ofrece transición de corrección para este candidato. Igual que en L12, el
+texto completo no viene en el sobre de la facade: se registran por id, lente, ubicación y severidad.
+
+`WARNING`:
+
+- `R3-topk-inert` y `R4-topk-inert` (`useSendMessage.ts:87-89,93-94`). El `top_k` inerte de L9, otra
+  vez confirmado por dos lentes.
+- `R4-corpus-list-2n-plus-1` (`documents.go:68-77`) y `R3-corpus-list-2n-plus-1`
+  (`documents.go:68-86`). El 2N+1 de L11.
+- `R4-corpus-list-fail-closed` y `R3-count-fail-aborts-list` (`documents.go:69-76`). El
+  `R4-count-fail-all` de L12, con dos nombres.
+- `R4-grounded-hardcoded-seam` (`useSendMessage.ts:93-94`). Es el `grounded: false` fijo que la fase 4
+  dejó a propósito como costura; lo cablea la fase 5.
+
+`SUGGESTION`, con dos nuevos que son accionables:
+
+- **`R1-attachment-region-line-injection`** (`note.ts:266-269`). El más concreto de los nuevos:
+  `renderAttachment` recorta los campos pero **no sanea saltos de línea ni el separador**, así que un
+  título con un `\n` inyecta una línea extra en la región de adjuntos. Hay que sanear al renderizar.
+- **`R1-corpus-list-keyless-posture`** (`router.go:25`). El listado nuevo queda sin key, igual que la
+  búsqueda. Es una postura de seguridad a decidir, no un error.
+- `R2-001` (`useSendMessage.ts:93-94`), `R2-002` (`documents.go:37-41`), `R2-003`
+  (`chunk_repo.go:221-226`), `R2-004` (`search_handler.go:46-50`), `R2-005` (`prompt.ts:186`),
+  `R3-pages-count-across-jobs` (`page_repo.go:111-116`), `R4-pages-count-across-jobs`
+  (`page_repo.go:105-122`) y `R4-scoped-semantic-full-vector-read` (`search.go:215-220`).
+
+Los dos reviews coinciden: la deuda ya declarada (el `top_k` inerte, el 2N+1, el conteo de páginas por
+jobs) más un puñado de sugerencias. Ninguno encontró nada escondido, y el único hallazgo nuevo con
+consecuencias reales es la inyección de línea en la región de adjuntos.
