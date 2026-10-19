@@ -733,3 +733,48 @@ review sigue al riesgo y no a la cantidad de archivos ni de commits.
 Una observación de proceso que vale: **cada commit de `docs(odd)` genera un candidato nuevo**, así que
 cada review arrastra su propio ciclo de acuse. Es barato —cero corridas de modelo— pero es un ciclo. Si
 molesta, los registros de review se pueden agrupar en un solo commit en vez de uno por ciclo.
+
+**L23 (2026-10-18, séptimo review nativo: aprobado, riesgo bajo)** — otra vez un candidato de solo
+documentación (`8a364c1`, 12 líneas de este archivo). Rango acotado, sin lentes, cerrado en `approved`
+en el acto.
+
+**Y acá se aplica el arreglo al ciclo que L22 anotó:** este registro **no se commitea solo**. Cada
+commit de `docs(odd)` genera un candidato nuevo y por lo tanto otro ciclo de acuse, así que de acá en
+adelante los registros de review se agrupan y viajan con el próximo cambio de código. Queda escrito en
+el árbol hasta ese commit.
+
+**L24 (2026-10-18, los tres arreglos de la opción A)** — dos commits: «fix(chat): sanitise every line the
+note writes, and stop the marker from rebuilding itself» y «feat(send-message): send the vault's text,
+not just its name».
+
+**El bypass del saneador** (`R1-attachment-sanitiser-nested-marker-bypass`): borrar el marcador podía
+**fabricarlo** — `<!-- adjuntos:<!-- adjuntos:end -->end -->` perdía el del medio y las dos mitades se
+juntaban en el marcador mismo. Ahora la limpieza corre **hasta un punto fijo** (termina, porque cada paso
+que cambia solo saca marcadores) y cubre **todos** los marcadores de región, no solo los de adjuntos.
+Esa ampliación es una decisión del writer, deliberada: "un campo nunca lleva un marcador" es más simple
+y más seguro que un juego de marcadores por región.
+
+**Las citas sin sanear** (`R1-tool-sources-into-persisted-turns-unsanitised`): `renderSource` ahora pasa
+por el mismo saneador, así que un título con salto de línea no puede inyectar una línea en la región del
+chat. El parser **no** se tocó: sigue ignorando lo que no entiende, y la nota sigue editable a mano.
+
+**El texto del vault** (`R3-vault-only-chat-gets-no-material-frame`): un puerto inyectado
+(`vault-text.ts`) lee cada archivo al mandar, re-chequea los topes y **rechaza el envío con un mensaje
+claro** si un archivo no se puede leer o ya no entra. El texto va completo como bloque `kind:"vault"` con
+el frame de citas, y la cita es la ruta. El lector real se instala en `app/main.ts`, al lado de
+`setObsidianApp`. El chat sin adjuntos manda **byte a byte** el mismo pedido que antes, verificado contra
+la base.
+
+RED→GREEN: 69/69 en `src/entities/chat`, y 109/109 en `src/features/send-message` más el guard de
+arquitectura (que prueba que no se agregó ningún import cruzado entre slices).
+
+**Tres cosas que quedan anotadas de este cambio:**
+
+- **Los topes están duplicados** en `vault-text.ts`: FSD prohíbe importar `features/attach-resource` y
+  `shared/` estaba fuera de las superficies. Un test los compara para detectar la deriva, pero cambiarlos
+  sigue siendo un cambio de dos archivos. **Moverlos a `shared/` es la solución.**
+- **El `README.md` de la slice quedó viejo**: sigue describiendo la recuperación como paso 3 y no menciona
+  el puerto del vault ni los mensajes de rechazo. No se pudo tocar (fuera de superficie).
+- **El frame de citas exige `Fuente: <título>, p. <página>`**, y una cita del vault no tiene página. El
+  código cita bien (solo la ruta), pero el modelo podría agregar una página en su prosa. Esa línea del
+  frame tendría que ramificar por clase.

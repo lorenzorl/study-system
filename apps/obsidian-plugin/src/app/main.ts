@@ -3,12 +3,18 @@ import { StudyView, STUDY_VIEW_TYPE } from "./study-view"
 import { StudyChatView, STUDY_CHAT_VIEW_TYPE } from "./study-chat-view"
 import { loadPluginSettings } from "./settings-store"
 import { ChatSettingsTab } from "./settings-tab"
-import { setObsidianApp, useObsidian } from "@/shared/obsidian"
+import { setObsidianApp, readVaultFile, useObsidian } from "@/shared/obsidian"
+import { setVaultTextReader } from "@/features/send-message"
 
 export default class FlashcardPlugin extends Plugin {
   async onload(): Promise<void> {
     // Set the app singleton early so commands can access it
     setObsidianApp(this.app)
+
+    // The send path reads vault attachments through an injected port, so
+    // `features/` never imports the Obsidian boundary. This is where the real
+    // reader gets in, beside the app singleton it needs.
+    setVaultTextReader(readVaultFile)
 
     // Own the plugin's global settings (data.json) and expose its settings tab
     await loadPluginSettings(this)
@@ -59,7 +65,9 @@ export default class FlashcardPlugin extends Plugin {
   }
 
   onunload(): void {
-    // Clean up the app singleton.
+    // Clean up the app singleton and the reader that needs it: the reader is a
+    // port into a vault that no longer exists after unload.
+    setVaultTextReader(null)
     // SAFETY: clearing the singleton is deliberate; the cast stands in for
     // `App | null`, which `setObsidianApp` does not accept today.
     setObsidianApp(null as unknown as import("obsidian").App)

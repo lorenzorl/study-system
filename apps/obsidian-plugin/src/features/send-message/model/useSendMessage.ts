@@ -7,10 +7,11 @@
  * question, compose, converse, append the answer — and turns every failure into
  * a Spanish message instead of throwing at the UI.
  *
- * The conversation is one round trip when the chat has no corpus material: no
- * tools are declared and the backend is not touched, which is what lets that
- * chat answer with the server down. When the chat does have corpus attachments,
- * the model may ask for a search, and the exchange that follows lives only in
+ * The conversation is one round trip when the chat has no material behind the
+ * tool: no tools are declared and the backend is not touched, which is what lets
+ * such a chat answer with the server down. A vault attachment is material that
+ * travels in the message instead, read whole at send time; a corpus attachment is
+ * material the model has to ask for, and the exchange that follows lives only in
  * memory: `ChatTurn` cannot represent an assistant turn with `tool_calls`, and
  * that machinery belongs to one answer rather than to the conversation.
  */
@@ -22,8 +23,9 @@ import type { ChatRequest } from "@/shared/llm"
 import { useChatsStore } from "@/entities/chat"
 import type { ChatAttachment } from "@/entities/chat"
 import { buildMessages, buildSources } from "./prompt"
-import type { ContextBlock, PromptTurn } from "./prompt"
+import type { ContextBlock, MaterialMode, PromptTurn } from "./prompt"
 import { SEARCH_MATERIAL_TOOL, decideToolCall, runSearchTool } from "./tool"
+import { readVaultMaterial } from "./vault-text"
 
 const MISSING_KEY_ERROR =
   "Falta configurar la API key del modelo en los ajustes del plugin."
@@ -118,11 +120,34 @@ export const useSendMessage = defineStore("send-message", () => {
       // The question is a fact whether or not the model answers: persist it first.
       await chats.appendTurn({ role: "user", content: trimmed, sources: [] })
 
+      // The vault files travel whole in this request (S7), so their text is read
+      // now and not when they were attached: a note grows. A file that cannot be
+      // read, or no longer fits its cap, refuses the send instead of going out
+      // over the cap or being dropped quietly -- a chat that answers without
+      // material it claimed to have is the lie this path exists to remove.
+      const vault = await readVaultMaterial(note.attachments)
+
+      if (!vault.ok) {
+        // The question stays in the note, which is why it is persisted first.
+        error.value = vault.error
+        return
+      }
+
+      const blocks = vault.blocks
+
+      // The vault text is already in the message, so the model grounds on what it
+      // can see and cites each file by its path. A chat whose material is only
+      // behind the tool keeps the searchable frame; a chat with both sends the
+      // vault text and still declares the tool, because the frame speaks about the
+      // material in front of the model and the tool is how it reaches the rest.
+      const material: MaterialMode =
+        blocks.length > 0 ? "in-message" : searchable ? "searchable" : "none"
+
       const messages = buildMessages({
         chatPrompt: note.chat.prompt,
         history,
-        blocks: [],
-        material: searchable ? "searchable" : "none",
+        blocks,
+        material,
         question: trimmed,
         maxTurns: settings.historyTurns,
       })
@@ -133,8 +158,11 @@ export const useSendMessage = defineStore("send-message", () => {
       const tools = searchable ? [SEARCH_MATERIAL_TOOL] : undefined
       /** The text of every round, which is the answer the user reads. */
       let text = ""
-      /** The passages the tool actually returned, which are what gets cited. */
-      const consulted: ContextBlock[] = []
+      /**
+       * What the answer may cite: the vault files sent in the message plus the
+       * passages the tool actually returned, in that order.
+       */
+      const citable: ContextBlock[] = [...blocks]
 
       for (let round = 0; round <= MAX_TOOL_ITERATIONS; round += 1) {
         ensureNotCancelled(signal)
@@ -191,7 +219,7 @@ export const useSendMessage = defineStore("send-message", () => {
 
           const outcome = await runSearchTool(decision, { limit: topK })
 
-          consulted.push(...outcome.blocks)
+          citable.push(...outcome.blocks)
           messages.push({
             role: "tool",
             tool_call_id: call.id,
@@ -203,7 +231,7 @@ export const useSendMessage = defineStore("send-message", () => {
       await chats.appendTurn({
         role: "assistant",
         content: text,
-        sources: buildSources(consulted),
+        sources: buildSources(citable),
       })
     } catch (e) {
       // A cancellation is the user's own decision, not an error to report.

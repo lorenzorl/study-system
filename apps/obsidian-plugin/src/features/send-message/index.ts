@@ -12,3 +12,5 @@ export {
   trimHistory,
 } from "./model/prompt"
 export type { ContextBlock, MaterialMode, PromptInput, PromptTurn } from "./model/prompt"
+export { setVaultTextReader } from "./model/vault-text"
+export type { VaultTextReader } from "./model/vault-text"

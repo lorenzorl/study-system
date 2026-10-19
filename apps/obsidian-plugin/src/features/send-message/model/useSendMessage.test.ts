@@ -67,7 +67,8 @@ vi.mock("@/entities/chat", () => ({
 
 import { INTERRUPTED_MARKER, useSendMessage } from "./useSendMessage"
 import type { ToolCall } from "@/shared/llm"
-import { buildContext } from "./prompt"
+import { NO_MATERIAL_FRAME, buildContext, buildSystemMessage } from "./prompt"
+import { MAX_ATTACHMENT_CHARS, setVaultTextReader } from "./vault-text"
 
 const SEARCH_RESULT = {
   chunk_id: "c1",
@@ -86,6 +87,18 @@ const CORPUS_ATTACHMENT = {
   documentId: "doc-ddd",
   title: "Domain-Driven Design",
 }
+
+const VAULT_PATH = "Notas/Tesis.md"
+const VAULT_TEXT = [
+  "El estado es efímero y se descarta al recargar.",
+  "",
+  "Sin páginas, porque una nota del vault no tiene.",
+].join("\n")
+
+const VAULT_ATTACHMENT = { kind: "vault" as const, path: VAULT_PATH }
+
+/** The vault as the send path sees it: a map a test can edit or empty. */
+let vaultFiles: Record<string, string>
 
 const SEARCH_TOOL_CALL: ToolCall = {
   id: "call-1",
@@ -146,6 +159,14 @@ beforeEach(() => {
   mocks.state.calls.length = 0
   mocks.state.note = makeNote()
   mocks.getSettings.mockReturnValue(settings())
+  vaultFiles = { [VAULT_PATH]: VAULT_TEXT }
+  setVaultTextReader(async (path) => {
+    const text = vaultFiles[path]
+
+    if (text === undefined) throw new Error(`No se encontró la nota "${path}".`)
+
+    return text
+  })
   mocks.searchCorpus.mockImplementation(async () => {
     mocks.state.calls.push("search")
     return [SEARCH_RESULT]
@@ -267,6 +288,31 @@ describe("useSendMessage.send", () => {
 
     expect(request.messages.at(-1)?.content).toBe("¿Qué es el lenguaje ubicuo?")
     expect(request.messages[0]?.content).toContain("no tiene material adjunto")
+  })
+
+  it("sends today's exact request, byte for byte, when the chat has no attachments", async () => {
+    const store = useSendMessage()
+
+    await store.send("¿Qué es el lenguaje ubicuo?")
+
+    // `signal` and `onDelta` are functions and cannot be compared as bytes; they
+    // ride along and are the only things left out. Everything the provider reads
+    // is pinned here, including the absence of a `tools` key.
+    const { signal: _signal, onDelta: _onDelta, ...payload } = mocks.streamChatCompletion.mock
+      .calls[0][0] as Record<string, unknown>
+
+    expect(JSON.stringify(payload)).toBe(
+      JSON.stringify({
+        apiKey: "sk-test",
+        baseUrl: "https://openrouter.ai/api/v1",
+        model: "global-model",
+        temperature: 0.2,
+        messages: [
+          { role: "system", content: `${NO_MATERIAL_FRAME}\n\nSos un tutor.` },
+          { role: "user", content: "¿Qué es el lenguaje ubicuo?" },
+        ],
+      }),
+    )
   })
 
   it("excludes the question just appended from the history", async () => {
@@ -409,26 +455,6 @@ describe("useSendMessage.send", () => {
 })
 
 describe("useSendMessage.send with a corpus attachment", () => {
-  it("declares no tools and sends today's request when the chat has no corpus attachment", async () => {
-    // A vault attachment is material, but not material the tool reads: it is sent
-    // whole, which is a later task. Until then this chat takes today's path.
-    mocks.state.note = makeNote({ attachments: [{ kind: "vault", path: "Notas/Tesis.md" }] })
-    const store = useSendMessage()
-
-    await store.send("¿Qué es el lenguaje ubicuo?")
-
-    const request = mocks.streamChatCompletion.mock.calls[0][0] as {
-      tools?: unknown
-      messages: Array<{ role: string; content: string }>
-    }
-
-    expect("tools" in request).toBe(false)
-    expect(request.tools).toBeUndefined()
-    expect(request.messages.map((message) => message.role)).toEqual(["system", "user"])
-    expect(request.messages[0].content).toContain("no tiene material adjunto")
-    expect(request.messages.at(-1)?.content).toBe("¿Qué es el lenguaje ubicuo?")
-  })
-
   it("declares the search tool and the searchable frame when the chat has a corpus attachment", async () => {
     mocks.state.note = makeNote({ attachments: [CORPUS_ATTACHMENT] })
     const store = useSendMessage()
@@ -665,6 +691,137 @@ describe("useSendMessage.send with a corpus attachment", () => {
     expect(appended.map((turn) => turn.role)).toEqual(["user", "assistant"])
     expect(JSON.stringify(appended)).not.toContain("tool_call")
     expect(JSON.stringify(appended)).not.toContain("search_material")
+  })
+})
+
+describe("useSendMessage.send with a vault attachment", () => {
+  it("sends the file's text whole, with the citation frame, and declares no tools", async () => {
+    mocks.state.note = makeNote({ attachments: [VAULT_ATTACHMENT] })
+    const store = useSendMessage()
+
+    await store.send("¿Qué es el estado?")
+
+    const request = mocks.streamChatCompletion.mock.calls[0][0] as {
+      tools?: unknown
+      messages: Array<{ role: string; content: string }>
+    }
+
+    // One round trip and no server: a vault file needs neither the tool nor the
+    // backend, which is S7 and S1 in the same request.
+    expect("tools" in request).toBe(false)
+    expect(mocks.state.calls).toEqual(["append:user", "stream", "append:assistant"])
+    expect(request.messages.map((message) => message.role)).toEqual(["system", "user"])
+    // The chat does have material, so the no-material frame would be a lie and
+    // the citation frame is what its answer is held to.
+    expect(request.messages[0].content).toBe(buildSystemMessage("Sos un tutor."))
+    expect(request.messages[0].content).not.toContain("no tiene material adjunto")
+    // The material travels in the message, whole, as a vault block.
+    expect(request.messages.at(-1)?.content).toBe(
+      `${buildContext([{ kind: "vault", path: VAULT_PATH, text: VAULT_TEXT }])}\n\n¿Qué es el estado?`,
+    )
+    expect(request.messages.at(-1)?.content).toContain(VAULT_TEXT)
+    // No page number is invented in the material either.
+    expect(request.messages.at(-1)?.content).not.toContain("p. ")
+  })
+
+  it("cites the file by its path when it persists the answer", async () => {
+    mocks.state.note = makeNote({ attachments: [VAULT_ATTACHMENT] })
+    const store = useSendMessage()
+
+    await store.send("¿Qué es el estado?")
+
+    const appended = mocks.appendTurn.mock.calls.at(-1)?.[0]
+
+    expect(appended).toEqual({
+      role: "assistant",
+      content: "hola mundo",
+      sources: [VAULT_PATH],
+    })
+    expect(JSON.stringify(appended)).not.toContain("p. ")
+  })
+
+  it("sends the vault text and declares the search tool when the chat has both classes", async () => {
+    mocks.state.note = makeNote({ attachments: [VAULT_ATTACHMENT, CORPUS_ATTACHMENT] })
+    scriptStream([{ toolCalls: [SEARCH_TOOL_CALL] }, { content: "El modelo del dominio." }])
+    const store = useSendMessage()
+
+    await store.send("¿Qué es el estado?")
+
+    const first = mocks.streamChatCompletion.mock.calls[0][0] as {
+      tools?: Array<{ function: { name: string } }>
+      messages: Array<{ role: string; content: string }>
+    }
+
+    // Both halves of the request: the vault text is in the message, and the tool
+    // is declared for the corpus half.
+    expect(first.tools?.map((tool) => tool.function.name)).toEqual(["search_material"])
+    expect(first.messages.at(-1)?.content).toContain(VAULT_TEXT)
+    expect(first.messages.at(-1)?.content).toContain("¿Qué es el estado?")
+    expect(mocks.state.calls).toEqual([
+      "append:user",
+      "stream",
+      "search",
+      "stream",
+      "append:assistant",
+    ])
+    // Cited in block order: the vault file first, then what the tool returned.
+    expect(mocks.appendTurn.mock.calls.at(-1)?.[0]).toEqual({
+      role: "assistant",
+      content: "El modelo del dominio.",
+      sources: [VAULT_PATH, "Domain-Driven Design, p. 42"],
+    })
+  })
+
+  it("refuses the send and keeps the question when a file cannot be read", async () => {
+    mocks.state.note = makeNote({ attachments: [VAULT_ATTACHMENT] })
+    // The note was moved or deleted after it was attached.
+    vaultFiles = {}
+    const store = useSendMessage()
+
+    await store.send("¿Qué es el estado?")
+
+    expect(store.error).toContain("No se pudo leer")
+    expect(store.error).toContain(VAULT_PATH)
+    expect(store.error).toContain("volvé a intentar")
+    // Nothing is sent: an answer without the material the chat claims would be
+    // an answer that pretends to have read it.
+    expect(mocks.streamChatCompletion).not.toHaveBeenCalled()
+    // The question is still a fact, so it stays in the note.
+    expect(mocks.appendTurn.mock.calls.map(([turn]) => turn.role)).toEqual(["user"])
+    expect(mocks.appendTurn.mock.calls[0][0]).toEqual({
+      role: "user",
+      content: "¿Qué es el estado?",
+      sources: [],
+    })
+    expect(store.sending).toBe(false)
+  })
+
+  it("refuses the send when a file grew past the cap after it was attached", async () => {
+    mocks.state.note = makeNote({ attachments: [VAULT_ATTACHMENT] })
+    vaultFiles = { [VAULT_PATH]: "x".repeat(MAX_ATTACHMENT_CHARS + 1) }
+    const store = useSendMessage()
+
+    await store.send("¿Qué es el estado?")
+
+    expect(store.error).toContain(VAULT_PATH)
+    expect(store.error).toContain(String(MAX_ATTACHMENT_CHARS))
+    expect(store.error).toContain("no se envió")
+    expect(mocks.streamChatCompletion).not.toHaveBeenCalled()
+    expect(mocks.appendTurn.mock.calls.map(([turn]) => turn.role)).toEqual(["user"])
+    expect(store.sending).toBe(false)
+  })
+
+  it("refuses instead of crashing when the vault reader was never installed", async () => {
+    mocks.state.note = makeNote({ attachments: [VAULT_ATTACHMENT] })
+    setVaultTextReader(null)
+    const store = useSendMessage()
+
+    await store.send("¿Qué es el estado?")
+
+    expect(store.error).toContain(VAULT_PATH)
+    expect(store.error).toContain("lector del vault no está disponible")
+    expect(mocks.streamChatCompletion).not.toHaveBeenCalled()
+    expect(store.sending).toBe(false)
   })
 })
 
