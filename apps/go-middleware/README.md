@@ -78,18 +78,35 @@ change to reason about both.
 
 ## Running
 
+One binary, one subcommand per job. `study-system help` lists them; every
+subcommand answers `-h` with its own flags.
+
 ```bash
 cd apps/go-middleware
-go run ./cmd/server                            # listens on :8080, override with -port
-go run ./cmd/ingest -pdf book.pdf --out ~/vault/book.md   # convert a book to Markdown
-go run ./cmd/ingest -pdf book.pdf -dry-run                # what it would cost, without doing it
-go run ./cmd/ingest -list                        # list stored artifacts
-go run ./cmd/ingest -reindex                     # rebuild the chunk index from recorded pages
-go run ./cmd/ingest -embed                       # rebuild the embeddings; needs the key and the network
-go run ./cmd/ingest -search "attention" -limit 5 # search the index; no key, PDF, or storage
+go build -o bin/study-system ./cmd/cli
+
+bin/study-system serve                              # the HTTP API on :8080; -port overrides
+go run ./cmd/cli serve                              # same thing, without building
+
+go run ./cmd/cli convert -pdf book.pdf -out ~/vault/book.md
+                                                    # convert a book to Markdown, then index it
+go run ./cmd/cli convert -pdf book.pdf -out ~/vault/book.md -dry-run
+                                                    # what it would cost, without doing it
+go run ./cmd/cli list                               # list stored artifacts
+go run ./cmd/cli reindex                            # rebuild the chunk index from recorded pages
+go run ./cmd/cli embed                              # rebuild the embeddings; needs the key and the network
+go run ./cmd/cli search "attention" -limit 5         # search the index; no key, PDF, or storage
+
 go test ./...
 go vet ./...
 ```
+
+`cmd/server` is still there for anyone who runs it directly; it shares the serve
+loop with `serve` and has the same flags.
+
+In a shell, `search` takes the query as its positional arguments, so a phrase
+needs no quoting to survive the flag parser: `search shortest path -limit 5` and
+`search -limit 5 shortest path` mean the same thing.
 
 The SQLite file lives at `data/study.db` (relative to this directory) and is
 created automatically. The schema is applied on open.
