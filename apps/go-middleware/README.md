@@ -13,9 +13,12 @@ its domain, its use cases, its adapters, and its HTTP surface.
 ```text
 cmd/
 ├── ingest/main.go          acquires and persists a document (pipeline slice 1)
-└── server/main.go          composition root: wires everything by hand
+└── server/main.go          composition root: mounts both contexts
 
 internal/
+├── composition/            the only package that knows every context: database
+│                           openers, the migration list, model clients, the
+│                           wired contexts. Builds; never mounts.
 ├── platform/               cross-cutting, no business logic
 │   ├── apperror/             sentinel errors shared by every context
 │   ├── config/               env + .env resolution, defaults, validation
@@ -44,6 +47,25 @@ internal/
 Handlers declare the use case contracts they need (see `study/http/contracts.go`)
 instead of importing concrete use case types, so transport tests use mocks and
 the application layer can change shape without breaking them.
+
+### Composition builds, the entrypoint mounts
+
+`internal/composition` is the one package that knows every context. It turns a
+`config.Config` and a `*sql.DB` into wired contexts (`NewStudy`, `NewRAG`, the
+model `Clients`, the database openers, and the single migration list), and it is
+where a rule lives once instead of once per binary: the two migration blocks in
+one run, read-only versus read-write versus planning opens, and hybrid versus
+lexical search.
+
+The package registers no route, parses no flag, and starts no server. Each
+entrypoint keeps its own transport, its own policy, and its own shutdown, which
+is why there is no `Router` here: the RAG router needs the upload handler, and
+that needs the store and the "is a key configured" flag — entrypoint policy, not
+wiring. The dependency direction is outward only: this package imports every
+context, and no context imports it.
+
+It also exists so a third entrypoint is possible without a third copy of the
+wiring. `cmd/server` and `cmd/ingest` both build through it today.
 
 ### Why by context, not by layer
 
