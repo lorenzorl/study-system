@@ -74,6 +74,34 @@ Two hazards the design closes rather than documents:
 file exists, and an empty migrated in-memory schema when it does not, which
 answers every lookup with "not found" and writes nothing to disk.
 
+## Second review (`fd63282`)
+
+The six-finding fix was reviewed on request (lineage `review-e0b962053adefb03`,
+tier medium, 300 lines, lenses readability and reliability). Approved, authority
+burned, two findings — both in code that fix had just written.
+
+`R3-command-wiring-silent-fallback` (WARNING, `cmd/ingest/main.go`): `-search`
+built the embedding client and handed it to `Search`, which degrades to lexical
+when the client is nil. The argument made in the first review — that a wrong
+constructor fails loudly — held for `-embed`, whose `Embed` refuses a zero client,
+but not for `-search`, which still answers. Closed with
+`composition.RequireEmbedding`, called by both entrypoints: a configured key with
+no embedding client is reported as an internal wiring error instead of a quiet
+downgrade.
+
+`R3-planning-db-fallback-scope` (SUGGESTION, `composition.go`): the planning
+fallback covered every failure, so an existing file that could not be read planned
+against an empty schema and reported "0 pages already recorded" for a book the
+database knows — a wrong plan, and an expensive one. The fallback is now scoped to
+the one case it exists for, a missing file, through `missingFile`; any other
+failure is returned.
+
+**That second fix is a deliberate behaviour change**, and the only one in the
+whole step: a dry run against a database that exists but cannot be opened now
+fails instead of planning empty. It is the safe direction — silence there meant a
+plan that sends a whole book to the model — but it is not a refactor, so it is
+recorded here and in `backlog.md` as `C4 (closed)`.
+
 ## Tasks
 
 - [x] T1 — `internal/composition`: `Migrations`, the three database openers, and
@@ -239,5 +267,24 @@ review, and sees the due list shrink to one. `gofmt`, `go build`, `go vet` clean
 `go test ./... -count=1` ok in all 14 packages. The `-search` output was compared
 against L4's recorded baseline and matches it hit for hit, and `-embed` without a
 key still prints the command's own message and exits 1.
+
+**L7 (2026-10-20, the second review, two more findings closed)** — the fix above
+was reviewed on request (`review-e0b962053adefb03`, medium, 300 lines, readability
+and reliability). Approved, authority burned, two findings, both in code L6 had
+just written. What changed is in `## Second review` above and in `backlog.md` under
+`C4 (closed)`; the evidence follows.
+
+21 tests in the package now (was 18). `gofmt`, `go build`, `go vet` clean;
+`go test ./... -count=1` ok in all 14 packages, zero failures. The CLI was re-run
+against the real database after both changes: `-search figure -limit 3` returns
+the same three hits with the same bm25 scores as L4's baseline, `-dry-run` against
+the real file prints the same plan, `-dry-run` with a missing file still falls back
+with the same plan and still creates no file, and `-embed` without a key prints the
+same message.
+
+The one behaviour that changed on purpose: `-dry-run` against a database that
+exists but cannot be opened now fails instead of planning against an empty schema.
+Tested with a directory sitting where the database file should be, which is the
+case a permission problem produces without needing `chmod`.
 
 

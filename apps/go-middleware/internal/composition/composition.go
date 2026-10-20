@@ -21,7 +21,10 @@ package composition
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"slices"
 	"strings"
 
@@ -75,22 +78,26 @@ func OpenReadOnlyDatabase(ctx context.Context, cfg *config.Config) (*sql.DB, err
 }
 
 // OpenPlanningDatabase opens the database a dry run is allowed to see: the real
-// file when it exists, read-only, and otherwise an empty in-memory schema.
+// file when it is there, read-only, and an empty in-memory schema when the file
+// does not exist yet.
 //
 // The fallback is the point. A dry run must not write, and it must still answer
 // the planning questions; an empty migrated schema answers every lookup with "not
 // found", exactly as a database that has never seen those bytes does, and writes
 // nothing to disk.
+//
+// The fallback's scope is exactly one case: no file. Any other failure to open an
+// existing file is returned, because planning against an empty schema would
+// report "0 pages already recorded" for a book the database does know and send
+// the whole book to the model — a wrong plan that costs real money.
 func OpenPlanningDatabase(ctx context.Context, cfg *config.Config) (*sql.DB, error) {
-	// Any failure to open the file read-only falls back to the empty schema, not
-	// only a missing file: a database that exists but cannot be read then answers
-	// the planning questions with "not found" instead of stopping a dry run that
-	// cannot write anything anyway. The error is named so the next reader can see
-	// the fallback is deliberate and not an ignored failure; it is not returned,
-	// because the schema below is the answer and not an error.
 	sqlDB, err := db.Open(ctx, readOnlyDSN(cfg.DatabaseDSN))
 	if err == nil {
 		return sqlDB, nil
+	}
+
+	if !missingFile(cfg.DatabaseDSN) {
+		return nil, fmt.Errorf("open planning database: %w", err)
 	}
 
 	sqlDB, err = db.Open(ctx, ":memory:")
@@ -104,6 +111,28 @@ func OpenPlanningDatabase(ctx context.Context, cfg *config.Config) (*sql.DB, err
 	}
 
 	return sqlDB, nil
+}
+
+// missingFile reports whether dsn names a database file that is not on disk.
+//
+// It exists so the planning fallback can stay narrow. A DSN that names memory
+// rather than a file answers false: it is not missing, it is not a file at all,
+// and a dry run reaches this function only for a file DSN that failed to open.
+func missingFile(dsn string) bool {
+	if strings.Contains(dsn, ":memory:") || strings.Contains(dsn, "mode=memory") {
+		return false
+	}
+
+	path := strings.TrimPrefix(dsn, "file:")
+	if end := strings.IndexByte(path, '?'); end >= 0 {
+		path = path[:end]
+	}
+	if path == "" {
+		return false
+	}
+
+	_, err := os.Stat(path)
+	return errors.Is(err, fs.ErrNotExist)
 }
 
 // readOnlyDSN appends SQLite's read-only mode to a file DSN, preserving any

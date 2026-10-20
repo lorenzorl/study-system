@@ -71,6 +71,12 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// A configured key without an embedding client would turn the hybrid search
+	// into a lexical one that still answers. Refuse the quiet downgrade instead.
+	if err := composition.RequireEmbedding(cfg, clients); err != nil {
+		log.Fatal(err)
+	}
+
 	// The processor runs ingestion, indexing, and embedding in sequence for an
 	// uploaded document. It exists only with a key, because the upload endpoint
 	// answers 503 without one and therefore never queues a document. Its context

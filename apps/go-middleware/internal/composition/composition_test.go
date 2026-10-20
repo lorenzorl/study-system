@@ -3,6 +3,7 @@ package composition
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -382,4 +383,48 @@ func TestRAGIngest_ZeroClientsDoesNotBecomeATypedNilTranscriber(t *testing.T) {
 
 	assert.True(t, transcriber.IsNil(),
 		"a zero Clients must narrow to a nil domain.PageTranscriber, not a nil *llm.Client")
+}
+
+func TestRequireEmbedding_AcceptableStates(t *testing.T) {
+	withoutKey := testConfig(t, "file:unused")
+	withoutKey.OpenRouterAPIKey = ""
+
+	// No key is a valid configuration: the server and the commands degrade to
+	// lexical search on purpose.
+	require.NoError(t, RequireEmbedding(withoutKey, Clients{}))
+
+	withKey := testConfig(t, "file:unused")
+	withKey.OpenRouterAPIKey = "test-key"
+
+	clients, err := NewEmbeddingClients(withKey)
+	require.NoError(t, err)
+	require.NoError(t, RequireEmbedding(withKey, clients))
+}
+
+func TestRequireEmbedding_ReportsAKeyThatBuiltNoClient(t *testing.T) {
+	cfg := testConfig(t, "file:unused")
+	cfg.OpenRouterAPIKey = "test-key"
+
+	// The state a drifted wiring would produce: a key is set, so the caller
+	// expects the hybrid stage, but no embedding client exists. Without this
+	// guard the search would silently answer lexically.
+	err := RequireEmbedding(cfg, Clients{})
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), config.EnvOpenRouterAPIKey)
+	assert.Contains(t, err.Error(), "internal wiring error")
+}
+
+func TestOpenPlanningDatabase_ReportsAnExistingPathItCannotOpen(t *testing.T) {
+	dsn, path := fileDSN(t)
+	ctx := context.Background()
+
+	// A directory where the database file should be: the path exists, so the
+	// "the file is not there yet" fallback does not apply, and planning against an
+	// empty schema would report a book the database knows as never ingested.
+	require.NoError(t, os.MkdirAll(path, 0o755))
+
+	_, err := OpenPlanningDatabase(ctx, testConfig(t, dsn))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "open planning database")
 }

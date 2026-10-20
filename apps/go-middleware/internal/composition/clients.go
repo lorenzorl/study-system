@@ -85,3 +85,21 @@ func buildClients(cfg *config.Config, wantEmbedding, wantModel bool) (Clients, e
 
 	return clients, nil
 }
+
+// RequireEmbedding reports a configured API key that produced no embedding
+// client.
+//
+// It guards the callers whose behaviour would otherwise degrade **silently**:
+// without a client, a hybrid search becomes a lexical one, which still answers
+// and looks correct. The constructors above cannot produce that state today — a
+// key always builds the client — so this fails only if the wiring drifts, which
+// is exactly when a quiet downgrade would be hardest to notice.
+func RequireEmbedding(cfg *config.Config, clients Clients) error {
+	if cfg.OpenRouterAPIKey == "" || clients.Embedding != nil {
+		return nil
+	}
+
+	return fmt.Errorf(
+		"%s is set but no embedding client was built: this is an internal wiring error, not a configuration one",
+		config.EnvOpenRouterAPIKey)
+}

@@ -93,6 +93,13 @@ func run() error {
 			return err
 		}
 
+		// A configured key without an embedding client must not downgrade this to a
+		// lexical search: that still answers and looks correct, so the downgrade
+		// would be invisible.
+		if err := composition.RequireEmbedding(cfg, clients); err != nil {
+			return err
+		}
+
 		searcher := composition.NewRAG(sqlDB).Search(clients, cfg.EmbeddingModel)
 		return runSearch(ctx, searcher, *search, *limit)
 	}

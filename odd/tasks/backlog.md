@@ -146,6 +146,30 @@ line and interpreted. If the reviewer meant something else at `rag.go:56` or
 `composition_test.go:206`, this entry is where that becomes visible, because what
 was changed is written here and not only in the commit.
 
+### C4 (closed) — the review of the six-finding fix left two more findings
+
+Lineage `review-e0b962053adefb03`, tier medium, 300 lines, lenses readability and
+reliability. Approved, both findings closed in the next commit.
+
+| Id | Lens | Severity | Location |
+| --- | --- | --- | --- |
+| `R3-command-wiring-silent-fallback` | reliability | WARNING | `cmd/ingest/main.go` (`-search`) |
+| `R3-planning-db-fallback-scope` | reliability | SUGGESTION | `internal/composition/composition.go` (`OpenPlanningDatabase`) |
+
+**What each one changed.** The first: `-search` could fall back to a lexical
+answer if its embedding client went missing, and a lexical answer looks correct,
+so the downgrade was invisible. `composition.RequireEmbedding` now fails when a
+key is configured and no client was built, and both entrypoints call it. The
+second: `OpenPlanningDatabase` fell back to an empty schema for **any** open
+failure, so an existing database that could not be read planned as if it were
+empty and reported "0 pages already recorded" for a book it knows. The fallback
+is now scoped to a missing file, through `missingFile`.
+
+**Deliberate behaviour change, and the only one in step 7:** a dry run against a
+database that exists but cannot be opened now fails instead of planning empty.
+Safe direction — silence there meant sending a whole book to the model — but it
+is not a refactor, so it is written down here rather than only in the commit.
+
 ---
 
 ## 🟡 Missing policy
