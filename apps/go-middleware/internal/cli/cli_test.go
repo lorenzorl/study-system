@@ -142,3 +142,15 @@ func TestRun_HomeAfterTheCommandIsRejected(t *testing.T) {
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "flag provided but not defined: -home")
 }
+
+func TestRun_ConvertSaysWhichArgumentIsMissing(t *testing.T) {
+	// The two requirements name themselves: a single "usage" message would leave the
+	// caller to work out which one they forgot.
+	code, _, stderr := runCLI(t, "convert")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "-pdf is required")
+
+	code, _, stderr = runCLI(t, "convert", "-pdf", "book.pdf")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "-out is required")
+}

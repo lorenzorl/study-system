@@ -23,12 +23,13 @@ func seedStudy(t *testing.T, home string) string {
 	require.NoError(t, err)
 	require.NoError(t, os.MkdirAll(filepath.Join(home, "data"), 0o755))
 
-	sqlDB, err := composition.OpenDatabase(context.Background(), cfg)
+	ctx := t.Context()
+
+	sqlDB, err := composition.OpenDatabase(ctx, cfg)
 	require.NoError(t, err)
-	t.Cleanup(func() { sqlDB.Close() })
+	t.Cleanup(func() { assert.NoError(t, sqlDB.Close()) })
 
 	study := composition.NewStudy(sqlDB)
-	ctx := context.Background()
 
 	topic, err := study.CreateTopic.Execute(ctx, "Algorithms")
 	require.NoError(t, err)

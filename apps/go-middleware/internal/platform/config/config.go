@@ -231,6 +231,16 @@ func resolveRoot(explicit string, lookup EnvLookup) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("%s: %q is not a usable directory: %w", EnvHome, raw, err)
 	}
+
+	// The default database DSN is "file:" followed by this path, so a '?' or '#' in
+	// the root would be read by SQLite as the start of the query string instead of as
+	// part of the path: the database would open somewhere the caller did not name.
+	// Refusing here makes the cause visible instead of leaving a mystery.
+	if strings.ContainsAny(root, "?#") {
+		return "", fmt.Errorf("%s: %q cannot be a root: '?' and '#' would be read as DSN parameters",
+			EnvHome, root)
+	}
+
 	return root, nil
 }
 

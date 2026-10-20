@@ -10,9 +10,9 @@ Current shape (verified): a Vue 3 + Pinia SPA lives under `src/vue-app/` (`views
 LLM configuration and the document corpus were removed, together with the
 slices listed in §14. The layers, the dependency rule, the segment conventions
 and the Obsidian boundary in §2–§4 are unchanged and still governing; §5, §7b
-and §8 record the reduced tree. §6 and §7 keep the original phase-0 mapping as
-history: they describe where the pre-migration files landed, not what exists
-today.
+§8 record the reduced tree. §6, §7 and §11 keep the original phase-0 mapping
+and plan as history: they describe where the pre-migration files landed and how
+the migration ran, not what exists today.
 
 ## 2. Layers and the dependency rule
 
@@ -88,32 +88,25 @@ apps/obsidian-plugin/
     │   ├── concept/{index.ts,ui/ConceptPage.vue}
     │   ├── flashcard-session/{index.ts,ui/FlashcardSessionPage.vue}
     │   ├── due-cards/{index.ts,ui/DueCardsPage.vue}
-    │   ├── feynman/{index.ts,ui/FeynmanPage.vue}
-    │   └── corpus/{index.ts,ui/CorpusPage.vue}        # + upload and search
+    │   └── feynman/{index.ts,ui/FeynmanPage.vue}
     ├── widgets/
     │   ├── metrics-bar/{index.ts,ui/MetricsBar.vue}
     │   ├── daily-review/{index.ts,ui/DailyReviewCard.vue}
     │   ├── topic-list/{index.ts,ui/TopicList.vue}
-    │   ├── concept-list/{index.ts,ui/ConceptList.vue}
-    │   └── search-results/{index.ts,ui/SearchResults.vue}  # +
+    │   └── concept-list/{index.ts,ui/ConceptList.vue}
     ├── features/
     │   ├── create-topic/{index.ts,model/useCreateTopic.ts,ui/CreateTopicForm.vue}
     │   ├── create-concept/{index.ts,model/useCreateConcept.ts,ui/CreateConceptForm.vue}
     │   ├── sync-note/{index.ts,model/useSyncNote.ts,ui/SyncNoteButton.vue}
     │   ├── select-topic/{index.ts,model/useTopicSelection.ts}
     │   ├── select-concept/{index.ts,model/useConceptSelection.ts}
-    │   ├── review-card/{index.ts,model/useReviewSession.ts}
-    │   ├── upload-document/{index.ts,model/useUploadDocument.ts,ui/UploadDocumentForm.vue}  # +
-    │   └── search-corpus/{index.ts,model/useSearchCorpus.ts,ui/SearchCorpusForm.vue}        # +
+    │   └── review-card/{index.ts,model/useReviewSession.ts}
     ├── entities/
     │   ├── topic/{index.ts,model/{types.ts,validation.ts,useTopicsStore.ts},api/topic-api.ts,ui/TopicCard.vue}
     │   ├── concept/{index.ts,model/{types.ts,validation.ts},api/concept-api.ts,ui/ConceptCard.vue}
     │   ├── flashcard/{index.ts,model/{types.ts,validation.ts,useFlashcardCache.ts},api/flashcard-api.ts,lib/markdown-parser.ts,ui/FlashcardCard.vue}
     │   ├── review/{index.ts,model/{types.ts,validation.ts,useReviewStore.ts},api/review-api.ts,ui/DueCardItem.vue}
-    │   ├── metrics/{index.ts,model/{types.ts,validation.ts,useMetricsStore.ts}}
-    │   ├── resource/{index.ts,model/{types.ts,validation.ts},api/resource-api.ts}
-    │   ├── document/{index.ts,model/types.ts,api/document-api.ts}       # +
-    │   └── search-result/{index.ts,model/types.ts,api/search-api.ts}    # +
+    │   └── metrics/{index.ts,model/{types.ts,validation.ts,useMetricsStore.ts}}
     └── shared/
         ├── api/client.ts
         ├── config/{index.ts,settings.ts,settings.test.ts}    # + global settings state and its persistence port
@@ -285,40 +278,24 @@ Entity api segments import `request`/errors from `shared/api/client.ts` (downwar
 - **`metrics-store.ts`** → `entities/metrics/model/useMetricsStore.ts`. It seeds state from a hardcoded `MOCK_METRICS` object and `fetchMetrics()` is a documented no-op stub (comment: “Placeholder for future GET /api/metrics endpoint”). It lands in the metrics entity unchanged; the placeholder stays a placeholder, and wiring a real endpoint is out of scope. `widgets/metrics-bar` reads it through the entity's `index.ts`.
 - **`FeynmanModule.vue`** → `pages/feynman/ui/FeynmanPage.vue`. The `explain()` function returns a hardcoded placeholder string (comment: “Mock response — real RAG-powered analysis coming in v2.1”). It lands as a page with no feature/model extraction yet; the RAG feature is deferred.
 
-## 8. New slices for the next features
+## 8. Reserved slices — all retired
 
-These slices did not exist when this contract was written; the tree reserved
-them. The chat and LLM rows were **deleted on 2026-10-20** together with the
-slices they describe (§14).
+The slices this contract reserved for the next features (the chat, its widgets
+and its features, the corpus, the document and search-result entities, the
+upload and search features, `shared/llm`) were implemented and then **removed on
+2026-10-20** (§14). Nothing in this section is pending any more: the target tree
+in §5 is the whole plugin.
 
-| New slice | Layer | Purpose |
-| --- | --- | --- |
-| `pages/corpus` | pages | Upload and search, moved out of the chat page so it can hold three zones. |
-| `features/upload-document` | features | Upload a document into the corpus. |
-| `entities/document` | entities | Document model/types. |
-| `features/search-corpus` | features | Query the RAG corpus. |
-| `entities/search-result` | entities | Search result model/types. |
-| `widgets/search-results` | widgets | Render search results. |
+**Chat persistent view (removed).** It was a main-area tab registered from `app/`
+(an `ItemView` in `src/app/study-chat-view.ts`, view type `study-chat`,
+activated with `workspace.getLeaf("tab")`). The file and its view type are gone;
+`app/` no longer calls `getLeaf("tab")`.
 
-**Chat persistent view — removed 2026-10-20.** The chat was a main-area tab
-registered from `app/` (an `ItemView` in `src/app/study-chat-view.ts`, view type
-`study-chat`, activated with `workspace.getLeaf("tab")`). The file and its view
-type are gone; `app/` no longer calls `getLeaf("tab")`.
-
-**Chat backend (removed 2026-10-20).** `POST /api/chat` was never built: the
-plugin talked to the model provider directly (`shared/llm`) while the backend
-stayed a documents service. All of that is gone now — no chat, no provider
-transport, no API key in the plugin (§14).
-
-**Backend status (2026-10-17, Phase 5):** the other three endpoints do exist
-(`GET /api/rag/search`, `POST /api/rag/documents`,
-`GET /api/rag/documents/{id}/status`), so `entities/document` and
-`entities/search-result` carry an `api/` segment and `features/upload-document` /
-`features/search-corpus` call through them (§3 lists `api/` as a slice segment;
-§7d is why the calls live in the entity, not in the feature model). The multipart
-upload path is `requestMultipart` in `shared/api/client.ts`, kept apart from
-`request` because only the browser may write the multipart Content-Type and its
-boundary.
+**Backend status (unchanged).** The Go service still exposes
+`POST /api/rag/documents`, `GET /api/rag/documents/{id}/status` and
+`GET /api/rag/search`, plus its ingestion and study endpoints. The plugin simply
+no longer calls the RAG ones; `requestMultipart` in `shared/api/client.ts` stays
+because it is part of the HTTP core the plugin still owns.
 
 ## 9. Naming and imports
 
@@ -407,9 +384,9 @@ All five open questions are resolved; the contract above is governing.
    due-review modes. Splitting it is a later option, not part of this contract (§6a).
 4. **Boundary enforcement** — the **in-repo boundary test, no new dependencies**
    (§10).
-5. **`syncResource` / `entities/resource`** — the scaffold is **kept**: its types
-   and validation are tested and the backend endpoint exists, so it is ready for a
-   feature that calls it later (§7d).
+5. **`syncResource` / `entities/resource`** — the scaffold was **kept** at the time
+   of this contract; it is **removed** by §14, together with the rest of the
+   document corpus.
 
 ## 14. Scope reduction (2026-10-20)
 
@@ -425,6 +402,11 @@ reintroduced without a new decision:
 | `entities/chat` | entities | The chat note: prompt, overrides and transcript. |
 | `shared/llm` | shared | The provider transport (chat completions + SSE). |
 | Chat-only helpers in `shared/obsidian/useObsidian.ts` | shared | `chatsFolderPath`, `readVaultFile`, `writeVaultFile`, `processVaultFile`, `listVaultFiles`, `listVaultMarkdownFiles`, `onVaultFileChange`. |
+| `pages/corpus` | pages | The upload and search screen. |
+| `widgets/search-results` | widgets | Rendered RAG search results. |
+| `features/upload-document`, `features/search-corpus` | features | Uploading a document to the corpus and querying it. |
+| `entities/document`, `entities/search-result` | entities | Document and search-result models plus their `api/` segments. |
+| `entities/resource` | entities | The `syncResource` scaffold, which no feature ever called. |
 
 `shared/config` keeps one field, `apiBase`, and `app/settings-tab.ts` renders it
 with Obsidian's own `Setting` — no Vue form behind the tab. `normalizeSettings`

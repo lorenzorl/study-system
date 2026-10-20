@@ -158,8 +158,12 @@ func newFlagSet(name, synopsis string, stderr io.Writer) *flag.FlagSet {
 // part of its query — a wrong answer that looks like a normal one.
 func parseFlags(fs *flag.FlagSet, args []string, stdout io.Writer) error {
 	if asksForHelp(args) {
+		// Help goes to stdout; the writer is restored so the flag set keeps writing
+		// errors to stderr if the command continues past this point.
+		stderr := fs.Output()
 		fs.SetOutput(stdout)
 		fs.Usage()
+		fs.SetOutput(stderr)
 		return errHelp
 	}
 

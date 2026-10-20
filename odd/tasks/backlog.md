@@ -127,9 +127,9 @@ meant re-reading them twice.
 
 **What each one changed.** `R3-unused-client-construction`: `NewClients` split
 into three role constructors — `NewClients`, `NewEmbeddingClients`,
-`NewTranscriptionClients` — over one `buildClients` helper, so `-search` and
-`-embed` build only the embedding client and the conversion run only the chat
-client. `R2-004`: the discarded read-only error is named, and the comment now
+`NewTranscriptionClients` — over one `buildClients` helper, so `search` and
+`embed` build only the embedding client and the conversion run only the chat
+client. (The flags those names came from are subcommands since step 8.) `R2-004`: the discarded read-only error is named, and the comment now
 says the fallback covers every failure, not only a missing file. `R2-001`:
 `Process`'s comment stopped restating `Embed`'s and says what the error return is
 for. `R3-ingest-factory-untested`:

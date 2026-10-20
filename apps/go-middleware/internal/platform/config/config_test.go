@@ -578,3 +578,18 @@ func TestLoadWithFrom_RelativeEnvFileResolvesFromTheWorkingDirectory(t *testing.
 	assert.Equal(t, 9933, cfg.Port,
 		"a relative -env-file is what the operator typed, from where they typed it")
 }
+
+func TestLoadWithFrom_RejectsARootThatWouldCorruptTheDsn(t *testing.T) {
+	// The default DSN is "file:" + <root>/data/study.db, so these characters would
+	// become query parameters and move the database without saying so.
+	for _, name := range []string{"question?mark", "hash#mark"} {
+		t.Run(name, func(t *testing.T) {
+			home := filepath.Join(t.TempDir(), name)
+
+			_, err := config.LoadWithFrom(config.Options{Home: home}, noEnvironment)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), config.EnvHome)
+			assert.Contains(t, err.Error(), "DSN parameters")
+		})
+	}
+}

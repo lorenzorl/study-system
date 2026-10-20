@@ -26,7 +26,7 @@ func runList(ctx context.Context, args []string, opts options, stdout, stderr io
 		return err
 	}
 
-	cfg, err := loadConfig(opts, stderr)
+	cfg, err := loadConfigAndAnnounce(opts, stderr)
 	if err != nil {
 		return err
 	}
@@ -76,7 +76,7 @@ func runSearch(ctx context.Context, args []string, opts options, stdout, stderr 
 		return errUsage
 	}
 
-	cfg, err := loadConfig(opts, stderr)
+	cfg, err := loadConfigAndAnnounce(opts, stderr)
 	if err != nil {
 		return err
 	}
@@ -122,7 +122,7 @@ func runReindex(ctx context.Context, args []string, opts options, stdout, stderr
 		return err
 	}
 
-	cfg, err := loadConfig(opts, stderr)
+	cfg, err := loadConfigAndAnnounce(opts, stderr)
 	if err != nil {
 		return err
 	}
@@ -142,8 +142,9 @@ func runReindex(ctx context.Context, args []string, opts options, stdout, stderr
 	return nil
 }
 
-// runEmbed rebuilds the embeddings. It is the only command that costs money and
-// reaches the network, so it refuses to start without the key.
+// runEmbed rebuilds the embeddings. It is the only command whose whole job is the
+// model: convert also transcribes, but it can be told which pages to send, while
+// this one sends every chunk of every document. It refuses to start without the key.
 func runEmbed(ctx context.Context, args []string, opts options, stdout, stderr io.Writer) error {
 	fs := newFlagSet("embed", "Rebuild the embeddings of every document that has chunks.", stderr)
 	if err := parseFlags(fs, args, stdout); err != nil {
@@ -153,7 +154,7 @@ func runEmbed(ctx context.Context, args []string, opts options, stdout, stderr i
 		return err
 	}
 
-	cfg, err := loadConfig(opts, stderr)
+	cfg, err := loadConfigAndAnnounce(opts, stderr)
 	if err != nil {
 		return err
 	}

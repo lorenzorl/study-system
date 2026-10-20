@@ -23,7 +23,7 @@ func runServe(ctx context.Context, args []string, opts options, stdout, stderr i
 		return err
 	}
 
-	cfg, err := loadConfig(opts, stderr)
+	cfg, err := loadConfigAndAnnounce(opts, stderr)
 	if err != nil {
 		return err
 	}
@@ -46,9 +46,11 @@ type options struct {
 	envFile string
 }
 
-// loadConfig is the one place every command resolves configuration, so a load
-// failure reads the same from any of them, and so the notice below has one owner.
-func loadConfig(opts options, stderr io.Writer) (*config.Config, error) {
+// loadConfigAndAnnounce is the one place every command resolves configuration, so a
+// load failure reads the same from any of them, and so the notice below has one
+// owner. The name says it writes, because it does: a caller looking for a pure read
+// should not have to discover the side effect by reading the body.
+func loadConfigAndAnnounce(opts options, stderr io.Writer) (*config.Config, error) {
 	cfg, err := config.LoadWith(config.Options{Home: opts.home, EnvFile: opts.envFile})
 	if err != nil {
 		return nil, fmt.Errorf("load configuration: %w", err)
@@ -58,6 +60,9 @@ func loadConfig(opts options, stderr io.Writer) (*config.Config, error) {
 	// binary must never read or write a database in whatever directory happens to
 	// be current without saying so; the repository layout, which is the unchanged
 	// case, stays silent.
+	//
+	// The write is best-effort on purpose: it is a diagnostic, not a result, and a
+	// closed stderr must not fail a command that is otherwise fine.
 	if !cfg.RootIsTheWorkingDirectory() {
 		fmt.Fprintf(stderr, "data root: %s\n", cfg.Root)
 	}

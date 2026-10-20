@@ -27,7 +27,7 @@ func runDue(ctx context.Context, args []string, opts options, stdout, stderr io.
 		return err
 	}
 
-	cfg, err := loadConfig(opts, stderr)
+	cfg, err := loadConfigAndAnnounce(opts, stderr)
 	if err != nil {
 		return err
 	}
@@ -77,7 +77,7 @@ func runReview(ctx context.Context, args []string, opts options, stdout, stderr 
 		return errUsage
 	}
 
-	cfg, err := loadConfig(opts, stderr)
+	cfg, err := loadConfigAndAnnounce(opts, stderr)
 	if err != nil {
 		return err
 	}
@@ -111,7 +111,7 @@ func runTopics(ctx context.Context, args []string, opts options, stdout, stderr 
 		return err
 	}
 
-	cfg, err := loadConfig(opts, stderr)
+	cfg, err := loadConfigAndAnnounce(opts, stderr)
 	if err != nil {
 		return err
 	}
@@ -155,7 +155,7 @@ func runConcepts(ctx context.Context, args []string, opts options, stdout, stder
 
 	topic := strings.TrimSpace(strings.Join(fs.Args(), " "))
 
-	cfg, err := loadConfig(opts, stderr)
+	cfg, err := loadConfigAndAnnounce(opts, stderr)
 	if err != nil {
 		return err
 	}

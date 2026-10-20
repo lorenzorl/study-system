@@ -37,12 +37,16 @@ func runConvert(ctx context.Context, args []string, opts options, stdout, stderr
 		return err
 	}
 
-	if *pdfPath == "" || *outPath == "" {
+	if *pdfPath == "" {
 		fs.Usage()
-		return errUsage
+		return fmt.Errorf("-pdf is required: there is no default file to convert")
+	}
+	if *outPath == "" {
+		fs.Usage()
+		return fmt.Errorf("-out is required: the pipeline never guesses where your vault is")
 	}
 
-	cfg, err := loadConfig(opts, stderr)
+	cfg, err := loadConfigAndAnnounce(opts, stderr)
 	if err != nil {
 		return err
 	}
@@ -59,8 +63,9 @@ func runConvert(ctx context.Context, args []string, opts options, stdout, stderr
 				config.EnvOpenRouterAPIKey)
 		}
 
-		// The conversion only transcribes pages: the index and the vectors are
-		// separate commands, so no embedding client is built here.
+		// The conversion only transcribes pages, so no embedding client is built here.
+		// The index that follows the run needs no client either: it rebuilds chunks
+		// from the page text the run just recorded.
 		clients, err = composition.NewTranscriptionClients(cfg)
 		if err != nil {
 			return err
@@ -71,12 +76,7 @@ func runConvert(ctx context.Context, args []string, opts options, stdout, stderr
 	// planning database: the real file read-only when it exists, and an empty
 	// migrated in-memory schema when it does not, which answers every lookup with
 	// "not found" and writes nothing to disk.
-	var sqlDB *sql.DB
-	if *dryRun {
-		sqlDB, err = composition.OpenPlanningDatabase(ctx, cfg)
-	} else {
-		sqlDB, err = composition.OpenDatabase(ctx, cfg)
-	}
+	sqlDB, err := openConvertDatabase(ctx, cfg, *dryRun)
 	if err != nil {
 		return err
 	}
@@ -141,6 +141,16 @@ func runConvert(ctx context.Context, args []string, opts options, stdout, stderr
 	fmt.Fprintf(stdout, "indexed %d chunks\n", indexed.Chunks)
 
 	return nil
+}
+
+// openConvertDatabase opens the database a conversion run may use: the planning one
+// for a dry run, which must not write, and the working one otherwise, which applies
+// the pending migrations.
+func openConvertDatabase(ctx context.Context, cfg *config.Config, dryRun bool) (*sql.DB, error) {
+	if dryRun {
+		return composition.OpenPlanningDatabase(ctx, cfg)
+	}
+	return composition.OpenDatabase(ctx, cfg)
 }
 
 // printPlan writes the plan line before any model work starts.
