@@ -7,24 +7,17 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"slices"
 	"strconv"
 	"syscall"
 	"time"
 
+	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/composition"
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/platform/config"
-	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/platform/db"
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/platform/httpx"
-	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/platform/llm"
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/platform/storage"
 	ragapp "github.com/lorenzorangel/study-system/apps/go-middleware/internal/rag/app"
 	raghttp "github.com/lorenzorangel/study-system/apps/go-middleware/internal/rag/http"
-	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/rag/infra/pdf"
-	ragsqlite "github.com/lorenzorangel/study-system/apps/go-middleware/internal/rag/sqlite"
-	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/study/app"
-	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/study/domain"
 	studyhttp "github.com/lorenzorangel/study-system/apps/go-middleware/internal/study/http"
-	studysqlite "github.com/lorenzorangel/study-system/apps/go-middleware/internal/study/sqlite"
 )
 
 func main() {
@@ -51,124 +44,49 @@ func main() {
 		log.Fatalf("create data directory: %v", err)
 	}
 
-	sqlDB, err := db.Open(ctx, cfg.DatabaseDSN)
+	// The composition root is internal/composition: it applies both contexts'
+	// migration blocks in one run and wires each context over this one handle.
+	sqlDB, err := composition.OpenDatabase(ctx, cfg)
 	if err != nil {
-		log.Fatalf("open database: %v", err)
+		log.Fatal(err)
 	}
 	defer sqlDB.Close()
 
-	// Each context owns its own migration list and its own version block; see the
-	// "Schema migrations" section of the README. The composition root is what puts
-	// them in one database, in one run.
-	migrations := slices.Concat(studysqlite.Migrations(), ragsqlite.Migrations())
-	if err := db.Migrate(ctx, sqlDB, migrations); err != nil {
-		log.Fatalf("migrate database: %v", err)
-	}
+	study := composition.NewStudy(sqlDB)
+	rag := composition.NewRAG(sqlDB)
 
-	// --- study context: repositories ---
-	topicRepo := studysqlite.NewTopicRepository(sqlDB)
-	conceptRepo := studysqlite.NewConceptRepository(sqlDB)
-	flashcardRepo := studysqlite.NewFlashcardRepository(sqlDB)
-	resourceRepo := studysqlite.NewResourceRepository(sqlDB)
-	cardStateRepo := studysqlite.NewCardStateRepository(sqlDB)
-	reviewLogRepo := studysqlite.NewReviewLogRepository(sqlDB)
-
-	// --- study context: use cases ---
-	syncConceptUC := app.NewSyncConceptUseCase(topicRepo, conceptRepo)
-	syncFlashcardsUC := app.NewSyncFlashcardsUseCase(conceptRepo, flashcardRepo, cardStateRepo)
-	listConceptsUC := app.NewListConceptsUseCase(topicRepo, conceptRepo)
-	createTopicUC := app.NewCreateTopicUseCase(topicRepo)
-	createConceptUC := app.NewCreateConceptUseCase(topicRepo, conceptRepo)
-	syncResourceUC := app.NewSyncResourceUseCase(topicRepo, resourceRepo)
-	getDueCardsUC := app.NewGetDueCardsUseCase(flashcardRepo)
-	submitReviewUC := app.NewSubmitReviewUseCase(cardStateRepo, reviewLogRepo, domain.DummyFSRS{})
-
-	// --- composition root: mount the context, then apply platform policy ---
-	studyRoutes := studyhttp.NewRouter(
-		syncConceptUC,
-		syncFlashcardsUC,
-		listConceptsUC,
-		createTopicUC,
-		createConceptUC,
-		syncResourceUC,
-		getDueCardsUC,
-		submitReviewUC,
-	)
-
-	// --- rag context: repositories, storage, and the two model clients ---
-	//
-	// The repositories are shared by retrieval, the upload/status endpoints, and
-	// the pipeline. The store is built even without a key: it is where an upload
-	// would stream, and building it touches only the filesystem, never the
-	// network.
+	// The store is built even without a key: it is where an upload would stream,
+	// and building it touches only the filesystem, never the network.
 	store, err := storage.New(cfg.StorageRoot, cfg.MaxUploadBytes)
 	if err != nil {
 		log.Fatalf("open storage at %s: %v", cfg.StorageRoot, err)
 	}
 
-	documents := ragsqlite.NewDocumentRepository(sqlDB)
-	jobs := ragsqlite.NewJobRepository(sqlDB)
-	pages := ragsqlite.NewPageOutcomeRepository(sqlDB)
-	chunks := ragsqlite.NewChunkRepository(sqlDB)
-	embeddings := ragsqlite.NewEmbeddingRepository(sqlDB)
-
 	// The two model clients are created once and shared: the embedding client
 	// serves both the semantic search and the embedding stage, so one credential
 	// builds one client. Without a key neither exists, and the server still boots
 	// and serves search and status (S5).
-	var (
-		embeddingClient *llm.EmbeddingClient
-		modelClient     *llm.Client
-	)
-	if cfg.OpenRouterAPIKey != "" {
-		embeddingClient, err = llm.NewEmbeddingClient(
-			cfg.OpenRouterAPIKey, cfg.OpenRouterBaseURL, cfg.EmbeddingModel, llm.Options{})
-		if err != nil {
-			log.Fatalf("create embedding client: %v", err)
-		}
-		modelClient, err = llm.NewClient(
-			cfg.OpenRouterAPIKey, cfg.OpenRouterBaseURL, cfg.LLMModel, llm.Options{})
-		if err != nil {
-			log.Fatalf("create model client: %v", err)
-		}
+	clients, err := composition.NewClients(cfg)
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	// --- rag context: retrieval over the chunk index ---
-	//
-	// The HTTP surface wraps the search use case and adds no retrieval behaviour.
-	// The lexical stage needs only the database. The semantic stage is upgraded in
-	// when the key is set, and the use case still falls back to lexical-only when
-	// the configured model has no stored vectors, so the key stays optional.
-	var searchUC *ragapp.SearchUseCase
-	if embeddingClient == nil {
-		searchUC = ragapp.NewSearchUseCase(chunks)
-	} else {
-		searchUC = ragapp.NewHybridSearchUseCase(chunks, embeddings, embeddingClient, cfg.EmbeddingModel)
-	}
-
-	// --- rag context: the document pipeline and its status ---
-	//
 	// The processor runs ingestion, indexing, and embedding in sequence for an
-	// uploaded document. It is built only with a key, because the upload endpoint
+	// uploaded document. It exists only with a key, because the upload endpoint
 	// answers 503 without one and therefore never queues a document. Its context
 	// is derived from the server's, so a cancelled server stops the workers, and
 	// Wait drains them on shutdown.
 	var processor *ragapp.BackgroundProcessor
-	var statusUC *ragapp.DocumentStatusUseCase
-	if embeddingClient == nil {
-		statusUC = ragapp.NewDocumentStatusUseCase(
-			documents, jobs, pages, chunks, embeddings, nil, cfg.EmbeddingModel)
-	} else {
-		ingestUC := ragapp.NewIngestDocumentUseCase(
-			documents, jobs, pages, pdf.NewSource(nil), modelClient, store)
-		indexUC := ragapp.NewIndexDocumentUseCase(documents, jobs, pages, chunks)
-		embedUC := ragapp.NewEmbedDocumentUseCase(documents, chunks, embeddings, embeddingClient, cfg.EmbeddingModel)
-		processUC := ragapp.NewProcessDocumentUseCase(documents, store, ingestUC, indexUC, embedUC)
-
-		processor = ragapp.NewBackgroundProcessor(ctx, ragapp.DefaultProcessWorkers, processUC)
-		statusUC = ragapp.NewDocumentStatusUseCase(
-			documents, jobs, pages, chunks, embeddings, processor, cfg.EmbeddingModel)
+	if clients.Embedding != nil {
+		processor = ragapp.NewBackgroundProcessor(
+			ctx, ragapp.DefaultProcessWorkers, rag.Process(clients, cfg.EmbeddingModel, store))
 	}
+
+	// The HTTP surface adds no retrieval behaviour. Without a key the search is
+	// lexical over the index the database already holds; the status read is built
+	// either way, with a nil processor meaning "no in-process failure is known".
+	searchUC := rag.Search(clients, cfg.EmbeddingModel)
+	statusUC := rag.Status(processor, cfg.EmbeddingModel)
 
 	// The upload handler refuses with 503 when the key is absent; the processor is
 	// only passed when one exists, so the refusal path never reaches a nil
@@ -177,16 +95,30 @@ func main() {
 	if processor != nil {
 		submitter = processor
 	}
-	ragRoutes := raghttp.NewRouter(
-		searchUC,
-		raghttp.NewUploadDocumentHandler(store, documents, submitter, cfg.OpenRouterAPIKey != ""),
-		raghttp.NewDocumentStatusHandler(statusUC),
-		raghttp.NewDocumentsHandler(ragapp.NewListDocumentsUseCase(documents, pages, chunks)),
+
+	// --- composition root: mount the contexts, then apply platform policy ---
+	//
+	// Each context owns its routes and neither knows it shares the process with
+	// the other. CORS stays the outermost wrapper, so no context encodes platform
+	// policy.
+	studyRoutes := studyhttp.NewRouter(
+		study.SyncConcept,
+		study.SyncFlashcards,
+		study.ListConcepts,
+		study.CreateTopic,
+		study.CreateConcept,
+		study.SyncResource,
+		study.GetDueCards,
+		study.SubmitReview,
 	)
 
-	// The RAG router is mounted under its prefix on a root mux, and the study
-	// router catches the rest. Each context is unchanged: neither knows it shares
-	// the process with the other, and CORS stays the outermost wrapper.
+	ragRoutes := raghttp.NewRouter(
+		searchUC,
+		raghttp.NewUploadDocumentHandler(store, rag.DocumentRepo(), submitter, clients.Embedding != nil),
+		raghttp.NewDocumentStatusHandler(statusUC),
+		raghttp.NewDocumentsHandler(rag.ListDocuments()),
+	)
+
 	rootMux := http.NewServeMux()
 	rootMux.Handle("/api/rag/", ragRoutes)
 	rootMux.Handle("/", studyRoutes)
