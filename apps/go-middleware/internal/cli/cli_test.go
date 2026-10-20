@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"flag"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -26,7 +27,7 @@ func TestRun_NoArgumentsPrintsUsageOnStderrAndFails(t *testing.T) {
 
 	assert.Equal(t, 1, code)
 	assert.Empty(t, stdout)
-	assert.Contains(t, stderr, "usage: study-system <command>")
+	assert.Contains(t, stderr, "usage: study-system")
 	assert.Contains(t, stderr, "convert")
 }
 
@@ -35,7 +36,7 @@ func TestRun_HelpPrintsUsageOnStdoutAndSucceeds(t *testing.T) {
 		code, stdout, stderr := runCLI(t, arg)
 
 		assert.Equal(t, 0, code, "arg %q", arg)
-		assert.Contains(t, stdout, "usage: study-system <command>", "arg %q", arg)
+		assert.Contains(t, stdout, "usage: study-system", "arg %q", arg)
 		assert.Empty(t, stderr, "arg %q", arg)
 	}
 }
@@ -117,4 +118,27 @@ func TestIntersperse_KeepsEverythingAfterADoubleDashPositional(t *testing.T) {
 
 	assert.Equal(t, 3, *limit)
 	assert.Equal(t, []string{"-not-a-flag"}, fs.Args())
+}
+
+func TestRun_HomeBeforeTheCommandChoosesTheRoot(t *testing.T) {
+	t.Setenv("STUDY_OPENROUTER_API_KEY", "")
+	home := t.TempDir()
+
+	// list needs no database, so it is the cheapest way to observe which root a run
+	// resolved: an empty store names the directory it looked in.
+	code, stdout, stderr := runCLI(t, "-home", home, "list")
+
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, filepath.Join(home, "data", "artifacts"))
+	assert.Contains(t, stderr, "data root: "+home, "a root that is not the working directory is announced")
+}
+
+func TestRun_HomeAfterTheCommandIsRejected(t *testing.T) {
+	// Global flags come before the command. After it, -home belongs to the
+	// command's own set, which does not define it: that must fail loudly instead of
+	// being ignored while the run silently uses another root.
+	code, _, stderr := runCLI(t, "search", "-home", t.TempDir(), "figure")
+
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "flag provided but not defined: -home")
 }

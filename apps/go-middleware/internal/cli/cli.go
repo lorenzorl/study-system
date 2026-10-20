@@ -28,7 +28,7 @@ var (
 type command struct {
 	name    string
 	summary string
-	run     func(ctx context.Context, args []string, stdout, stderr io.Writer) error
+	run     func(ctx context.Context, args []string, opts options, stdout, stderr io.Writer) error
 }
 
 // commands is the whole surface, in the order the usage text lists it.
@@ -49,23 +49,32 @@ func commands() []command {
 // failure, including a usage error. A distinct code for usage would be nicer and
 // would also be a change no caller asked for.
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
-	if len(args) == 0 {
+	opts, rest, err := parseGlobals(args, stderr)
+	if err != nil {
+		if errors.Is(err, errHelp) {
+			printUsage(stdout)
+			return 0
+		}
+		return 1
+	}
+
+	if len(rest) == 0 {
 		printUsage(stderr)
 		return 1
 	}
 
-	switch args[0] {
+	switch rest[0] {
 	case "help", "-h", "--help":
 		printUsage(stdout)
 		return 0
 	}
 
 	for _, cmd := range commands() {
-		if cmd.name != args[0] {
+		if cmd.name != rest[0] {
 			continue
 		}
 
-		err := cmd.run(ctx, args[1:], stdout, stderr)
+		err := cmd.run(ctx, rest[1:], opts, stdout, stderr)
 		switch {
 		case err == nil:
 			return 0
@@ -79,16 +88,46 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	fmt.Fprintf(stderr, "unknown command %q\n\n", args[0])
+	fmt.Fprintf(stderr, "unknown command %q\n\n", rest[0])
 	printUsage(stderr)
 	return 1
 }
 
+// parseGlobals reads the flags that apply to every command and returns the
+// options with the remaining arguments.
+//
+// They must come before the command name, the way git takes -C: flag.Parse stops
+// at the first non-flag argument, so the remainder is the command and its own
+// arguments. Accepting them after the command would make -home ambiguous with a
+// command's own flags, which is a conflict worth refusing rather than guessing at.
+func parseGlobals(args []string, stderr io.Writer) (options, []string, error) {
+	fs := flag.NewFlagSet(programName, flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	// -h here asks for the program's usage, not this flag set's, which lists two
+	// flags and is not what someone typing "study-system -h" wants.
+	fs.Usage = func() {}
+
+	home := fs.String("home", "", "directory holding .env and data/; overrides STUDY_HOME")
+	envFile := fs.String("env-file", "", "configuration file to read; overrides STUDY_ENV_FILE")
+
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return options{}, nil, errHelp
+		}
+		return options{}, nil, errUsage
+	}
+
+	return options{home: *home, envFile: *envFile}, fs.Args(), nil
+}
+
 func printUsage(w io.Writer) {
-	fmt.Fprintf(w, "usage: %s <command> [flags]\n\ncommands:\n", programName)
+	fmt.Fprintf(w, "usage: %s [-home DIR] [-env-file FILE] <command> [flags]\n\ncommands:\n", programName)
 	for _, cmd := range commands() {
 		fmt.Fprintf(w, "  %-8s %s\n", cmd.name, cmd.summary)
 	}
+	fmt.Fprintf(w, "\nGlobal flags, before the command:\n")
+	fmt.Fprintf(w, "  -home DIR       directory holding .env and data/; overrides STUDY_HOME\n")
+	fmt.Fprintf(w, "  -env-file FILE  configuration file to read; overrides STUDY_ENV_FILE\n")
 	fmt.Fprintf(w, "\nRun \"%s <command> -h\" for the flags of one command.\n", programName)
 }
 

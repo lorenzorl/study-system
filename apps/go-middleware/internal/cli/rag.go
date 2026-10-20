@@ -17,7 +17,7 @@ import (
 
 // runList lists the stored artifacts. It reads the store and nothing else, so it
 // keeps working with no API key, no database and no PDF.
-func runList(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+func runList(ctx context.Context, args []string, opts options, stdout, stderr io.Writer) error {
 	fs := newFlagSet("list", "List the artifacts the store holds.", stderr)
 	if err := parseFlags(fs, args, stdout); err != nil {
 		return err
@@ -26,7 +26,7 @@ func runList(ctx context.Context, args []string, stdout, stderr io.Writer) error
 		return err
 	}
 
-	cfg, err := loadConfig()
+	cfg, err := loadConfig(opts, stderr)
 	if err != nil {
 		return err
 	}
@@ -63,7 +63,7 @@ func runList(ctx context.Context, args []string, stdout, stderr io.Writer) error
 
 // runSearch searches the chunk index. The query is positional, so a phrase does
 // not need quoting to survive a flag parser: "search shortest path -limit 5".
-func runSearch(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+func runSearch(ctx context.Context, args []string, opts options, stdout, stderr io.Writer) error {
 	fs := newFlagSet("search", "Search the chunk index. Needs no API key, no PDF and no storage.", stderr)
 	limit := fs.Int("limit", ragapp.DefaultSearchLimit, "maximum number of results")
 	if err := parseFlags(fs, args, stdout); err != nil {
@@ -76,7 +76,7 @@ func runSearch(ctx context.Context, args []string, stdout, stderr io.Writer) err
 		return errUsage
 	}
 
-	cfg, err := loadConfig()
+	cfg, err := loadConfig(opts, stderr)
 	if err != nil {
 		return err
 	}
@@ -113,7 +113,7 @@ func runSearch(ctx context.Context, args []string, stdout, stderr io.Writer) err
 
 // runReindex rebuilds the chunk index. It reads recorded page text and writes
 // chunks, so it needs the database and nothing else.
-func runReindex(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+func runReindex(ctx context.Context, args []string, opts options, stdout, stderr io.Writer) error {
 	fs := newFlagSet("reindex", "Rebuild the chunk index of every document with recorded pages.", stderr)
 	if err := parseFlags(fs, args, stdout); err != nil {
 		return err
@@ -122,7 +122,7 @@ func runReindex(ctx context.Context, args []string, stdout, stderr io.Writer) er
 		return err
 	}
 
-	cfg, err := loadConfig()
+	cfg, err := loadConfig(opts, stderr)
 	if err != nil {
 		return err
 	}
@@ -144,7 +144,7 @@ func runReindex(ctx context.Context, args []string, stdout, stderr io.Writer) er
 
 // runEmbed rebuilds the embeddings. It is the only command that costs money and
 // reaches the network, so it refuses to start without the key.
-func runEmbed(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+func runEmbed(ctx context.Context, args []string, opts options, stdout, stderr io.Writer) error {
 	fs := newFlagSet("embed", "Rebuild the embeddings of every document that has chunks.", stderr)
 	if err := parseFlags(fs, args, stdout); err != nil {
 		return err
@@ -153,7 +153,7 @@ func runEmbed(ctx context.Context, args []string, stdout, stderr io.Writer) erro
 		return err
 	}
 
-	cfg, err := loadConfig()
+	cfg, err := loadConfig(opts, stderr)
 	if err != nil {
 		return err
 	}

@@ -13,6 +13,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -31,8 +32,15 @@ import (
 // caller decides what to do with it. Every message printed here is the one the
 // server printed when this code lived in a main().
 func Run(ctx context.Context, cfg *config.Config, port int) error {
-	if err := os.MkdirAll("data", 0755); err != nil {
+	// The default database lives under the root. Creating the directory is the
+	// server's job because the store creates its own root and the database file
+	// does not create its parent.
+	if err := os.MkdirAll(filepath.Join(cfg.Root, "data"), 0o755); err != nil {
 		return fmt.Errorf("create data directory: %w", err)
+	}
+
+	if !cfg.RootIsTheWorkingDirectory() {
+		log.Printf("data root: %s", cfg.Root)
 	}
 
 	// The composition root applies both contexts' migration blocks in one run and

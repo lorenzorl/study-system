@@ -21,7 +21,7 @@ import (
 // Resumability is the contract: the document is identified by the hash of its
 // bytes and the job's per-page outcomes are persisted, so a run that dies at page
 // 179 continues at page 180, and the previous complete output file stays valid.
-func runConvert(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+func runConvert(ctx context.Context, args []string, opts options, stdout, stderr io.Writer) error {
 	fs := newFlagSet("convert",
 		"Convert a PDF into Markdown, then rebuild that document's index.", stderr)
 	pdfPath := fs.String("pdf", "", "file to convert, by path on this machine; required")
@@ -42,7 +42,7 @@ func runConvert(ctx context.Context, args []string, stdout, stderr io.Writer) er
 		return errUsage
 	}
 
-	cfg, err := loadConfig()
+	cfg, err := loadConfig(opts, stderr)
 	if err != nil {
 		return err
 	}

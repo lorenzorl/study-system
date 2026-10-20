@@ -108,8 +108,9 @@ In a shell, `search` takes the query as its positional arguments, so a phrase
 needs no quoting to survive the flag parser: `search shortest path -limit 5` and
 `search -limit 5 shortest path` mean the same thing.
 
-The SQLite file lives at `data/study.db` (relative to this directory) and is
-created automatically. The schema is applied on open.
+The SQLite file lives under the root — `data/study.db` in this directory by
+default — and is created automatically. The schema is applied on open. Point a run
+somewhere else with `STUDY_HOME=/path` or `study-system -home /path <command>`.
 
 Configuration comes from the environment. A `.env` file in this directory is
 read too, if present; a real environment variable always beats the file, and the
@@ -138,14 +139,24 @@ the variables, and create `.env` with the ones you need to override.
 Every knob is read in exactly one place: `internal/platform/config`. If a
 variable is not listed here, nothing reads it.
 
+One variable decides where the others are looked for. `STUDY_HOME` (or the `-home`
+global flag, which comes before the command) names the **root**: the directory the
+`.env` file is read from and `data/` is written under. The root defaults to the
+working directory, so a checked-out repository keeps its `data/` where it is; a
+binary installed elsewhere sets it once and stops depending on where the shell
+happens to be. The resolved root is always absolute, and a run whose root is not
+the working directory says so on stderr.
+
 | Variable | Default | Purpose |
 | --- | --- | --- |
+| `STUDY_HOME` | working directory | Root: holds `.env` and `data/`. Read from the process environment only, never from `.env` — it decides which file is read. The `-home` flag overrides it. |
+| `STUDY_ENV_FILE` | `<root>/.env` | Configuration file to read. A relative path is resolved against the working directory. The `-env-file` flag overrides it. |
 | `STUDY_PORT` | `8080` | HTTP listen port, 1-65535. The `-port` flag overrides it and applies the same validation. |
-| `STUDY_DB_DSN` | `file:data/study.db` | SQLite data source name. |
-| `STUDY_STORAGE_ROOT` | `data/artifacts` | Directory holding stored artifacts. |
+| `STUDY_DB_DSN` | `file:<root>/data/study.db` | SQLite data source name. A relative DSN stays relative to the working directory. |
+| `STUDY_STORAGE_ROOT` | `<root>/data/artifacts` | Directory holding stored artifacts. |
 | `STUDY_MAX_UPLOAD_BYTES` | `104857600` (100 MiB) | Largest single artifact accepted. The largest real book on hand is 14 MiB. |
 | `STUDY_CORS_ORIGINS` | Obsidian + localhost origins | Comma-separated allowlist of origins that may read API responses. |
-| `STUDY_OPENROUTER_API_KEY` | unset | OpenRouter key used by ingestion. Read as optional so the server keeps booting without it; `cmd/ingest` requires it and aborts before page 1 when it is missing. |
+| `STUDY_OPENROUTER_API_KEY` | unset | OpenRouter key used by ingestion. Read as optional so the server keeps booting without it; `convert` and `embed` require it and abort before page 1 when it is missing. |
 | `STUDY_LLM_MODEL` | `qwen/qwen3.5-flash-02-23` | Model slug used for the pages that need the model. |
 | `STUDY_EMBEDDING_MODEL` | `google/gemini-embedding-2` | Multilingual embedding model for the semantic stage; chosen from measured evidence (see Semantic search). |
 | `STUDY_OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | Base URL of the chat-completions API. Override it for a proxy, a gateway, or a test double; a malformed value aborts the boot. |

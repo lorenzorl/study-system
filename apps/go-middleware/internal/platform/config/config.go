@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -13,6 +14,18 @@ import (
 const (
 	// EnvPort sets the HTTP listen port.
 	EnvPort = "STUDY_PORT"
+
+	// EnvHome names the directory that holds the .env file and the data tree.
+	//
+	// It is read from the process environment only, never from the .env file: it
+	// decides which file is read, so it cannot come from inside it. Empty means
+	// the working directory, which is what a checked-out repository uses; a binary
+	// installed elsewhere sets it so its paths do not follow the shell.
+	EnvHome = "STUDY_HOME"
+
+	// EnvEnvFile names the configuration file explicitly, and has the same
+	// process-environment-only rule as EnvHome. It defaults to <EnvHome>/.env.
+	EnvEnvFile = "STUDY_ENV_FILE"
 
 	// EnvDatabaseDSN sets the SQLite data source name.
 	EnvDatabaseDSN = "STUDY_DB_DSN"
@@ -54,11 +67,7 @@ const DotEnvFile = ".env"
 
 // Defaults, used when the environment does not override them.
 const (
-	DefaultPort        = 8080
-	DefaultDatabaseDSN = "file:data/study.db"
-
-	// DefaultStorageRoot is relative to the working directory, like the database.
-	DefaultStorageRoot = "data/artifacts"
+	DefaultPort = 8080
 
 	// DefaultMaxUploadBytes bounds a single artifact at 100 MiB. The largest real
 	// book on hand is 14 MiB, so this leaves room while still bounding disk use.
@@ -77,6 +86,20 @@ const (
 	// DefaultOpenRouterBaseURL is the public OpenRouter API root.
 	DefaultOpenRouterBaseURL = "https://openrouter.ai/api/v1"
 )
+
+// DefaultDatabaseDSN is the database file a run uses when nothing overrides it.
+//
+// It lives under the root, and the root is the working directory unless STUDY_HOME
+// says otherwise, so a checked-out repository keeps writing to its own data/
+// directory while a binary run from anywhere else writes to the root it was given.
+func DefaultDatabaseDSN(root string) string {
+	return "file:" + filepath.Join(root, "data", "study.db")
+}
+
+// DefaultStorageRoot is the artifact store a run uses when nothing overrides it.
+func DefaultStorageRoot(root string) string {
+	return filepath.Join(root, "data", "artifacts")
+}
 
 // DefaultCORSOrigins covers the clients this API is built to serve:
 //
@@ -99,6 +122,11 @@ var DefaultCORSOrigins = []string{
 
 // Config is the fully resolved, validated configuration for the server.
 type Config struct {
+	// Root is the directory the run reads .env from and writes data/ under. It is
+	// always absolute, so it can be printed and used as is. It is the working
+	// directory unless STUDY_HOME (or the -home flag) says otherwise.
+	Root string
+
 	// Port is the HTTP listen port, 1-65535.
 	Port int
 
@@ -133,30 +161,122 @@ type Config struct {
 	OpenRouterBaseURL string
 }
 
-// Load resolves configuration from the process environment.
+// Options selects where a run reads its configuration from.
 //
-// A .env file in the current directory is read first and applied only for
-// variables the process environment has not already set, so a real environment
-// always wins over the file. A missing file is not an error.
+// The zero value is the layout the repository uses: the working directory holds
+// .env and data/. A non-empty Home moves both, which is what an installed binary
+// needs so its paths do not follow whichever directory the shell happens to be in.
+type Options struct {
+	// Home overrides STUDY_HOME.
+	Home string
+
+	// EnvFile overrides STUDY_ENV_FILE. A relative path is resolved against the
+	// working directory, not against Home: it is what the operator typed.
+	EnvFile string
+}
+
+// Load resolves configuration for the repository layout.
+//
+// The .env file under the root is read first and applied only for variables the
+// process environment has not already set, so a real environment always wins over
+// the file. A missing file is not an error.
 func Load() (*Config, error) {
-	return load(DotEnvFile, os.LookupEnv)
+	return LoadWith(Options{})
 }
 
 // EnvLookup reports the value of a variable and whether it was set at all.
 // It matches os.LookupEnv.
 type EnvLookup func(key string) (string, bool)
 
+// LoadWith resolves configuration from options, the process environment, and a
+// .env file.
+func LoadWith(options Options) (*Config, error) {
+	return load(options, os.LookupEnv)
+}
+
+// LoadWithFrom resolves configuration from options and an injected environment
+// source. Tests need it because the selectors must be observable without touching
+// the process environment, and because an environment variable set to the empty
+// string deliberately beats the file.
+func LoadWithFrom(options Options, lookup EnvLookup) (*Config, error) {
+	return load(options, lookup)
+}
+
 // LoadFrom resolves configuration using path as the .env file and lookup as the
 // environment source. Passing a fake lookup keeps callers and tests fully
 // hermetic: nothing here touches global state through this entry point.
+//
+// The root stays the working directory, so a test that only cares about the file's
+// contents gets absolute defaults it can still predict.
 func LoadFrom(path string, lookup EnvLookup) (*Config, error) {
-	return load(path, lookup)
+	return load(Options{EnvFile: path}, lookup)
 }
 
-func load(dotEnvPath string, lookup EnvLookup) (*Config, error) {
-	fileVars, err := readDotEnv(dotEnvPath)
+// resolveRoot picks the directory a run reads .env from and writes data/ under:
+// the explicit option, then STUDY_HOME, then the working directory. Both selector
+// variables are read from the process environment only, because they decide which
+// file is read and cannot come from inside it.
+func resolveRoot(explicit string, lookup EnvLookup) (string, error) {
+	raw := strings.TrimSpace(explicit)
+	if raw == "" {
+		if value, ok := lookup(EnvHome); ok {
+			raw = strings.TrimSpace(value)
+		}
+	}
+	if raw == "" {
+		raw = "."
+	}
+
+	root, err := filepath.Abs(raw)
 	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", dotEnvPath, err)
+		return "", fmt.Errorf("%s: %q is not a usable directory: %w", EnvHome, raw, err)
+	}
+	return root, nil
+}
+
+// resolveEnvFile picks the configuration file: the explicit option, then
+// STUDY_ENV_FILE, then <root>/.env. An explicit relative path is resolved against
+// the working directory, because that is what the operator typed.
+func resolveEnvFile(explicit, root string, lookup EnvLookup) (string, error) {
+	raw := strings.TrimSpace(explicit)
+	if raw == "" {
+		if value, ok := lookup(EnvEnvFile); ok {
+			raw = strings.TrimSpace(value)
+		}
+	}
+	if raw == "" {
+		return filepath.Join(root, DotEnvFile), nil
+	}
+
+	path, err := filepath.Abs(raw)
+	if err != nil {
+		return "", fmt.Errorf("%s: %q is not a usable path: %w", EnvEnvFile, raw, err)
+	}
+	return path, nil
+}
+
+// RootIsTheWorkingDirectory reports whether Root is where the process was started.
+// That is the repository layout, the one the previous behaviour covered, so it is
+// the case that needs nothing printed about it.
+func (c *Config) RootIsTheWorkingDirectory() bool {
+	workingDirectory, err := os.Getwd()
+	return err == nil && c.Root == workingDirectory
+}
+
+func load(options Options, lookup EnvLookup) (*Config, error) {
+	root, err := resolveRoot(options.Home, lookup)
+	if err != nil {
+		return nil, err
+	}
+
+	envFile, err := resolveEnvFile(options.EnvFile, root, lookup)
+	if err != nil {
+		return nil, err
+	}
+
+	fileVars, err := readDotEnv(envFile)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", envFile, err)
 	}
 
 	// The environment wins: only fall back to the file for variables the
@@ -175,12 +295,12 @@ func load(dotEnvPath string, lookup EnvLookup) (*Config, error) {
 
 	dsn := strings.TrimSpace(resolve(EnvDatabaseDSN))
 	if dsn == "" {
-		dsn = DefaultDatabaseDSN
+		dsn = DefaultDatabaseDSN(root)
 	}
 
 	storageRoot := strings.TrimSpace(resolve(EnvStorageRoot))
 	if storageRoot == "" {
-		storageRoot = DefaultStorageRoot
+		storageRoot = DefaultStorageRoot(root)
 	}
 
 	maxUploadBytes, err := ParseMaxUploadBytes(resolve(EnvMaxUploadBytes))
@@ -212,6 +332,7 @@ func load(dotEnvPath string, lookup EnvLookup) (*Config, error) {
 	}
 
 	return &Config{
+		Root:               root,
 		Port:               port,
 		DatabaseDSN:        dsn,
 		StorageRoot:        storageRoot,

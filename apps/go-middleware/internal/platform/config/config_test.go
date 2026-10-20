@@ -41,8 +41,8 @@ func TestLoad_DefaultsWhenNothingIsSet(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, config.DefaultPort, cfg.Port)
-	assert.Equal(t, config.DefaultDatabaseDSN, cfg.DatabaseDSN)
-	assert.Equal(t, config.DefaultStorageRoot, cfg.StorageRoot)
+	assert.Equal(t, config.DefaultDatabaseDSN(cfg.Root), cfg.DatabaseDSN)
+	assert.Equal(t, config.DefaultStorageRoot(cfg.Root), cfg.StorageRoot)
 	assert.Equal(t, int64(config.DefaultMaxUploadBytes), cfg.MaxUploadBytes)
 	assert.Equal(t, config.DefaultCORSOrigins, cfg.CORSAllowedOrigins)
 }
@@ -141,7 +141,7 @@ func TestLoad_BlankValuesFallBackToDefaults(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, config.DefaultPort, cfg.Port)
-	assert.Equal(t, config.DefaultDatabaseDSN, cfg.DatabaseDSN)
+	assert.Equal(t, config.DefaultDatabaseDSN(cfg.Root), cfg.DatabaseDSN)
 	assert.Equal(t, config.DefaultCORSOrigins, cfg.CORSAllowedOrigins)
 }
 
@@ -484,4 +484,97 @@ func TestLoad_EmbeddingModelFromDotEnvFile(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "file/embedding", cfg.EmbeddingModel)
+}
+
+// noEnvironment reports every variable as unset. An environment variable that is
+// set to the empty string still beats the file — deliberately — so a test that
+// wants the file to speak must use a lookup, not t.Setenv.
+func noEnvironment(string) (string, bool) { return "", false }
+
+func environment(vars map[string]string) config.EnvLookup {
+	return func(key string) (string, bool) {
+		value, ok := vars[key]
+		return value, ok
+	}
+}
+
+func TestLoadWithFrom_RootDefaultsToTheWorkingDirectory(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	cfg, err := config.LoadWithFrom(config.Options{}, noEnvironment)
+	require.NoError(t, err)
+
+	workingDirectory, err := os.Getwd()
+	require.NoError(t, err)
+
+	assert.Equal(t, workingDirectory, cfg.Root)
+	assert.Equal(t, config.DefaultDatabaseDSN(workingDirectory), cfg.DatabaseDSN)
+	assert.Equal(t, config.DefaultStorageRoot(workingDirectory), cfg.StorageRoot)
+	assert.True(t, cfg.RootIsTheWorkingDirectory())
+}
+
+func TestLoadWithFrom_HomeComesFromTheEnvironment(t *testing.T) {
+	home := t.TempDir()
+
+	cfg, err := config.LoadWithFrom(config.Options{}, environment(map[string]string{
+		config.EnvHome: home,
+	}))
+	require.NoError(t, err)
+
+	assert.Equal(t, home, cfg.Root)
+	assert.Equal(t, config.DefaultDatabaseDSN(home), cfg.DatabaseDSN)
+	assert.Equal(t, config.DefaultStorageRoot(home), cfg.StorageRoot)
+	assert.False(t, cfg.RootIsTheWorkingDirectory())
+}
+
+func TestLoadWithFrom_ExplicitHomeBeatsTheEnvironment(t *testing.T) {
+	explicit := t.TempDir()
+
+	cfg, err := config.LoadWithFrom(
+		config.Options{Home: explicit},
+		environment(map[string]string{config.EnvHome: t.TempDir()}),
+	)
+	require.NoError(t, err)
+
+	assert.Equal(t, explicit, cfg.Root)
+}
+
+func TestLoadWithFrom_ReadsTheDotEnvFromTheRoot(t *testing.T) {
+	home := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(home, ".env"), []byte("STUDY_PORT=9911\n"), 0o600))
+
+	cfg, err := config.LoadWithFrom(config.Options{Home: home}, noEnvironment)
+	require.NoError(t, err)
+
+	assert.Equal(t, 9911, cfg.Port)
+}
+
+func TestLoadWithFrom_ExplicitEnvFileBeatsTheRootOne(t *testing.T) {
+	home := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(home, ".env"), []byte("STUDY_PORT=9911\n"), 0o600))
+
+	custom := filepath.Join(t.TempDir(), "custom.env")
+	require.NoError(t, os.WriteFile(custom, []byte("STUDY_PORT=9922\n"), 0o600))
+
+	cfg, err := config.LoadWithFrom(
+		config.Options{Home: home, EnvFile: custom}, noEnvironment)
+	require.NoError(t, err)
+
+	assert.Equal(t, 9922, cfg.Port)
+}
+
+func TestLoadWithFrom_RelativeEnvFileResolvesFromTheWorkingDirectory(t *testing.T) {
+	home := t.TempDir()
+	t.Chdir(home)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(home, "local.env"), []byte("STUDY_PORT=9933\n"), 0o600))
+
+	cfg, err := config.LoadWithFrom(
+		config.Options{Home: t.TempDir(), EnvFile: "local.env"}, noEnvironment)
+	require.NoError(t, err)
+
+	assert.Equal(t, 9933, cfg.Port,
+		"a relative -env-file is what the operator typed, from where they typed it")
 }
