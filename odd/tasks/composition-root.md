@@ -1,0 +1,137 @@
+# Step 7 — Shared composition root
+
+**Status:** in progress
+**Created:** 2026-10-20
+**Depends on:** step 0-6 (every package it wires), `platform/config`, `platform/db`
+
+## Specs
+
+**S1 — The request.** "Quiero que me digas si podemos agregar que tambien se pueda
+usar como una cli y que se pueda hacer una compilacion para ejecutarlo como cli"
+
+**S2 — Stage 1 of that answer (user, 2026-10-20).** The user accepted this
+definition, quoted from the proposal: "extraer `internal/composition` y hacer que
+`server` e `ingest` la usen. Puro refactor, cero cambio de comportamiento, los 13
+paquetes de tests son la red. Es el único paso que toca lo que hoy funciona, y es
+el que hace barato todo lo demás."
+
+**S3 — Constraints inherited from the system.** No new dependencies. The two
+commands keep their exact behaviour: same flags, same modes, same error messages,
+same startup order. The server still boots with no API key, and the upload still
+answers 503 in that case. `cmd/ingest` keeps opening read-only for `-search` and
+the in-memory fallback for `-dry-run`. The 13 tested packages stay green.
+
+## Why
+
+The wiring lives inline in two `main()` functions and is duplicated where it
+matters:
+
+- `slices.Concat(studysqlite.Migrations(), ragsqlite.Migrations())` appears twice.
+- The database open/migrate rules appear twice, in two different shapes
+  (`cmd/server` inline; `cmd/ingest` behind `openDatabase` plus `readOnlyDSN`).
+- The "hybrid when there is a key, lexical when there is not" search rule appears
+  twice.
+- Model client construction appears twice.
+
+A third entrypoint (stage 2's `cmd/cli`, stage 3's study commands) would be a
+third copy. The line count barely moves in this step; what changes is that the
+wiring has one definition instead of one per process.
+
+## Delivered
+
+- `internal/composition`: `Migrations`, `OpenDatabase`, `OpenReadOnlyDatabase`,
+  `OpenPlanningDatabase`, `Clients`/`NewClients`, `Study`/`NewStudy`,
+  `RAG`/`NewRAG` and its factories.
+- `cmd/server` and `cmd/ingest` build their contexts through the package.
+- Tests for the package against a real migrated in-memory database: the
+  composition had none before, and the two `main()` functions still have none.
+
+## Design: composition builds, the entrypoint mounts
+
+The package follows one rule, stated in its doc comment: it turns configuration
+and a database into application objects, and it never mounts a transport. Each
+entrypoint keeps its own routers, its own `http.Server` or flag parsing, and its
+own policy.
+
+That rule is what keeps the two contexts' asymmetry out of the package. The study
+router takes exactly its use cases, while the RAG router needs the upload handler,
+which needs the store and the "is a key configured" flag — entrypoint policy. Both
+routers stay where they are.
+
+Two hazards the design closes rather than documents:
+
+- **Typed-nil interfaces.** A nil `*llm.EmbeddingClient` stored in a
+  `domain.Embedder` interface is not `== nil`, so a `nil` check inside a use case
+  would pass and the first call would panic. The factories take `Clients`, a
+  struct with concrete pointers, and decide on the field. There is no interface
+  through which a nil client can arrive.
+- **A missing key is not a missing client.** `NewClients` returns the zero
+  `Clients` when no key is configured, so "no key" is a value the callers branch
+  on, not an error they have to translate. `NewClient` itself still rejects a
+  blank key, because that is a programming error at the call site.
+
+`OpenPlanningDatabase` keeps the dry-run rule in one place: read-only when the
+file exists, and an empty migrated in-memory schema when it does not, which
+answers every lookup with "not found" and writes nothing to disk.
+
+## Tasks
+
+- [x] T1 — `internal/composition`: `Migrations`, the three database openers, and
+      `Clients`/`NewClients`, with tests (S3)
+- [x] T2 — `internal/composition`: `Study`, `RAG`, and the RAG factories, with
+      tests (S3)
+- [x] T3 — `cmd/server`: build through composition, identical behaviour (S2, S3)
+- [x] T4 — `cmd/ingest`: build through composition, identical behaviour (S2, S3)
+- [ ] T5 — README, verification, and the work-unit commits (S2)
+
+## Log
+
+**L1 (2026-10-20, request)** — "Quiero que me digas si podemos agregar que tambien
+se pueda usar como una cli y que se pueda hacer una compilacion para ejecutarlo
+como cli"
+
+**L2 (2026-10-20, answer)** — the parent reviewed the server and found that
+`cmd/ingest` is already a CLI with 9 flags and 5 modes, and that
+`CGO_ENABLED=0` cross-compiles to static 10 MB binaries for linux/amd64,
+darwin/arm64 and windows/amd64 (`file`: "statically linked, stripped"), verified
+by building all three and running `-list` against the real store. The gap named
+was `internal/composition`: the composition root is inline in two `main()`
+functions, so a third entrypoint would duplicate the wiring and the read-only,
+in-memory and lexical-vs-hybrid rules. Three options were offered (one binary
+with subcommands, a separate `cmd/study-cli`, or nothing); the recommendation was
+one binary, delivered in four stages, with the extraction first.
+
+**L3 (2026-10-20, authorization)** — "si ve con la etapa 1", referring to L2's
+stage 1: extract `internal/composition` and have `server` and `ingest` use it, as
+a pure refactor with no behaviour change (S2).
+
+**L4 (2026-10-20, implemented and diffed against `master`)** — `gofmt -l`,
+`go build ./...`, `go vet ./...` clean; `go test ./... -count=1` ok in every
+package, with 14 new tests in `internal/composition`.
+
+The refactor was diffed against `6e5eb99` (a worktree of `master`, both binaries
+built from each side) rather than judged by reading it:
+
+| Command | Result |
+| --- | --- |
+| `-list` (real store) | stdout, stderr, exit byte-identical |
+| `-search "figure" -limit 5` (real index, no key) | identical, 5 lexical hits |
+| `-search` against a missing database | identical error and exit 1 |
+| no arguments, and `-pdf` without `-out` | identical apart from `argv[0]` |
+| `-pdf … -dry-run` | identical plan line: `3 pages: 0 already recorded, 0 from the text layer, 3 to the model (~4m)` |
+| `-reindex` on a private copy | identical: `reindexed 3 documents, 1180 chunks` |
+| server: `GET /api/concepts`, `/api/study/due`, `/api/rag/documents`, `/api/rag/search`, an unknown path | identical bodies and status codes |
+| server: upload with no key | identical `503` and message |
+| server: `OPTIONS` for an allowed and a foreign origin | identical headers |
+| server: startup and SIGTERM shutdown log | identical apart from the timestamp |
+
+The only textual differences across the whole comparison are timestamps and the
+binary name in `flag` usage.
+
+Two hazards were closed instead of documented. A nil `*llm.EmbeddingClient` stored
+in a `domain.Embedder` — and a nil `*BackgroundProcessor` stored in a
+`FailureReporter` — is not `== nil`, so a use case's own nil check would pass and
+the first call would panic. Both factories take the concrete type (`Clients`, and
+the processor in `RAG.Status`) and narrow to the interface themselves, so "no
+credential" and "no processor" keep meaning what they say.
+
