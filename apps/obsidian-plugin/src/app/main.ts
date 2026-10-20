@@ -1,27 +1,19 @@
 import { Plugin, Notice, normalizePath } from "obsidian"
 import { StudyView, STUDY_VIEW_TYPE } from "./study-view"
-import { StudyChatView, STUDY_CHAT_VIEW_TYPE } from "./study-chat-view"
 import { loadPluginSettings } from "./settings-store"
-import { ChatSettingsTab } from "./settings-tab"
-import { setObsidianApp, readVaultFile, useObsidian } from "@/shared/obsidian"
-import { setVaultTextReader } from "@/features/send-message"
+import { StudySettingsTab } from "./settings-tab"
+import { setObsidianApp, useObsidian } from "@/shared/obsidian"
 
 export default class FlashcardPlugin extends Plugin {
   async onload(): Promise<void> {
     // Set the app singleton early so commands can access it
     setObsidianApp(this.app)
 
-    // The send path reads vault attachments through an injected port, so
-    // `features/` never imports the Obsidian boundary. This is where the real
-    // reader gets in, beside the app singleton it needs.
-    setVaultTextReader(readVaultFile)
-
     // Own the plugin's global settings (data.json) and expose its settings tab
     await loadPluginSettings(this)
-    this.addSettingTab(new ChatSettingsTab(this.app, this))
+    this.addSettingTab(new StudySettingsTab(this.app, this))
 
     this.registerView(STUDY_VIEW_TYPE, (leaf) => new StudyView(leaf))
-    this.registerView(STUDY_CHAT_VIEW_TYPE, (leaf) => new StudyChatView(leaf))
 
     this.addRibbonIcon("graduation-cap", "Open Study Dashboard", () => {
       this.activateView()
@@ -32,14 +24,6 @@ export default class FlashcardPlugin extends Plugin {
       name: "Open Study Dashboard",
       callback: () => {
         this.activateView()
-      },
-    })
-
-    this.addCommand({
-      id: "open-study-chat",
-      name: "Open Study Chat",
-      callback: () => {
-        this.activateChatView()
       },
     })
 
@@ -65,9 +49,6 @@ export default class FlashcardPlugin extends Plugin {
   }
 
   onunload(): void {
-    // Clean up the app singleton and the reader that needs it: the reader is a
-    // port into a vault that no longer exists after unload.
-    setVaultTextReader(null)
     // SAFETY: clearing the singleton is deliberate; the cast stands in for
     // `App | null`, which `setObsidianApp` does not accept today.
     setObsidianApp(null as unknown as import("obsidian").App)
@@ -89,22 +70,6 @@ export default class FlashcardPlugin extends Plugin {
       await leaf.setViewState({ type: STUDY_VIEW_TYPE, active: true })
       workspace.revealLeaf(leaf)
     }
-  }
-
-  async activateChatView(): Promise<void> {
-    const { workspace } = this.app
-
-    // Reveal existing leaf if already open
-    const existing = workspace.getLeavesOfType(STUDY_CHAT_VIEW_TYPE)
-    if (existing.length > 0) {
-      workspace.revealLeaf(existing[0])
-      return
-    }
-
-    // Create a new tab in the main area
-    const leaf = workspace.getLeaf("tab")
-    await leaf.setViewState({ type: STUDY_CHAT_VIEW_TYPE, active: true })
-    workspace.revealLeaf(leaf)
   }
 
   async syncActiveNote(): Promise<void> {

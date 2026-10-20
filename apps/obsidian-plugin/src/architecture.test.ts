@@ -208,17 +208,16 @@ describe("FSD boundaries", () => {
     expect(FILES).toEqual(
       expect.arrayContaining([
         "app/main.ts",
-        "app/study-chat-view.ts",
-        "pages/chat/ui/ChatPage.vue",
+        "pages/dashboard/ui/DashboardPage.vue",
         "pages/corpus/ui/CorpusPage.vue",
-        "widgets/chat-thread/ui/ChatThread.vue",
-        "features/send-message/model/prompt.ts",
+        "widgets/topic-list/ui/TopicList.vue",
+        "features/create-topic/model/useCreateTopic.ts",
         "features/sync-note/model/useSyncNote.ts",
-        "entities/chat/lib/note.ts",
+        "entities/flashcard/lib/markdown-parser.ts",
         "entities/topic/model/types.ts",
         "shared/api/client.ts",
         "shared/config/settings.ts",
-        "shared/llm/client.ts",
+        "shared/lib/guards.ts",
         "shared/obsidian/useObsidian.ts",
       ]),
     )

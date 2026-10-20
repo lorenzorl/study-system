@@ -1,16 +1,18 @@
-import { App, PluginSettingTab, type Plugin } from "obsidian"
-import { createApp, type App as VueApp } from "vue"
-import { LlmSettingsForm } from "@/features/configure-llm"
+import { App, PluginSettingTab, Setting, type Plugin } from "obsidian"
+import { DEFAULT_SETTINGS, getSettings, updateSettings } from "@/shared/config"
 
 /**
  * The plugin's own settings tab.
  *
- * It stays this thin on purpose: the tab is Obsidian glue (a `PluginSettingTab`
- * and a mount point), and everything the user edits is the Vue form inside
- * `features/configure-llm`, which talks to `shared/config`.
+ * One field on purpose: the backend base URL. Every request the plugin makes —
+ * syncing a note, listing due cards, grading one — goes through it, so it is the
+ * only setting left now that the chat, the model configuration and the document
+ * corpus are gone. Obsidian's own `Setting` renders it; there is no Vue form
+ * behind this tab.
  */
-export class ChatSettingsTab extends PluginSettingTab {
-  private vueApp: VueApp<Element> | null = null
+export class StudySettingsTab extends PluginSettingTab {
+  /** The value being edited, so a half-typed URL is never persisted. */
+  private draft = DEFAULT_SETTINGS.apiBase
 
   constructor(app: App, plugin: Plugin) {
     super(app, plugin)
@@ -22,23 +24,31 @@ export class ChatSettingsTab extends PluginSettingTab {
   }
 
   display(): void {
-    this.unmountForm()
     this.containerEl.empty()
+    this.draft = getSettings().apiBase
 
-    const container = this.containerEl.createDiv()
-
-    this.vueApp = createApp(LlmSettingsForm)
-    this.vueApp.mount(container)
-  }
-
-  hide(): void {
-    this.unmountForm()
-  }
-
-  private unmountForm(): void {
-    if (this.vueApp) {
-      this.vueApp.unmount()
-      this.vueApp = null
-    }
+    new Setting(this.containerEl)
+      .setName("URL del backend")
+      .setDesc(
+        "Dirección del servidor de estudio. Por defecto, http://localhost:8080. " +
+          "Dejá el campo vacío para volver al valor por defecto.",
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder(DEFAULT_SETTINGS.apiBase)
+          .setValue(this.draft)
+          .onChange((value) => {
+            this.draft = value
+          }),
+      )
+      .addButton((button) =>
+        button.setButtonText("Guardar").onClick(async () => {
+          // `updateSettings` normalizes (trims, empty → default) and persists.
+          await updateSettings({ apiBase: this.draft })
+          // Re-read so the field shows the value that survived normalization.
+          this.draft = getSettings().apiBase
+          this.display()
+        }),
+      )
   }
 }

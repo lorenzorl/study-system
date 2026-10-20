@@ -1,6 +1,7 @@
 /**
  * The plugin's global settings: the single source of truth for the backend base
- * URL and the LLM configuration the user edits from the plugin's settings tab.
+ * URL, the only setting left now that the chat, the model configuration and the
+ * document corpus are gone.
  *
  * Pure TypeScript: no `obsidian`, no DOM, no other `shared/*` segment. The value
  * is persisted through the injected `SettingsStore` port, which
@@ -9,26 +10,10 @@
 
 export interface PluginSettings {
   apiBase: string
-  llmBaseUrl: string
-  llmApiKey: string
-  llmModel: string
-  llmTemperature: number
-  retrievalTopK: number
-  historyTurns: number
-  defaultChatPrompt: string
 }
 
 export const DEFAULT_SETTINGS: PluginSettings = {
   apiBase: "http://localhost:8080",
-  llmBaseUrl: "https://openrouter.ai/api/v1",
-  // An empty key means "not configured": the chat reports it instead of calling.
-  llmApiKey: "",
-  llmModel: "qwen/qwen3.5-flash-02-23",
-  llmTemperature: 0.2,
-  retrievalTopK: 6,
-  historyTurns: 8,
-  defaultChatPrompt:
-    "Sos mi tutor de estudio. Respondé con precisión, en el idioma de mi pregunta, y explicá con las palabras del material.",
 }
 
 /** The persistence port. `app/settings-store.ts` implements it over the Plugin API. */
@@ -59,8 +44,8 @@ export function getSettings(): PluginSettings {
  * the injected store, and notify every listener.
  *
  * The patch is merged onto the current settings, so a caller only sends what it
- * edits; the result is normalized, so numeric fields come back clamped and a
- * wrong-typed value falls back to its default instead of reaching the store.
+ * edits; the result is normalized, so an empty URL falls back to the default
+ * instead of reaching the store.
  */
 export async function updateSettings(patch: Partial<PluginSettings>): Promise<void> {
   const next = normalizeSettings({ ..._settings, ...patch })
@@ -89,9 +74,9 @@ export function onSettingsChange(listener: SettingsListener): () => void {
  * Turn whatever was persisted into a complete, valid `PluginSettings`.
  *
  * A non-object is never thrown on: it yields a fresh copy of the defaults.
- * Unknown keys are dropped, a wrong-typed field falls back to its default
- * rather than being coerced, and numeric fields are clamped to the range the
- * consumer accepts.
+ * Unknown keys are dropped — including the `llm*` and chat fields an older
+ * version of the plugin stored — and a wrong-typed field falls back to its
+ * default rather than being coerced.
  */
 export function normalizeSettings(raw: unknown): PluginSettings {
   if (!isRecord(raw)) {
@@ -100,14 +85,6 @@ export function normalizeSettings(raw: unknown): PluginSettings {
 
   return {
     apiBase: normalizeUrl(raw.apiBase, DEFAULT_SETTINGS.apiBase),
-    llmBaseUrl: normalizeUrl(raw.llmBaseUrl, DEFAULT_SETTINGS.llmBaseUrl),
-    llmApiKey: normalizeString(raw.llmApiKey, DEFAULT_SETTINGS.llmApiKey),
-    llmModel: normalizeString(raw.llmModel, DEFAULT_SETTINGS.llmModel),
-    llmTemperature: normalizeNumber(raw.llmTemperature, 0, 2, DEFAULT_SETTINGS.llmTemperature),
-    // 50 is the backend's MaxSearchLimit.
-    retrievalTopK: normalizeInteger(raw.retrievalTopK, 1, 50, DEFAULT_SETTINGS.retrievalTopK),
-    historyTurns: normalizeInteger(raw.historyTurns, 0, 50, DEFAULT_SETTINGS.historyTurns),
-    defaultChatPrompt: normalizeString(raw.defaultChatPrompt, DEFAULT_SETTINGS.defaultChatPrompt),
   }
 }
 
@@ -148,11 +125,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
-/** Only strings survive; a non-string falls back to the default. */
-function normalizeString(value: unknown, fallback: string): string {
-  return typeof value === "string" ? value : fallback
-}
-
 /** A URL is trimmed; empty after trimming falls back to the default. */
 function normalizeUrl(value: unknown, fallback: string): string {
   if (typeof value !== "string") {
@@ -162,22 +134,4 @@ function normalizeUrl(value: unknown, fallback: string): string {
   const trimmed = value.trim()
 
   return trimmed === "" ? fallback : trimmed
-}
-
-/** A non-number falls back to the default; a number is clamped to the range. */
-function normalizeNumber(value: unknown, min: number, max: number, fallback: number): number {
-  if (typeof value !== "number" || Number.isNaN(value)) {
-    return fallback
-  }
-
-  return Math.min(max, Math.max(min, value))
-}
-
-/** A non-integer or non-number falls back to the default; an integer is clamped. */
-function normalizeInteger(value: unknown, min: number, max: number, fallback: number): number {
-  if (typeof value !== "number" || !Number.isInteger(value)) {
-    return fallback
-  }
-
-  return Math.min(max, Math.max(min, value))
 }

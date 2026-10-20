@@ -6,6 +6,14 @@ This is the **governing Feature-Sliced Design (FSD) contract for the Obsidian pl
 
 Current shape (verified): a Vue 3 + Pinia SPA lives under `src/vue-app/` (`views/`, `components/`, `stores/`, `services/`, `composables/`, `router/`, `App.vue`), with domain types/validation at `src/types.ts` and `src/validation.ts`, and the Obsidian integration at `src/main.ts` + `src/study-view.ts`. There is **no ESLint or boundary linter** in the repository. The test suite is **94 tests** (`it()` count: 67 in `src/__tests__/types.test.ts`, 15 in `src/vue-app/composables/__tests__/useObsidian.test.ts`, 12 in `src/vue-app/__tests__/review-store.test.ts`).
 
+**Scope reduced (2026-10-20): the plugin is flashcards-only.** The chat, the
+LLM configuration and the document corpus were removed, together with the
+slices listed in §14. The layers, the dependency rule, the segment conventions
+and the Obsidian boundary in §2–§4 are unchanged and still governing; §5, §7b
+and §8 record the reduced tree. §6 and §7 keep the original phase-0 mapping as
+history: they describe where the pre-migration files landed, not what exists
+today.
+
 ## 2. Layers and the dependency rule
 
 FSD layers used here (there is **no `processes` layer** — it is deprecated and is not used):
@@ -70,9 +78,8 @@ apps/obsidian-plugin/
     ├── app/                           # Obsidian integration layer
     │   ├── main.ts
     │   ├── study-view.ts
-    │   ├── study-chat-view.ts         # + chat main-area tab (view type study-chat)
     │   ├── settings-store.ts          # + settings persistence over the plugin's data.json
-    │   ├── settings-tab.ts            # + PluginSettingTab that mounts the settings form
+    │   ├── settings-tab.ts            # + PluginSettingTab with the backend base URL
     │   ├── router/index.ts
     │   └── ui/App.vue
     ├── pages/
@@ -82,29 +89,20 @@ apps/obsidian-plugin/
     │   ├── flashcard-session/{index.ts,ui/FlashcardSessionPage.vue}
     │   ├── due-cards/{index.ts,ui/DueCardsPage.vue}
     │   ├── feynman/{index.ts,ui/FeynmanPage.vue}
-    │   ├── chat/{index.ts,ui/ChatPage.vue}            # + the three zones
-    │   └── corpus/{index.ts,ui/CorpusPage.vue}        # + upload and search, out of the chat
+    │   └── corpus/{index.ts,ui/CorpusPage.vue}        # + upload and search
     ├── widgets/
     │   ├── metrics-bar/{index.ts,ui/MetricsBar.vue}
     │   ├── daily-review/{index.ts,ui/DailyReviewCard.vue}
     │   ├── topic-list/{index.ts,ui/TopicList.vue}
     │   ├── concept-list/{index.ts,ui/ConceptList.vue}
-    │   ├── chat-list/{index.ts,ui/ChatList.vue}       # + the chats in the folder
-    │   ├── chat-thread/{index.ts,ui/ChatThread.vue}   # + the turns and the composer
-    │   ├── chat-settings/{index.ts,ui/ChatSettingsPanel.vue}  # + this chat's prompt and overrides
     │   └── search-results/{index.ts,ui/SearchResults.vue}  # +
     ├── features/
     │   ├── create-topic/{index.ts,model/useCreateTopic.ts,ui/CreateTopicForm.vue}
     │   ├── create-concept/{index.ts,model/useCreateConcept.ts,ui/CreateConceptForm.vue}
     │   ├── sync-note/{index.ts,model/useSyncNote.ts,ui/SyncNoteButton.vue}
-    │   ├── configure-llm/{index.ts,ui/LlmSettingsForm.vue}   # + global LLM settings (rendered by the settings tab)
     │   ├── select-topic/{index.ts,model/useTopicSelection.ts}
     │   ├── select-concept/{index.ts,model/useConceptSelection.ts}
     │   ├── review-card/{index.ts,model/useReviewSession.ts}
-    │   ├── create-chat/{index.ts,model/useCreateChat.ts,ui/NewChatButton.vue}            # +
-    │   ├── select-chat/{index.ts,model/useChatSelection.ts}                              # +
-    │   ├── edit-chat-prompt/{index.ts,model/useChatPrompt.ts,ui/ChatPromptForm.vue}       # +
-    │   ├── send-message/{index.ts,model/{useSendMessage.ts,prompt.ts},ui/MessageComposer.vue}  # +
     │   ├── upload-document/{index.ts,model/useUploadDocument.ts,ui/UploadDocumentForm.vue}  # +
     │   └── search-corpus/{index.ts,model/useSearchCorpus.ts,ui/SearchCorpusForm.vue}        # +
     ├── entities/
@@ -114,14 +112,12 @@ apps/obsidian-plugin/
     │   ├── review/{index.ts,model/{types.ts,validation.ts,useReviewStore.ts},api/review-api.ts,ui/DueCardItem.vue}
     │   ├── metrics/{index.ts,model/{types.ts,validation.ts,useMetricsStore.ts}}
     │   ├── resource/{index.ts,model/{types.ts,validation.ts},api/resource-api.ts}
-    │   ├── chat/{index.ts,model/{types.ts,useChatsStore.ts},lib/{frontmatter.ts,note.ts},api/chat-note.ts}  # + one note per chat
     │   ├── document/{index.ts,model/types.ts,api/document-api.ts}       # +
     │   └── search-result/{index.ts,model/types.ts,api/search-api.ts}    # +
     └── shared/
         ├── api/client.ts
         ├── config/{index.ts,settings.ts,settings.test.ts}    # + global settings state and its persistence port
         ├── lib/{guards.ts,useSwipe.ts}
-        ├── llm/{index.ts,client.ts,sse.ts,errors.ts}          # + the provider's chat completions, streamed
         └── obsidian/{index.ts,useObsidian.ts,useObsidian.test.ts,__mocks__/obsidian.ts}
 ```
 
@@ -226,7 +222,7 @@ Selection is a feature because it is a stateful user interaction that crosses th
 | Topic grid (`v-for TopicCard`) | `widgets/topic-list/ui/TopicList.vue` |
 | Create-topic form (`showNewTopicForm`, `handleCreateTopic`) | `features/create-topic/ui/CreateTopicForm.vue` + `features/create-topic/model/useCreateTopic.ts` |
 | Sync button + `syncActiveNote()` | `features/sync-note/ui/SyncNoteButton.vue` + `features/sync-note/model/useSyncNote.ts` |
-| API-base settings (`<details>`, `saveApiBase`, `resetApiBaseUrl`) | `features/configure-llm/ui/LlmSettingsForm.vue`, rendered by `app/settings-tab.ts`, with the value held in `shared/config` and pushed to `shared/api/client.ts` by `app/settings-store.ts` |
+| API-base setting (`<details>`, `saveApiBase`, `resetApiBaseUrl`) | `app/settings-tab.ts`: one Obsidian `Setting` holding the backend base URL, with the value in `shared/config` pushed to `shared/api/client.ts` by `app/settings-store.ts` |
 | Page shell: loading/error/retry, layout, `onMounted` loads | `pages/dashboard/ui/DashboardPage.vue` |
 
 `TopicView.vue` has the same grid shape; extract `widgets/concept-list` there for symmetry (recommended, not strictly required by the parent mapping).
@@ -291,37 +287,28 @@ Entity api segments import `request`/errors from `shared/api/client.ts` (downwar
 
 ## 8. New slices for the next features
 
-These slices do not exist today; the tree reserves them. They are **not** implemented by this contract.
+These slices did not exist when this contract was written; the tree reserved
+them. The chat and LLM rows were **deleted on 2026-10-20** together with the
+slices they describe (§14).
 
 | New slice | Layer | Purpose |
 | --- | --- | --- |
-| `pages/chat` | pages | Chat screen inside the persistent main-area tab: the list, the thread and the chat's settings. |
 | `pages/corpus` | pages | Upload and search, moved out of the chat page so it can hold three zones. |
-| `widgets/chat-list` | widgets | The chats in the folder; composes `features/create-chat` and `features/select-chat`. |
-| `widgets/chat-thread` | widgets | The current chat's turns and the composer; composes `features/send-message`. |
-| `widgets/chat-settings` | widgets | The current chat's prompt and its model/temperature/top-k overrides. |
-| `features/create-chat` | features | Create a chat note from the global default prompt. |
-| `features/select-chat` | features | Select the current chat. |
-| `features/edit-chat-prompt` | features | Edit the current chat's own prompt (S1). |
-| `features/send-message` | features | Retrieve, compose the prompt, stream the answer, persist the turn. |
-| `entities/chat` | entities | The chat note: its prompt, its overrides and its transcript. |
-| `shared/llm` | shared | The provider's chat-completions transport, with SSE. |
 | `features/upload-document` | features | Upload a document into the corpus. |
 | `entities/document` | entities | Document model/types. |
 | `features/search-corpus` | features | Query the RAG corpus. |
 | `entities/search-result` | entities | Search result model/types. |
 | `widgets/search-results` | widgets | Render search results. |
 
-**Chat persistent view (important):** the chat's persistent view is a **main-area tab registered from `app/`** — an `ItemView` (file `src/app/study-chat-view.ts`, view type `study-chat`) activated with `workspace.getLeaf("tab")`, mirroring today's `StudyView` sidebar pattern (`getRightLeaf`). Only `app/` may call `getLeaf("tab")` and import `obsidian`.
+**Chat persistent view — removed 2026-10-20.** The chat was a main-area tab
+registered from `app/` (an `ItemView` in `src/app/study-chat-view.ts`, view type
+`study-chat`, activated with `workspace.getLeaf("tab")`). The file and its view
+type are gone; `app/` no longer calls `getLeaf("tab")`.
 
-**Backend gap (resolved 2026-10-18, differently than planned):** the chat
-endpoint `POST /api/chat` this section once called for was **never built and will
-not be**. The plugin talks to the model provider directly and the backend stays a
-documents service: it serves ingestion, the chunk index, the embeddings and
-`GET /api/rag/search`, and it never sees a chat prompt or an API key.
-`features/ask-chat` is gone, replaced by `features/send-message`;
-`entities/chat-message` is gone, replaced by `entities/chat`, whose note IS the
-conversation. `features/send-message/README.md` is where that contract lives now.
+**Chat backend (removed 2026-10-20).** `POST /api/chat` was never built: the
+plugin talked to the model provider directly (`shared/llm`) while the backend
+stayed a documents service. All of that is gone now — no chat, no provider
+transport, no API key in the plugin (§14).
 
 **Backend status (2026-10-17, Phase 5):** the other three endpoints do exist
 (`GET /api/rag/search`, `POST /api/rag/documents`,
@@ -331,14 +318,11 @@ conversation. `features/send-message/README.md` is where that contract lives now
 §7d is why the calls live in the entity, not in the feature model). The multipart
 upload path is `requestMultipart` in `shared/api/client.ts`, kept apart from
 `request` because only the browser may write the multipart Content-Type and its
-boundary. `features/send-message` is where a question becomes an answer: it reads
-the chat's note, retrieves through `entities/search-result`, and streams through
-`shared/llm`, which is a separate transport from `shared/api/client.ts` because it
-carries a different credential to a different host.
+boundary.
 
 ## 9. Naming and imports
 
-- **Slice folders**: kebab-case (`entities/chat`, `features/upload-document`).
+- **Slice folders**: kebab-case (`entities/flashcard`, `features/create-topic`).
 - **Public API**: every slice has `index.ts`; nothing outside the slice imports a segment path directly.
 - **Absolute vs relative**: cross-slice imports use the absolute `@/` alias; imports **inside** a slice (between its own segments) use relative paths.
 
@@ -426,3 +410,27 @@ All five open questions are resolved; the contract above is governing.
 5. **`syncResource` / `entities/resource`** — the scaffold is **kept**: its types
    and validation are tested and the backend endpoint exists, so it is ready for a
    feature that calls it later (§7d).
+
+## 14. Scope reduction (2026-10-20)
+
+The plugin is flashcards-only. The following were removed and are not to be
+reintroduced without a new decision:
+
+| Removed | Layer | Note |
+| --- | --- | --- |
+| `app/study-chat-view.ts` | app | The `study-chat` main-area tab; its view type and its command are gone. |
+| `pages/chat` | pages | The chat screen. |
+| `widgets/chat-list`, `widgets/chat-thread`, `widgets/chat-settings` | widgets | Chat composition. |
+| `features/create-chat`, `features/select-chat`, `features/edit-chat-prompt`, `features/send-message`, `features/attach-resource`, `features/configure-llm` | features | Chat lifecycle, attachments and the LLM settings form. |
+| `entities/chat` | entities | The chat note: prompt, overrides and transcript. |
+| `shared/llm` | shared | The provider transport (chat completions + SSE). |
+| Chat-only helpers in `shared/obsidian/useObsidian.ts` | shared | `chatsFolderPath`, `readVaultFile`, `writeVaultFile`, `processVaultFile`, `listVaultFiles`, `listVaultMarkdownFiles`, `onVaultFileChange`. |
+
+`shared/config` keeps one field, `apiBase`, and `app/settings-tab.ts` renders it
+with Obsidian's own `Setting` — no Vue form behind the tab. `normalizeSettings`
+drops the `llm*`, `retrievalTopK`, `historyTurns` and `defaultChatPrompt` keys an
+older version stored, so a `data.json` written by that version still loads and
+keeps its base URL.
+
+The Go backend is untouched: the endpoints it still exposes are simply unused by
+the plugin.

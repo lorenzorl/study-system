@@ -7,7 +7,6 @@ import {
   onSettingsChange,
   setSettingsStore,
   updateSettings,
-  type PluginSettings,
   type SettingsStore,
 } from "./settings"
 
@@ -24,7 +23,7 @@ function createFakeStore(): SettingsStore & { saved: unknown[] } {
   }
 }
 
-/** Install a fresh store and restore every field to its default. */
+/** Install a fresh store and restore the only setting to its default. */
 async function resetSettings(): Promise<void> {
   setSettingsStore(createFakeStore())
   await updateSettings(DEFAULT_SETTINGS)
@@ -48,129 +47,47 @@ describe("normalizeSettings", () => {
     expect(settings).not.toBe(DEFAULT_SETTINGS)
   })
 
-  it("drops unknown keys and defaults the fields a partial object omits", () => {
-    const settings = normalizeSettings({ llmModel: "qwen/qwen3.5-flash-02-23", unrelated: true })
+  it("drops unknown keys, including the llm fields an older version stored", () => {
+    const settings = normalizeSettings({
+      llmModel: "qwen/qwen3.5-flash-02-23",
+      llmApiKey: "sk-test",
+      retrievalTopK: 12,
+      historyTurns: 8,
+      defaultChatPrompt: "Respondé en criollo.",
+      unrelated: true,
+    })
 
-    expect(settings).toEqual({ ...DEFAULT_SETTINGS, llmModel: "qwen/qwen3.5-flash-02-23" })
-    expect(settings).not.toHaveProperty("unrelated")
+    expect(settings).toEqual(DEFAULT_SETTINGS)
+    expect(Object.keys(settings)).toEqual(["apiBase"])
   })
 
-  it("keeps the fields a partial object supplies and defaults the rest", () => {
-    const settings = normalizeSettings({
-      apiBase: "http://192.168.1.50:8080",
-      retrievalTopK: 12,
-      historyTurns: 0,
-    })
+  it("keeps the apiBase a partial object supplies", () => {
+    const settings = normalizeSettings({ apiBase: "http://192.168.1.50:8080" })
 
-    expect(settings).toEqual({
-      ...DEFAULT_SETTINGS,
-      apiBase: "http://192.168.1.50:8080",
-      retrievalTopK: 12,
-      historyTurns: 0,
-    })
+    expect(settings).toEqual({ apiBase: "http://192.168.1.50:8080" })
   })
 
   it.each([
-    ["apiBase", 8080],
-    ["llmBaseUrl", null],
-    ["llmApiKey", 12345],
-    ["llmModel", false],
-    ["defaultChatPrompt", ["prompt"]],
-  ])("falls back to the default instead of coercing a wrong-typed %s", (field, raw) => {
-    const settings = normalizeSettings({ [field]: raw })
+    ["a number", 8080],
+    ["null", null],
+    ["a boolean", false],
+  ])("falls back to the default instead of coercing a wrong-typed apiBase (%s)", (_label, raw) => {
+    const settings = normalizeSettings({ apiBase: raw })
 
-    expect(settings[field as keyof PluginSettings]).toBe(DEFAULT_SETTINGS[field as keyof PluginSettings])
+    expect(settings.apiBase).toBe(DEFAULT_SETTINGS.apiBase)
   })
 
-  it("falls back to the default for a wrong-typed number field", () => {
-    const settings = normalizeSettings({
-      retrievalTopK: "6",
-      historyTurns: "8",
-      llmTemperature: "0.2",
-    })
-
-    expect(settings.retrievalTopK).toBe(DEFAULT_SETTINGS.retrievalTopK)
-    expect(settings.historyTurns).toBe(DEFAULT_SETTINGS.historyTurns)
-    expect(settings.llmTemperature).toBe(DEFAULT_SETTINGS.llmTemperature)
-  })
-
-  describe("retrievalTopK", () => {
-    it("clamps an integer to 1..50", () => {
-      expect(normalizeSettings({ retrievalTopK: 0 }).retrievalTopK).toBe(1)
-      expect(normalizeSettings({ retrievalTopK: 1 }).retrievalTopK).toBe(1)
-      expect(normalizeSettings({ retrievalTopK: 50 }).retrievalTopK).toBe(50)
-      expect(normalizeSettings({ retrievalTopK: 51 }).retrievalTopK).toBe(50)
-      expect(normalizeSettings({ retrievalTopK: 9999 }).retrievalTopK).toBe(50)
-    })
-
-    it("falls back to the default for a non-integer or non-number", () => {
-      expect(normalizeSettings({ retrievalTopK: 2.5 }).retrievalTopK).toBe(DEFAULT_SETTINGS.retrievalTopK)
-      expect(normalizeSettings({ retrievalTopK: Number.NaN }).retrievalTopK).toBe(DEFAULT_SETTINGS.retrievalTopK)
-      expect(normalizeSettings({ retrievalTopK: null }).retrievalTopK).toBe(DEFAULT_SETTINGS.retrievalTopK)
-    })
-  })
-
-  describe("historyTurns", () => {
-    it("clamps an integer to 0..50", () => {
-      expect(normalizeSettings({ historyTurns: -3 }).historyTurns).toBe(0)
-      expect(normalizeSettings({ historyTurns: 0 }).historyTurns).toBe(0)
-      expect(normalizeSettings({ historyTurns: 50 }).historyTurns).toBe(50)
-      expect(normalizeSettings({ historyTurns: 100 }).historyTurns).toBe(50)
-    })
-
-    it("falls back to the default for a non-integer or non-number", () => {
-      expect(normalizeSettings({ historyTurns: 1.5 }).historyTurns).toBe(DEFAULT_SETTINGS.historyTurns)
-      expect(normalizeSettings({ historyTurns: Number.NaN }).historyTurns).toBe(DEFAULT_SETTINGS.historyTurns)
-      expect(normalizeSettings({ historyTurns: { turns: 4 } }).historyTurns).toBe(DEFAULT_SETTINGS.historyTurns)
-    })
-  })
-
-  describe("llmTemperature", () => {
-    it("clamps a number to 0..2", () => {
-      expect(normalizeSettings({ llmTemperature: -1 }).llmTemperature).toBe(0)
-      expect(normalizeSettings({ llmTemperature: 0 }).llmTemperature).toBe(0)
-      expect(normalizeSettings({ llmTemperature: 1.35 }).llmTemperature).toBe(1.35)
-      expect(normalizeSettings({ llmTemperature: 3 }).llmTemperature).toBe(2)
-    })
-
-    it("falls back to the default for a non-number", () => {
-      expect(normalizeSettings({ llmTemperature: "0.9" }).llmTemperature).toBe(
-        DEFAULT_SETTINGS.llmTemperature,
-      )
-      expect(normalizeSettings({ llmTemperature: Number.NaN }).llmTemperature).toBe(
-        DEFAULT_SETTINGS.llmTemperature,
+  describe("apiBase", () => {
+    it("trims the stored URL", () => {
+      expect(normalizeSettings({ apiBase: "  http://192.168.1.50:8080  " }).apiBase).toBe(
+        "http://192.168.1.50:8080",
       )
     })
-  })
 
-  describe("URL fields", () => {
-    it("trims apiBase and llmBaseUrl", () => {
-      const settings = normalizeSettings({
-        apiBase: "  http://192.168.1.50:8080  ",
-        llmBaseUrl: "  https://openrouter.ai/api/v1  ",
-      })
-
-      expect(settings.apiBase).toBe("http://192.168.1.50:8080")
-      expect(settings.llmBaseUrl).toBe("https://openrouter.ai/api/v1")
-    })
-
-    it("falls back to the default when a URL is empty after trimming", () => {
+    it("falls back to the default when the URL is empty after trimming", () => {
       expect(normalizeSettings({ apiBase: "   " }).apiBase).toBe(DEFAULT_SETTINGS.apiBase)
       expect(normalizeSettings({ apiBase: "" }).apiBase).toBe(DEFAULT_SETTINGS.apiBase)
-      expect(normalizeSettings({ llmBaseUrl: "   " }).llmBaseUrl).toBe(DEFAULT_SETTINGS.llmBaseUrl)
     })
-  })
-
-  it("keeps every other string field verbatim when it is a string", () => {
-    const settings = normalizeSettings({
-      llmApiKey: "sk-test",
-      llmModel: "openai/gpt-4o-mini",
-      defaultChatPrompt: "Respondé en criollo.",
-    })
-
-    expect(settings.llmApiKey).toBe("sk-test")
-    expect(settings.llmModel).toBe("openai/gpt-4o-mini")
-    expect(settings.defaultChatPrompt).toBe("Respondé en criollo.")
   })
 
   it("never mutates the shared default settings", () => {
@@ -233,17 +150,24 @@ describe("settings singleton", () => {
 
     const unsubscribe = onSettingsChange(listener)
 
-    await updateSettings({ llmModel: "qwen/qwen3.5-flash-02-23", retrievalTopK: 999 })
+    await updateSettings({ apiBase: "http://192.168.1.50:8080" })
 
-    expect(getSettings().llmModel).toBe("qwen/qwen3.5-flash-02-23")
-    expect(getSettings().retrievalTopK).toBe(50)
-    expect(store.saved).toEqual([
-      { ...DEFAULT_SETTINGS, llmModel: "qwen/qwen3.5-flash-02-23", retrievalTopK: 50 },
-    ])
+    expect(getSettings().apiBase).toBe("http://192.168.1.50:8080")
+    expect(store.saved).toEqual([{ apiBase: "http://192.168.1.50:8080" }])
     expect(listener).toHaveBeenCalledTimes(1)
     expect(listener.mock.calls[0][0]).toEqual(getSettings())
 
     unsubscribe()
+  })
+
+  it("persists the default when a patch normalizes back to it", async () => {
+    const store = createFakeStore()
+    setSettingsStore(store)
+
+    await updateSettings({ apiBase: "   " })
+
+    expect(getSettings().apiBase).toBe(DEFAULT_SETTINGS.apiBase)
+    expect(store.saved).toEqual([{ apiBase: DEFAULT_SETTINGS.apiBase }])
   })
 
   it("stops notifying a listener after it unsubscribes", async () => {
@@ -251,7 +175,7 @@ describe("settings singleton", () => {
     const unsubscribe = onSettingsChange(listener)
 
     unsubscribe()
-    await updateSettings({ llmModel: "openai/gpt-4o-mini" })
+    await updateSettings({ apiBase: "http://10.0.0.7:8080" })
 
     expect(listener).not.toHaveBeenCalled()
   })
@@ -259,7 +183,7 @@ describe("settings singleton", () => {
   it("keeps the previous settings when no store is registered", async () => {
     setSettingsStore(null as unknown as SettingsStore)
 
-    await expect(updateSettings({ llmModel: "openai/gpt-4o-mini" })).resolves.toBeUndefined()
-    expect(getSettings().llmModel).toBe("openai/gpt-4o-mini")
+    await expect(updateSettings({ apiBase: "http://10.0.0.7:8080" })).resolves.toBeUndefined()
+    expect(getSettings().apiBase).toBe("http://10.0.0.7:8080")
   })
 })
