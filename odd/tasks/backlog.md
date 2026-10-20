@@ -108,6 +108,35 @@ feature — a resume that picks the wrong job, or a due-cards query that misses.
 with two users is still cheaper as two copies than as an edit to code that no
 longer has a test failing.
 
+### C3 — Step 7's review left six non-blocking findings
+
+The composition extraction ([`composition-root.md`](composition-root.md)) was
+approved with six advisory findings. None blocks anything and none is a defect a
+failing check proved.
+
+| Id | Lens | Severity | Location |
+| --- | --- | --- | --- |
+| `R3-unused-client-construction` | reliability | WARNING | `internal/composition/clients.go:37-55` |
+| `R2-004` | readability | WARNING | `internal/composition/composition.go:78-87` |
+| `R2-001` | readability | WARNING | `internal/composition/rag.go:113-120` |
+| `R3-ingest-factory-untested` | reliability | SUGGESTION | `internal/composition/rag.go:63-86` |
+| `R2-002` | readability | SUGGESTION | `internal/composition/composition_test.go:206` |
+| `R2-003` | readability | SUGGESTION | `internal/composition/rag.go:56` |
+
+**What is actually known about each one.** The review returned identifiers,
+lenses, severities, and locations — not the findings' prose. Two of them restate
+what the independent verification had already reported from reading the code:
+`NewClients` builds the chat client that `-search` and `-embed` never use
+(unobservable today, because `config.load` defaults both models and validates the
+base URL before any client is built, so the fix is a narrower constructor and not
+a bug fix), and `Ingest` has no test of its own, with the dry-run narrowing the
+part worth pinning. The four readability rows name a location and nothing more.
+Read the stored artifacts under `.git/gentle-ai/` before acting on those.
+
+**How to close:** as part of stage 2 of the CLI work, which edits this same
+package and will re-read every one of these lines anyway. Not as its own slice:
+the finding list is a reason to look, not a work item that earns a commit.
+
 ---
 
 ## 🟡 Missing policy

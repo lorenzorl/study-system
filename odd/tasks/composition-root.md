@@ -101,6 +101,39 @@ executes a `main()`: a wiring mistake would compile and pass every test. That is
 what the base-commit differential in L4 exists to cover, and what an independent
 verification re-ran.
 
+## Review
+
+RDD is enabled, so the range went through the native review (lineage
+`review-aba59c80a4f6dc09`, tier medium, 1,233 changed lines) with three lenses:
+risk, reliability, readability.
+
+The first capture admitted `review-risk` and `review-readability` and refused
+`review-reliability` **at admission**: the emitted payload opened and closed the
+same number of objects and arrays but ended at byte 7,978 without closing the
+document. The refused bytes were not resubmitted. A fresh status reoffered that
+one slot, it ran once more, and that result was admitted.
+
+**Outcome: approved, authority burned** (`gentle-ai.review-acknowledged/v1`,
+revision `sha256:49bb69f6…`). Six findings, all non-blocking: none opened a
+correction, none reopens the candidate, and no correction transition was offered
+for it. They are recorded in [`backlog.md`](backlog.md) as `C3`.
+
+## Findings
+
+| Id | Lens | Severity | Location |
+| --- | --- | --- | --- |
+| `R2-001` | readability | WARNING | `internal/composition/rag.go:113-120` |
+| `R2-004` | readability | WARNING | `internal/composition/composition.go:78-87` |
+| `R3-unused-client-construction` | reliability | WARNING | `internal/composition/clients.go:37-55` |
+| `R2-002` | readability | SUGGESTION | `internal/composition/composition_test.go:206` |
+| `R2-003` | readability | SUGGESTION | `internal/composition/rag.go:56` |
+| `R3-ingest-factory-untested` | reliability | SUGGESTION | `internal/composition/rag.go:63-86` |
+
+The review returned identifiers, lenses, severities, and locations — not the
+findings' prose — so this table claims nothing about their content. Two of them
+duplicate what the independent verification had already reported: the unused chat
+client in `NewClients`, and `Ingest` having no test of its own.
+
 ## Log
 
 **L1 (2026-10-20, request)** — "Quiero que me digas si podemos agregar que tambien
