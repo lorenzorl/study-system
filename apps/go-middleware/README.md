@@ -97,6 +97,11 @@ go run ./cmd/cli reindex                            # rebuild the chunk index fr
 go run ./cmd/cli embed                              # rebuild the embeddings; needs the key and the network
 go run ./cmd/cli search "attention" -limit 5         # search the index; no key, PDF, or storage
 
+go run ./cmd/cli due                               # what is due now
+go run ./cmd/cli review <flashcard-id> -grade 3    # record a review: 1 again .. 4 easy
+go run ./cmd/cli topics                            # the topics and their concept counts
+go run ./cmd/cli concepts [topic]                  # the concepts of one topic, or of all of them
+
 go test ./...
 go vet ./...
 ```

@@ -40,6 +40,10 @@ func commands() []command {
 		{"embed", "rebuild the embeddings of every document", runEmbed},
 		{"convert", "convert a PDF to Markdown and index it", runConvert},
 		{"list", "list the stored artifacts", runList},
+		{"due", "list the flashcards that are due now", runDue},
+		{"review", "record a review of one flashcard", runReview},
+		{"topics", "list the study topics", runTopics},
+		{"concepts", "list the concepts of a topic", runConcepts},
 	}
 }
 
