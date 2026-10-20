@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -12,6 +13,7 @@ import (
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/platform/apperror"
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/platform/config"
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/platform/db"
+	studydomain "github.com/lorenzorangel/study-system/apps/go-middleware/internal/study/domain"
 )
 
 // The tests below are the regression net the two main() functions never had.
@@ -189,6 +191,31 @@ func TestNewClients_BuildsBothClientsFromOneCredential(t *testing.T) {
 	assert.NotNil(t, clients.Model)
 }
 
+func TestNewEmbeddingClients_BuildsOnlyTheEmbeddingClient(t *testing.T) {
+	cfg := testConfig(t, "file:unused")
+	cfg.OpenRouterAPIKey = "test-key"
+
+	// -search and -embed never transcribe, so they must not build — or be able to
+	// fail on — a chat client they never use.
+	clients, err := NewEmbeddingClients(cfg)
+	require.NoError(t, err)
+
+	assert.NotNil(t, clients.Embedding)
+	assert.Nil(t, clients.Model)
+}
+
+func TestNewTranscriptionClients_BuildsOnlyTheChatClient(t *testing.T) {
+	cfg := testConfig(t, "file:unused")
+	cfg.OpenRouterAPIKey = "test-key"
+
+	// The conversion run leaves the index and the vectors to later steps.
+	clients, err := NewTranscriptionClients(cfg)
+	require.NoError(t, err)
+
+	assert.Nil(t, clients.Embedding)
+	assert.NotNil(t, clients.Model)
+}
+
 func TestNewClients_RejectsAMalformedBaseURL(t *testing.T) {
 	cfg := testConfig(t, "file:unused")
 	cfg.OpenRouterAPIKey = "test-key"
@@ -218,19 +245,43 @@ func TestNewStudy_WiresEveryUseCaseToTheGivenDatabase(t *testing.T) {
 
 	conceptID, err := study.SyncConcept.Execute(ctx, topic.Name, "Dijkstra", "algorithms/dijkstra.md")
 	require.NoError(t, err)
-	assert.NotEmpty(t, conceptID)
+	require.NotEmpty(t, conceptID)
+
+	// CreateConcept is the manual path; it must work beside the synced one.
+	manual, err := study.CreateConcept.Execute(ctx, topic.ID, "BFS")
+	require.NoError(t, err)
+	assert.Equal(t, topic.ID, manual.TopicID)
+
+	resourceID, err := study.SyncResource.Execute(ctx, topic.Name, "CLRS", "book", "isbn:9780262046305")
+	require.NoError(t, err)
+	assert.NotEmpty(t, resourceID)
+
+	processed, err := study.SyncFlashcards.Execute(ctx, conceptID, []studydomain.Flashcard{
+		{ObsidianID: "card-1", Question: "What does Dijkstra compute?", Answer: "Shortest paths"},
+		{ObsidianID: "card-2", Question: "Which structure does it use?", Answer: "A priority queue"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 2, processed)
+
+	// Syncing creates an initial card state whose next review is now, so both
+	// cards are due: this read is what proves the write reached the same database.
+	due, err := study.GetDueCards.Execute(ctx)
+	require.NoError(t, err)
+	require.Len(t, due, 2)
+
+	reviewed, err := study.SubmitReview.Execute(ctx, due[0].FlashcardID, 3, 4200)
+	require.NoError(t, err)
+	assert.Equal(t, due[0].FlashcardID, reviewed.FlashcardID)
+
+	// A reviewed card is scheduled days ahead, so the due list shrinks to one.
+	due, err = study.GetDueCards.Execute(ctx)
+	require.NoError(t, err)
+	assert.Len(t, due, 1)
 
 	tree, err := study.ListConcepts.Execute(ctx)
 	require.NoError(t, err)
 	require.Len(t, tree, 1)
-	require.Len(t, tree[0].Concepts, 1)
-	assert.Equal(t, "Dijkstra", tree[0].Concepts[0].Title)
-
-	// The review path is wired to the same database too, which is what a state
-	// read after a write proves.
-	due, err := study.GetDueCards.Execute(ctx)
-	require.NoError(t, err)
-	assert.Empty(t, due)
+	assert.Len(t, tree[0].Concepts, 2)
 }
 
 func TestNewRAG_ListDocumentsOnAnEmptyCorpusIsAnEmptySlice(t *testing.T) {
@@ -309,4 +360,26 @@ func TestRAGEmbed_WithoutAClientIsAnError(t *testing.T) {
 	assert.Nil(t, embedder)
 	assert.Contains(t, err.Error(), config.EnvOpenRouterAPIKey)
 	assert.True(t, errors.Is(err, apperror.ErrInvalidInput), "got %v", err)
+}
+
+func TestRAGIngest_ZeroClientsDoesNotBecomeATypedNilTranscriber(t *testing.T) {
+	dsn, _ := fileDSN(t)
+	ctx := context.Background()
+
+	sqlDB, err := OpenDatabase(ctx, testConfig(t, dsn))
+	require.NoError(t, err)
+	t.Cleanup(func() { sqlDB.Close() })
+
+	// The dry-run shape: no client, no store. If the factory passed the zero
+	// Clients' model field straight through, the interface would hold a nil
+	// *llm.Client — not nil — and the use case's own nil check would pass.
+	useCase := NewRAG(sqlDB).Ingest(Clients{}, nil)
+
+	// Reflection is the only seam: the transcriber is unexported and a nil
+	// interface is not observable from behaviour a dry run would exercise.
+	transcriber := reflect.ValueOf(useCase).Elem().FieldByName("transcriber")
+	require.True(t, transcriber.IsValid(), "the use case no longer has a transcriber field")
+
+	assert.True(t, transcriber.IsNil(),
+		"a zero Clients must narrow to a nil domain.PageTranscriber, not a nil *llm.Client")
 }

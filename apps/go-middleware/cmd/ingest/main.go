@@ -86,7 +86,9 @@ func run() error {
 		// search stays lexical and reads only the database, which is what keeps it
 		// working on a machine with no credential and no network. With a key, the
 		// use case still falls back to lexical when the model has no stored vector.
-		clients, err := composition.NewClients(cfg)
+		// Only the embedding client is built: a search reads vectors and never
+		// transcribes a page.
+		clients, err := composition.NewEmbeddingClients(cfg)
 		if err != nil {
 			return err
 		}
@@ -119,7 +121,7 @@ func run() error {
 				config.EnvOpenRouterAPIKey)
 		}
 
-		clients, err := composition.NewClients(cfg)
+		clients, err := composition.NewEmbeddingClients(cfg)
 		if err != nil {
 			return err
 		}
@@ -161,7 +163,9 @@ func run() error {
 				config.EnvOpenRouterAPIKey)
 		}
 
-		clients, err = composition.NewClients(cfg)
+		// The conversion run only transcribes pages: the index and the vectors are
+		// later steps, so no embedding client is built here.
+		clients, err = composition.NewTranscriptionClients(cfg)
 		if err != nil {
 			return err
 		}

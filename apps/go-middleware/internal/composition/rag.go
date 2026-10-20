@@ -51,13 +51,18 @@ func NewRAG(sqlDB *sql.DB) *RAG {
 //
 // This is the one place that rule lives. It was previously repeated at two call
 // sites, where the lexical branch could drift from the hybrid one without either
-// failing. The model argument is the embedding model, which the semantic stage
-// uses to read only the vectors built by that model.
-func (r *RAG) Search(clients Clients, model string) *ragapp.SearchUseCase {
+// failing.
+//
+// The embedding model is required even on the lexical path, where it is not read.
+// It is the client that chooses the branch, not the caller: passing the model
+// unconditionally is what keeps this decision out of the two entrypoints, and it
+// is why the parameter is named for the role it plays rather than left as a bare
+// "model".
+func (r *RAG) Search(clients Clients, embeddingModel string) *ragapp.SearchUseCase {
 	if clients.Embedding == nil {
 		return ragapp.NewSearchUseCase(r.chunks)
 	}
-	return ragapp.NewHybridSearchUseCase(r.chunks, r.embeddings, clients.Embedding, model)
+	return ragapp.NewHybridSearchUseCase(r.chunks, r.embeddings, clients.Embedding, embeddingModel)
 }
 
 // Ingest builds the conversion run.
@@ -99,7 +104,7 @@ func (r *RAG) Index() *ragapp.IndexDocumentUseCase {
 // a working stage. Ingest and Status narrow because they have a meaningful
 // no-client behaviour; this one does not, so the absence is an error the caller
 // has to handle.
-func (r *RAG) Embed(clients Clients, model string) (*ragapp.EmbedDocumentUseCase, error) {
+func (r *RAG) Embed(clients Clients, embeddingModel string) (*ragapp.EmbedDocumentUseCase, error) {
 	if clients.Embedding == nil {
 		return nil, fmt.Errorf(
 			"%s is not set: embedding a document calls the model and cannot run without it: %w",
@@ -107,17 +112,19 @@ func (r *RAG) Embed(clients Clients, model string) (*ragapp.EmbedDocumentUseCase
 	}
 
 	return ragapp.NewEmbedDocumentUseCase(
-		r.documents, r.chunks, r.embeddings, clients.Embedding, model), nil
+		r.documents, r.chunks, r.embeddings, clients.Embedding, embeddingModel), nil
 }
 
 // Process builds the full pipeline for one already-registered document:
-// ingestion, then the index, then the embeddings. Like Embed, it requires a
-// model client: the pipeline exists to produce text and vectors, so the absence
-// is reported here instead of surfacing as a nil dereference mid-run.
+// ingestion, then the index, then the embeddings.
+//
+// It requires a model client for the same reason Embed does, and reports its
+// absence here rather than letting a nil dereference surface mid-run. The rest of
+// the wiring is the three stages this package already builds.
 func (r *RAG) Process(
-	clients Clients, model string, store *storage.Store,
+	clients Clients, embeddingModel string, store *storage.Store,
 ) (*ragapp.ProcessDocumentUseCase, error) {
-	embed, err := r.Embed(clients, model)
+	embed, err := r.Embed(clients, embeddingModel)
 	if err != nil {
 		return nil, err
 	}
@@ -139,14 +146,14 @@ func (r *RAG) Process(
 // pass and the first status read would panic. Narrowing here, while the value is
 // still concrete, is what keeps "no processor" meaning "no known failure" — the
 // case of a process that never ran the pipeline.
-func (r *RAG) Status(processor *ragapp.BackgroundProcessor, model string) *ragapp.DocumentStatusUseCase {
+func (r *RAG) Status(processor *ragapp.BackgroundProcessor, embeddingModel string) *ragapp.DocumentStatusUseCase {
 	var failures ragapp.FailureReporter
 	if processor != nil {
 		failures = processor
 	}
 
 	return ragapp.NewDocumentStatusUseCase(
-		r.documents, r.jobs, r.pages, r.chunks, r.embeddings, failures, model)
+		r.documents, r.jobs, r.pages, r.chunks, r.embeddings, failures, embeddingModel)
 }
 
 // ListDocuments builds the corpus list: every document with its page and chunk

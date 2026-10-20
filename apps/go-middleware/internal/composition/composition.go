@@ -82,11 +82,18 @@ func OpenReadOnlyDatabase(ctx context.Context, cfg *config.Config) (*sql.DB, err
 // found", exactly as a database that has never seen those bytes does, and writes
 // nothing to disk.
 func OpenPlanningDatabase(ctx context.Context, cfg *config.Config) (*sql.DB, error) {
-	if sqlDB, err := db.Open(ctx, readOnlyDSN(cfg.DatabaseDSN)); err == nil {
+	// Any failure to open the file read-only falls back to the empty schema, not
+	// only a missing file: a database that exists but cannot be read then answers
+	// the planning questions with "not found" instead of stopping a dry run that
+	// cannot write anything anyway. The error is named so the next reader can see
+	// the fallback is deliberate and not an ignored failure; it is not returned,
+	// because the schema below is the answer and not an error.
+	sqlDB, err := db.Open(ctx, readOnlyDSN(cfg.DatabaseDSN))
+	if err == nil {
 		return sqlDB, nil
 	}
 
-	sqlDB, err := db.Open(ctx, ":memory:")
+	sqlDB, err = db.Open(ctx, ":memory:")
 	if err != nil {
 		return nil, fmt.Errorf("open planning database: %w", err)
 	}

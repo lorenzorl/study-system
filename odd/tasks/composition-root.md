@@ -134,6 +134,11 @@ findings' prose — so this table claims nothing about their content. Two of the
 duplicate what the independent verification had already reported: the unused chat
 client in `NewClients`, and `Ingest` having no test of its own.
 
+**All six were addressed in the same session**, before the follow-up work that
+would have touched the same lines. [`backlog.md`](backlog.md) records what each one
+changed, under `C3 (closed)`, together with the caveat that four of them were read
+off their line and interpreted.
+
 ## Log
 
 **L1 (2026-10-20, request)** — "Quiero que me digas si podemos agregar que tambien
@@ -209,5 +214,30 @@ lexical branches actually differ is pinned in `rag/app/search_test.go`, where th
 behaviour lives. And `-search`/`-embed` now also construct the chat client they
 do not use: unobservable, because `config.load` defaults and trims both models and
 validates the base URL before any client is built.
+
+**L6 (2026-10-20, the six findings closed in the same session)** — the review's
+six advisory findings were all addressed, before the follow-up work that would
+have touched the same lines. The search-test gap L5 accepted stays accepted: it
+is pinned where the behaviour lives. What changed is documented one by one in
+`backlog.md` under `C3 (closed)`.
+
+The one with real design content was the unused client, which is L5's accepted
+finding turned into work. `NewClients` split into three role constructors over one
+`buildClients` helper: `NewClients` for the server, `NewEmbeddingClients` for
+`-search` and `-embed`, `NewTranscriptionClients` for the conversion run — which
+never embeds and was paying for an embedding client in the other direction, a
+waste the review did not name but the same class. Why the split is safe: a command
+wired to the wrong constructor fails loudly, because `Embed` refuses a zero client
+with an error naming the variable, rather than silently doing nothing.
+
+The four readability findings were each read off their line and interpreted, so
+what was changed is written in `C3 (closed)` and not only in the commit.
+
+18 tests in the package now (was 15). The study wiring test exercises all eight
+use cases instead of four: it syncs two cards, sees both due, submits a grade-3
+review, and sees the due list shrink to one. `gofmt`, `go build`, `go vet` clean;
+`go test ./... -count=1` ok in all 14 packages. The `-search` output was compared
+against L4's recorded baseline and matches it hit for hit, and `-embed` without a
+key still prints the command's own message and exits 1.
 
 

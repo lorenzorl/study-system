@@ -9,11 +9,10 @@ import (
 
 // Clients are the two model clients the RAG context uses.
 //
-// They are built together because they share one credential and one API root,
-// and they are a struct rather than two return values because "no API key" is a
-// state both callers branch on. The zero value means exactly that: no key was
-// configured, so no model work is possible, and the server and the command both
-// stay usable without one.
+// They share one credential and one API root, and they are a struct rather than
+// two return values because "no API key" is a state every caller branches on. The
+// zero value means exactly that: no key was configured, so no model work is
+// possible, and the server and the commands both stay usable without one.
 //
 // The fields are concrete pointers on purpose. A nil *llm.EmbeddingClient stored
 // in a domain.Embedder interface is not == nil, so a use case checking for nil
@@ -27,29 +26,62 @@ type Clients struct {
 	Model *llm.Client
 }
 
-// NewClients builds both clients, or returns the zero Clients when no API key is
-// configured.
+// NewClients builds both clients.
 //
-// A missing key is not an error here: the server boots and serves lexical search
-// and status without one, and the commands decide for themselves whether the mode
-// they are running needs a model. Requiring the key in this constructor would make
-// "no credential" indistinguishable from "misconfigured".
+// It is what the server uses, because the server does all three things: it
+// searches (embedding), it transcribes (model), and it runs the pipeline (both).
 func NewClients(cfg *config.Config) (Clients, error) {
+	return buildClients(cfg, true, true)
+}
+
+// NewEmbeddingClients builds only the embedding client.
+//
+// The commands that search the index or rebuild the vectors never transcribe a
+// page, so they must not construct a chat client they will not use — and must not
+// be able to fail on one either.
+func NewEmbeddingClients(cfg *config.Config) (Clients, error) {
+	return buildClients(cfg, true, false)
+}
+
+// NewTranscriptionClients builds only the chat client.
+//
+// The conversion run turns pages into text and leaves the index and the vectors
+// to later steps, so it never embeds a query or a chunk.
+func NewTranscriptionClients(cfg *config.Config) (Clients, error) {
+	return buildClients(cfg, false, true)
+}
+
+// buildClients is the one place the "no key means no client" rule lives, and the
+// one place that names the credential in its errors.
+//
+// A missing key is not an error: the server boots and serves lexical search and
+// status without one, and each command decides for itself whether the mode it is
+// running needs a model. Requiring the key here would make "no credential"
+// indistinguishable from "misconfigured".
+func buildClients(cfg *config.Config, wantEmbedding, wantModel bool) (Clients, error) {
 	if cfg.OpenRouterAPIKey == "" {
 		return Clients{}, nil
 	}
 
-	embedding, err := llm.NewEmbeddingClient(
-		cfg.OpenRouterAPIKey, cfg.OpenRouterBaseURL, cfg.EmbeddingModel, llm.Options{})
-	if err != nil {
-		return Clients{}, fmt.Errorf("create embedding client: %w", err)
+	var clients Clients
+
+	if wantEmbedding {
+		embedding, err := llm.NewEmbeddingClient(
+			cfg.OpenRouterAPIKey, cfg.OpenRouterBaseURL, cfg.EmbeddingModel, llm.Options{})
+		if err != nil {
+			return Clients{}, fmt.Errorf("create embedding client: %w", err)
+		}
+		clients.Embedding = embedding
 	}
 
-	model, err := llm.NewClient(
-		cfg.OpenRouterAPIKey, cfg.OpenRouterBaseURL, cfg.LLMModel, llm.Options{})
-	if err != nil {
-		return Clients{}, fmt.Errorf("create model client: %w", err)
+	if wantModel {
+		model, err := llm.NewClient(
+			cfg.OpenRouterAPIKey, cfg.OpenRouterBaseURL, cfg.LLMModel, llm.Options{})
+		if err != nil {
+			return Clients{}, fmt.Errorf("create model client: %w", err)
+		}
+		clients.Model = model
 	}
 
-	return Clients{Embedding: embedding, Model: model}, nil
+	return clients, nil
 }

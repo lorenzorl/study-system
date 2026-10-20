@@ -108,34 +108,43 @@ feature — a resume that picks the wrong job, or a due-cards query that misses.
 with two users is still cheaper as two copies than as an edit to code that no
 longer has a test failing.
 
-### C3 — Step 7's review left six non-blocking findings
+### C3 (closed) — Step 7's review left six non-blocking findings
 
 The composition extraction ([`composition-root.md`](composition-root.md)) was
-approved with six advisory findings. None blocks anything and none is a defect a
-failing check proved.
+approved with six advisory findings. None blocked anything and none was a defect
+a failing check proved. They were opened and closed in the same session: the
+follow-up work was going to touch these same lines, so carrying them would have
+meant re-reading them twice.
 
 | Id | Lens | Severity | Location |
 | --- | --- | --- | --- |
-| `R3-unused-client-construction` | reliability | WARNING | `internal/composition/clients.go:37-55` |
-| `R2-004` | readability | WARNING | `internal/composition/composition.go:78-87` |
-| `R2-001` | readability | WARNING | `internal/composition/rag.go:113-120` |
-| `R3-ingest-factory-untested` | reliability | SUGGESTION | `internal/composition/rag.go:63-86` |
-| `R2-002` | readability | SUGGESTION | `internal/composition/composition_test.go:206` |
-| `R2-003` | readability | SUGGESTION | `internal/composition/rag.go:56` |
+| `R3-unused-client-construction` | reliability | WARNING | `internal/composition/clients.go` |
+| `R2-004` | readability | WARNING | `internal/composition/composition.go` (`OpenPlanningDatabase`) |
+| `R2-001` | readability | WARNING | `internal/composition/rag.go` (`Process`) |
+| `R3-ingest-factory-untested` | reliability | SUGGESTION | `internal/composition/rag.go` (`Ingest`) |
+| `R2-002` | readability | SUGGESTION | `internal/composition/composition_test.go` (the study wiring test) |
+| `R2-003` | readability | SUGGESTION | `internal/composition/rag.go` (`Search`) |
 
-**What is actually known about each one.** The review returned identifiers,
-lenses, severities, and locations — not the findings' prose. Two of them restate
-what the independent verification had already reported from reading the code:
-`NewClients` builds the chat client that `-search` and `-embed` never use
-(unobservable today, because `config.load` defaults both models and validates the
-base URL before any client is built, so the fix is a narrower constructor and not
-a bug fix), and `Ingest` has no test of its own, with the dry-run narrowing the
-part worth pinning. The four readability rows name a location and nothing more.
-Read the stored artifacts under `.git/gentle-ai/` before acting on those.
+**What each one changed.** `R3-unused-client-construction`: `NewClients` split
+into three role constructors — `NewClients`, `NewEmbeddingClients`,
+`NewTranscriptionClients` — over one `buildClients` helper, so `-search` and
+`-embed` build only the embedding client and the conversion run only the chat
+client. `R2-004`: the discarded read-only error is named, and the comment now
+says the fallback covers every failure, not only a missing file. `R2-001`:
+`Process`'s comment stopped restating `Embed`'s and says what the error return is
+for. `R3-ingest-factory-untested`:
+`TestRAGIngest_ZeroClientsDoesNotBecomeATypedNilTranscriber` pins the narrowing
+through the only seam there is, reflection, and says so. `R2-002`:
+`TestNewStudy_WiresEveryUseCaseToTheGivenDatabase` now exercises all eight use
+cases. `R2-003`: the parameter is `embeddingModel` in `Search`, `Embed`,
+`Process`, and `Status`, and `Search`'s comment explains why it is required even
+on the lexical path.
 
-**How to close:** as part of stage 2 of the CLI work, which edits this same
-package and will re-read every one of these lines anyway. Not as its own slice:
-the finding list is a reason to look, not a work item that earns a commit.
+**The caveat worth keeping.** The review returned identifiers, lenses, severities,
+and locations — never the findings' prose. Four of the six were read off their
+line and interpreted. If the reviewer meant something else at `rag.go:56` or
+`composition_test.go:206`, this entry is where that becomes visible, because what
+was changed is written here and not only in the commit.
 
 ---
 
