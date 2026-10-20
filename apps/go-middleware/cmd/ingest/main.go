@@ -20,21 +20,14 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"slices"
-	"strings"
 	"text/tabwriter"
 	"time"
 
+	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/composition"
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/platform/apperror"
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/platform/config"
-	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/platform/db"
-	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/platform/llm"
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/platform/storage"
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/rag/app"
-	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/rag/domain"
-	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/rag/infra/pdf"
-	ragsqlite "github.com/lorenzorangel/study-system/apps/go-middleware/internal/rag/sqlite"
-	studysqlite "github.com/lorenzorangel/study-system/apps/go-middleware/internal/study/sqlite"
 )
 
 func main() {
@@ -75,39 +68,30 @@ func run() error {
 	// without migrations and without the storage tree, and returns before the API
 	// key and the PDF are touched, so it works on a machine that has none of them.
 	//
-	// It deliberately does not go through openDatabase's planning path: that path
-	// falls back to an empty in-memory schema when the file cannot be opened, and
-	// for a search that fallback would answer every query with "0 results" instead
-	// of reporting that the database it was told to read is not there.
+	// It deliberately does not go through the planning path
+	// (composition.OpenPlanningDatabase): that path falls back to an empty
+	// in-memory schema when the file cannot be opened, and for a search that
+	// fallback would answer every query with "0 results" instead of reporting that
+	// the database it was told to read is not there.
 	if *search != "" {
 		ctx := context.Background()
 
-		sqlDB, err := db.Open(ctx, readOnlyDSN(cfg.DatabaseDSN))
+		sqlDB, err := composition.OpenReadOnlyDatabase(ctx, cfg)
 		if err != nil {
 			return fmt.Errorf("open database for search: %w", err)
 		}
 		defer sqlDB.Close()
 
-		chunks := ragsqlite.NewChunkRepository(sqlDB)
-
 		// The semantic stage is best-effort at the command level. With no key the
 		// search stays lexical and reads only the database, which is what keeps it
 		// working on a machine with no credential and no network. With a key, the
 		// use case still falls back to lexical when the model has no stored vector.
-		var searcher *app.SearchUseCase
-		if cfg.OpenRouterAPIKey == "" {
-			searcher = app.NewSearchUseCase(chunks)
-		} else {
-			client, err := llm.NewEmbeddingClient(
-				cfg.OpenRouterAPIKey, cfg.OpenRouterBaseURL, cfg.EmbeddingModel, llm.Options{})
-			if err != nil {
-				return fmt.Errorf("create embedding client: %w", err)
-			}
-
-			searcher = app.NewHybridSearchUseCase(
-				chunks, ragsqlite.NewEmbeddingRepository(sqlDB), client, cfg.EmbeddingModel)
+		clients, err := composition.NewClients(cfg)
+		if err != nil {
+			return err
 		}
 
+		searcher := composition.NewRAG(sqlDB).Search(clients, cfg.EmbeddingModel)
 		return runSearch(ctx, searcher, *search, *limit)
 	}
 
@@ -116,19 +100,13 @@ func run() error {
 	if *reindex {
 		ctx := context.Background()
 
-		sqlDB, err := openDatabase(ctx, cfg, false)
+		sqlDB, err := composition.OpenDatabase(ctx, cfg)
 		if err != nil {
 			return err
 		}
 		defer sqlDB.Close()
 
-		indexer := app.NewIndexDocumentUseCase(
-			ragsqlite.NewDocumentRepository(sqlDB),
-			ragsqlite.NewJobRepository(sqlDB),
-			ragsqlite.NewPageOutcomeRepository(sqlDB),
-			ragsqlite.NewChunkRepository(sqlDB),
-		)
-		return runReindex(ctx, indexer)
+		return runReindex(ctx, composition.NewRAG(sqlDB).Index())
 	}
 
 	// Embedding is the only step that costs money and reaches the network, so it
@@ -141,28 +119,20 @@ func run() error {
 				config.EnvOpenRouterAPIKey)
 		}
 
-		client, err := llm.NewEmbeddingClient(
-			cfg.OpenRouterAPIKey, cfg.OpenRouterBaseURL, cfg.EmbeddingModel, llm.Options{})
+		clients, err := composition.NewClients(cfg)
 		if err != nil {
-			return fmt.Errorf("create embedding client: %w", err)
+			return err
 		}
 
 		ctx := context.Background()
 
-		sqlDB, err := openDatabase(ctx, cfg, false)
+		sqlDB, err := composition.OpenDatabase(ctx, cfg)
 		if err != nil {
 			return err
 		}
 		defer sqlDB.Close()
 
-		embedder := app.NewEmbedDocumentUseCase(
-			ragsqlite.NewDocumentRepository(sqlDB),
-			ragsqlite.NewChunkRepository(sqlDB),
-			ragsqlite.NewEmbeddingRepository(sqlDB),
-			client,
-			cfg.EmbeddingModel,
-		)
-		return runEmbed(ctx, embedder)
+		return runEmbed(ctx, composition.NewRAG(sqlDB).Embed(clients, cfg.EmbeddingModel))
 	}
 
 	if *pdfPath == "" {
@@ -177,33 +147,39 @@ func run() error {
 	// The key is checked before the database is opened and before the first page
 	// is read, so a missing key cannot cost hundreds of pages of work. A dry run
 	// is different: it plans without ever calling the model, so it needs no key,
-	// and a text-only book needs none either.
-	var transcriber domain.PageTranscriber
+	// and a text-only book needs none either. No client is built on a dry run, so
+	// the use case receives no transcriber at all.
+	var clients composition.Clients
 	if !*dryRun {
 		if cfg.OpenRouterAPIKey == "" {
 			return fmt.Errorf("%s is not set: the ingestion run cannot transcribe pages without it",
 				config.EnvOpenRouterAPIKey)
 		}
 
-		client, err := llm.NewClient(cfg.OpenRouterAPIKey, cfg.OpenRouterBaseURL, cfg.LLMModel, llm.Options{})
+		clients, err = composition.NewClients(cfg)
 		if err != nil {
-			return fmt.Errorf("create model client: %w", err)
+			return err
 		}
-		transcriber = client
 	}
 
 	ctx := context.Background()
 
-	sqlDB, err := openDatabase(ctx, cfg, *dryRun)
+	// A real run opens read-write and applies migrations. A dry run opens the
+	// planning database: the real file read-only when it exists, and an empty
+	// migrated in-memory schema when it does not, which answers every lookup with
+	// "not found" and writes nothing to disk.
+	var sqlDB *sql.DB
+	if *dryRun {
+		sqlDB, err = composition.OpenPlanningDatabase(ctx, cfg)
+	} else {
+		sqlDB, err = composition.OpenDatabase(ctx, cfg)
+	}
 	if err != nil {
 		return err
 	}
 	defer sqlDB.Close()
 
-	documents := ragsqlite.NewDocumentRepository(sqlDB)
-	jobs := ragsqlite.NewJobRepository(sqlDB)
-	pages := ragsqlite.NewPageOutcomeRepository(sqlDB)
-	chunks := ragsqlite.NewChunkRepository(sqlDB)
+	rag := composition.NewRAG(sqlDB)
 
 	// A dry run must not create the storage tree either; it reads the local PDF
 	// and the database only.
@@ -215,16 +191,7 @@ func run() error {
 		}
 	}
 
-	useCase := app.NewIngestDocumentUseCase(
-		documents,
-		jobs,
-		pages,
-		// A nil runner selects the real poppler binaries, so a missing tool fails
-		// at Open rather than at the page that first needs it.
-		pdf.NewSource(nil),
-		transcriber,
-		store,
-	)
+	useCase := rag.Ingest(clients, store)
 
 	report, runErr := useCase.Execute(ctx, app.IngestRequest{
 		PDFPath:   *pdfPath,
@@ -264,7 +231,7 @@ func run() error {
 	// just settled. Execute stays unaware of the index: a conversion is worth
 	// keeping even when indexing is not, and a failure here must not look like a
 	// failure to convert.
-	indexed, err := app.NewIndexDocumentUseCase(documents, jobs, pages, chunks).Execute(ctx, report.DocumentID)
+	indexed, err := rag.Index().Execute(ctx, report.DocumentID)
 	if err != nil {
 		return fmt.Errorf("index document %s: %w", report.DocumentID, err)
 	}
@@ -328,55 +295,6 @@ func runReindex(ctx context.Context, indexer *app.IndexDocumentUseCase) error {
 
 	fmt.Printf("reindexed %d documents, %d chunks\n", report.Documents, report.Chunks)
 	return nil
-}
-
-// openDatabase opens the planning or the working database.
-//
-// A real run opens read-write and applies migrations. A dry run must not write
-// to the database: it opens read-only and skips migrations, and when there is no
-// file to open read-only it uses an empty in-memory schema, which answers every
-// lookup with "not found" exactly as a database that has never seen the bytes
-// does. That fallback writes nothing to disk.
-func openDatabase(ctx context.Context, cfg *config.Config, dryRun bool) (*sql.DB, error) {
-	migrations := slices.Concat(studysqlite.Migrations(), ragsqlite.Migrations())
-
-	if dryRun {
-		if sqlDB, err := db.Open(ctx, readOnlyDSN(cfg.DatabaseDSN)); err == nil {
-			return sqlDB, nil
-		}
-
-		sqlDB, err := db.Open(ctx, ":memory:")
-		if err != nil {
-			return nil, fmt.Errorf("open planning database: %w", err)
-		}
-		if err := db.Migrate(ctx, sqlDB, migrations); err != nil {
-			sqlDB.Close()
-			return nil, fmt.Errorf("prepare planning database: %w", err)
-		}
-		return sqlDB, nil
-	}
-
-	sqlDB, err := db.Open(ctx, cfg.DatabaseDSN)
-	if err != nil {
-		return nil, fmt.Errorf("open database: %w", err)
-	}
-	if err := db.Migrate(ctx, sqlDB, migrations); err != nil {
-		sqlDB.Close()
-		return nil, fmt.Errorf("migrate database: %w", err)
-	}
-	return sqlDB, nil
-}
-
-// readOnlyDSN appends SQLite's read-only mode to a file DSN, preserving any
-// query string it already carries. An in-memory DSN is returned unchanged.
-func readOnlyDSN(dsn string) string {
-	if strings.Contains(dsn, ":memory:") {
-		return dsn
-	}
-	if strings.Contains(dsn, "?") {
-		return dsn + "&mode=ro"
-	}
-	return dsn + "?mode=ro"
 }
 
 // printPlan writes the plan line before any model work starts.
