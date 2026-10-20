@@ -1,6 +1,6 @@
 # Step 7 — Shared composition root
 
-**Status:** in progress
+**Status:** done
 **Created:** 2026-10-20
 **Depends on:** step 0-6 (every package it wires), `platform/config`, `platform/db`
 
@@ -82,7 +82,24 @@ answers every lookup with "not found" and writes nothing to disk.
       tests (S3)
 - [x] T3 — `cmd/server`: build through composition, identical behaviour (S2, S3)
 - [x] T4 — `cmd/ingest`: build through composition, identical behaviour (S2, S3)
-- [ ] T5 — README, verification, and the work-unit commits (S2)
+- [x] T5 — README, verification, and the work-unit commits (S2)
+
+## Commits
+
+The slice boundary is recorded here because the first commit is larger than one
+review sitting, and the feature document is where the reason lives.
+
+| Commit | Holds | Risk |
+| --- | --- | --- |
+| `078024d` | `internal/composition` and its suite, plus this document. The package is unused by the binaries at this point: it compiles and its tests pass on its own. | none |
+| `a07e9a4` | `cmd/server`, now built through composition. | item 6 |
+| `1e64d74` | `cmd/ingest`, all five modes, now built through composition. | item 6 |
+| `ce6c9e2` | the README section and the layout entry. | none |
+
+Risk item 6 is named on the two command commits because nothing in the suite
+executes a `main()`: a wiring mistake would compile and pass every test. That is
+what the base-commit differential in L4 exists to cover, and what an independent
+verification re-ran.
 
 ## Log
 
@@ -134,4 +151,30 @@ in a `domain.Embedder` — and a nil `*BackgroundProcessor` stored in a
 the first call would panic. Both factories take the concrete type (`Clients`, and
 the processor in `RAG.Status`) and narrow to the interface themselves, so "no
 credential" and "no processor" keep meaning what they say.
+
+**L5 (2026-10-20, independent verification, one defect fixed)** — a
+`gentle-ai-verify` run reproduced the build health, confirmed `go.mod` and
+`go.sum` are untouched across the range, and re-ran the differential itself on a
+byte-identical copy of `data/` rather than trusting L4: six CLI comparisons and
+fifteen HTTP probes, including all eight study POST routes, so no handler could
+have received the wrong use case. It returned **S2 holds, S3 holds**, and raised
+one real defect against L4's claim.
+
+`RAG.Embed` passed `clients.Embedding` straight into a `domain.Embedder` with no
+narrowing, so a zero `Clients` produced a typed-nil — exactly the hazard the
+package says it removes. It was unreachable (`-embed` checks the key first, and
+the server builds `Process` only when the client exists), but a guarantee that is
+only true by accident is not a guarantee. `Embed` and `Process` now **refuse**
+with an error naming `STUDY_OPENROUTER_API_KEY` instead of narrowing: there is no
+lexical fallback for writing a vector, so an embedder-less use case would fail
+deep inside a run as a nil dereference rather than at the call that built it. One
+test added; the command's own message and exit code are unchanged.
+
+Two further findings were accepted, not fixed. Composition's search test only
+proves the lexical path does not panic on an empty corpus; that the hybrid and
+lexical branches actually differ is pinned in `rag/app/search_test.go`, where the
+behaviour lives. And `-search`/`-embed` now also construct the chat client they
+do not use: unobservable, because `config.load` defaults and trims both models and
+validates the base URL before any client is built.
+
 
