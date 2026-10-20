@@ -209,7 +209,6 @@ describe("FSD boundaries", () => {
       expect.arrayContaining([
         "app/main.ts",
         "pages/dashboard/ui/DashboardPage.vue",
-        "pages/corpus/ui/CorpusPage.vue",
         "widgets/topic-list/ui/TopicList.vue",
         "features/create-topic/model/useCreateTopic.ts",
         "features/sync-note/model/useSyncNote.ts",

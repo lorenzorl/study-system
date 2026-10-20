@@ -294,8 +294,9 @@ activated with `workspace.getLeaf("tab")`). The file and its view type are gone;
 **Backend status (unchanged).** The Go service still exposes
 `POST /api/rag/documents`, `GET /api/rag/documents/{id}/status` and
 `GET /api/rag/search`, plus its ingestion and study endpoints. The plugin simply
-no longer calls the RAG ones; `requestMultipart` in `shared/api/client.ts` stays
-because it is part of the HTTP core the plugin still owns.
+no longer calls the RAG ones, and the multipart helper the upload used
+(`requestMultipart`) went with it: `shared/api/client.ts` is now the JSON `request`
+path only.
 
 ## 9. Naming and imports
 
