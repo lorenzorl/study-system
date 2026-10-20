@@ -293,3 +293,20 @@ func TestNewRAG_StatusReportsAnUnknownDocument(t *testing.T) {
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, apperror.ErrNotFound), "got %v", err)
 }
+
+func TestRAGEmbed_WithoutAClientIsAnError(t *testing.T) {
+	dsn, _ := fileDSN(t)
+	ctx := context.Background()
+
+	sqlDB, err := OpenDatabase(ctx, testConfig(t, dsn))
+	require.NoError(t, err)
+	t.Cleanup(func() { sqlDB.Close() })
+
+	// There is no lexical fallback for writing a vector, so the absence of a
+	// client is refused here rather than surfacing as a nil dereference mid-run.
+	embedder, err := NewRAG(sqlDB).Embed(Clients{}, config.DefaultEmbeddingModel)
+	require.Error(t, err)
+	assert.Nil(t, embedder)
+	assert.Contains(t, err.Error(), config.EnvOpenRouterAPIKey)
+	assert.True(t, errors.Is(err, apperror.ErrInvalidInput), "got %v", err)
+}

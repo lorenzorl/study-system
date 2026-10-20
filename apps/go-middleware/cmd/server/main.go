@@ -78,8 +78,12 @@ func main() {
 	// Wait drains them on shutdown.
 	var processor *ragapp.BackgroundProcessor
 	if clients.Embedding != nil {
-		processor = ragapp.NewBackgroundProcessor(
-			ctx, ragapp.DefaultProcessWorkers, rag.Process(clients, cfg.EmbeddingModel, store))
+		process, err := rag.Process(clients, cfg.EmbeddingModel, store)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		processor = ragapp.NewBackgroundProcessor(ctx, ragapp.DefaultProcessWorkers, process)
 	}
 
 	// The HTTP surface adds no retrieval behaviour. Without a key the search is

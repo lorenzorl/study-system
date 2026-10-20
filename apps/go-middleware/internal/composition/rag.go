@@ -2,7 +2,10 @@ package composition
 
 import (
 	"database/sql"
+	"fmt"
 
+	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/platform/apperror"
+	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/platform/config"
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/platform/storage"
 	ragapp "github.com/lorenzorangel/study-system/apps/go-middleware/internal/rag/app"
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/rag/domain"
@@ -88,25 +91,44 @@ func (r *RAG) Index() *ragapp.IndexDocumentUseCase {
 	return ragapp.NewIndexDocumentUseCase(r.documents, r.jobs, r.pages, r.chunks)
 }
 
-// Embed builds the embedding rebuild. It needs a model client: there is no
-// lexical fallback for writing a vector, so the caller is expected to have
-// checked Clients before calling, exactly as the command and the server do.
-func (r *RAG) Embed(clients Clients, model string) *ragapp.EmbedDocumentUseCase {
-	return ragapp.NewEmbedDocumentUseCase(r.documents, r.chunks, r.embeddings, clients.Embedding, model)
+// Embed builds the embedding rebuild.
+//
+// It refuses rather than narrowing. There is no lexical fallback for writing a
+// vector, so a use case built without an embedder would not fail here — it would
+// fail deep inside a run, as a nil dereference, after the caller believed it had
+// a working stage. Ingest and Status narrow because they have a meaningful
+// no-client behaviour; this one does not, so the absence is an error the caller
+// has to handle.
+func (r *RAG) Embed(clients Clients, model string) (*ragapp.EmbedDocumentUseCase, error) {
+	if clients.Embedding == nil {
+		return nil, fmt.Errorf(
+			"%s is not set: embedding a document calls the model and cannot run without it: %w",
+			config.EnvOpenRouterAPIKey, apperror.ErrInvalidInput)
+	}
+
+	return ragapp.NewEmbedDocumentUseCase(
+		r.documents, r.chunks, r.embeddings, clients.Embedding, model), nil
 }
 
 // Process builds the full pipeline for one already-registered document:
-// ingestion, then the index, then the embeddings. Like Embed, it requires a model
-// client: the pipeline exists to produce text and vectors, and it is built only
-// when one is configured.
-func (r *RAG) Process(clients Clients, model string, store *storage.Store) *ragapp.ProcessDocumentUseCase {
+// ingestion, then the index, then the embeddings. Like Embed, it requires a
+// model client: the pipeline exists to produce text and vectors, so the absence
+// is reported here instead of surfacing as a nil dereference mid-run.
+func (r *RAG) Process(
+	clients Clients, model string, store *storage.Store,
+) (*ragapp.ProcessDocumentUseCase, error) {
+	embed, err := r.Embed(clients, model)
+	if err != nil {
+		return nil, err
+	}
+
 	return ragapp.NewProcessDocumentUseCase(
 		r.documents,
 		store,
 		r.Ingest(clients, store),
 		r.Index(),
-		r.Embed(clients, model),
-	)
+		embed,
+	), nil
 }
 
 // Status builds the processing-status read.

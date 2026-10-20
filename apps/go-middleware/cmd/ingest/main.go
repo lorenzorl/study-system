@@ -132,7 +132,12 @@ func run() error {
 		}
 		defer sqlDB.Close()
 
-		return runEmbed(ctx, composition.NewRAG(sqlDB).Embed(clients, cfg.EmbeddingModel))
+		embedder, err := composition.NewRAG(sqlDB).Embed(clients, cfg.EmbeddingModel)
+		if err != nil {
+			return err
+		}
+
+		return runEmbed(ctx, embedder)
 	}
 
 	if *pdfPath == "" {
