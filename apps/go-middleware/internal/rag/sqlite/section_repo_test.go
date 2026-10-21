@@ -179,6 +179,15 @@ func TestSectionRepository_ReplaceForAnUnknownDocumentIsNotFound(t *testing.T) {
 	assert.ErrorIs(t, err, apperror.ErrNotFound)
 }
 
+func TestSectionRepository_ReplaceWithNoSectionsForAnUnknownDocumentIsNotFound(t *testing.T) {
+	_, repos := openRepos(t)
+
+	// The empty replace only deletes rows, so nothing trips the foreign key. Without
+	// an explicit lookup the missing document would look like a successful no-op.
+	err := repos.sections.ReplaceDocumentSections(t.Context(), uuid.NewString(), nil)
+	assert.ErrorIs(t, err, apperror.ErrNotFound)
+}
+
 func TestSectionRepository_ListByDocumentOfAnUnknownDocumentIsEmpty(t *testing.T) {
 	_, repos := openRepos(t)
 

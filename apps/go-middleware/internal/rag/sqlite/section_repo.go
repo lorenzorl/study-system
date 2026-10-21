@@ -50,6 +50,13 @@ func (r *SectionRepository) ReplaceDocumentSections(ctx context.Context, documen
 	// unconditional and every early return is covered.
 	defer func() { _ = tx.Rollback() }()
 
+	// A document that does not exist is ErrNotFound on both paths. An empty
+	// replace only deletes rows, and a zero-row DELETE cannot trip the foreign key
+	// that an INSERT would, so the check cannot be left to the constraint.
+	if err := documentExists(ctx, tx, documentID); err != nil {
+		return err
+	}
+
 	if _, err := tx.ExecContext(ctx,
 		`DELETE FROM document_sections WHERE document_id = ?`, documentID,
 	); err != nil {
@@ -98,6 +105,20 @@ func (r *SectionRepository) ReplaceDocumentSections(ctx context.Context, documen
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit section replace of document %s: %w", documentID, err)
+	}
+	return nil
+}
+
+// documentExists reports apperror.ErrNotFound when the document is unknown.
+func documentExists(ctx context.Context, tx *sql.Tx, documentID string) error {
+	var found int
+	err := tx.QueryRowContext(ctx,
+		`SELECT 1 FROM documents WHERE id = ?`, documentID).Scan(&found)
+	if errors.Is(err, sql.ErrNoRows) {
+		return apperror.ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("look up document %s: %w", documentID, err)
 	}
 	return nil
 }
