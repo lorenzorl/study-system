@@ -397,3 +397,33 @@ func TestProcessDocumentUseCase_RunsTheStructureStageAfterTheEmbeddings(t *testi
 		assert.Equal(t, 2, report.Sections)
 	})
 }
+
+// An index that names no chapter is not an index. A table page's leader-dot rows
+// look exactly like one, and accepting them as the document's structure would
+// leave the document with none: the real figures paper has one such row.
+func TestStructureDocumentUseCase_FallsBackWhenTheIndexNamesNoChapter(t *testing.T) {
+	h := newHarness(t, 6, []byte("paper"))
+	h.seedRecorded(t, 6, paperPages())
+	document := h.onlyDocument(t)
+
+	// One section-level row and no chapter: what a table of values looks like.
+	index := &fakeHeadings{headings: []domain.Heading{printed(3, "Characteristic", 8)}}
+	typographic := &fakeHeadings{headings: []domain.Heading{set("TRES Spectra", 3)}}
+	factory := &sourceFactory{sources: app.StructureSources{Index: index, Typographic: typographic}}
+	useCase, sections := newStructure(t, h, factory)
+
+	report := indexRun(t, h, useCase)
+
+	assert.Equal(t, 1, index.calls, "the index is asked first and rejected as one")
+	require.NotNil(t, report.Structure)
+	assert.True(t, report.Structure.GatePassed)
+
+	stored, err := sections.ListByDocument(t.Context(), document.ID)
+	require.NoError(t, err)
+	require.Len(t, stored, 2, "the page text supplied the structure instead")
+
+	indexed := byTitle(stored)
+	assert.Contains(t, indexed, "INTRODUCTION")
+	assert.NotContains(t, indexed, "Characteristic", "the rejected index contributes nothing")
+	assert.Equal(t, domain.SourcePattern, indexed["INTRODUCTION"].Source)
+}

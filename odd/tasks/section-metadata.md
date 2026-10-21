@@ -88,7 +88,8 @@ where a writer subagent pays for its own startup.
 | T4 | 2 | S3, S4 | Typographic reader (`Headings`) plus the pure assembly: offset inference by maximizing confirmations, confirmation against lines set at least four points above the body, the ≥95% chapter gate, ranges, parents and the print's own title spacing | `internal/rag/{infra/pdf,app}` | `ec0f96c` |
 | T5 | 3 | S5, S9 | `StructureDocumentUseCase` and its cascade (index, then numbered headings, then typography), run last in the pipeline, non-fatal on every read path; only a storage failure is returned | `internal/rag/app`, `internal/composition` | ``bab7f0a`` |
 | T6 | 3 | S7, S8 | Attribution resolved after the fusion: the deepest section owning a result's page, through the repository port, exposed on `SearchResult`, the HTTP DTO (`omitempty`) and a new command column; the search statement and the chunk text are untouched | `internal/rag/{domain,app,http}`, `internal/cli`, `internal/composition` | `1f19ea0` |
-| T7 | 4 | S4, S7 | Acceptance measurement over the real corpus (DDD plus both papers): chapters validated on the exact page, source of every section, pages covered, chunks per section; failure of the gate recorded, not hidden | `data/`, task log | pending |
+| T7 | 4 | S4, S7 | Acceptance measurement over the real corpus (DDD plus both papers): chapters validated on the exact page, source of every section, pages covered, chunks per section; failure of the gate recorded, not hidden | `data/`, task log | `b8889e6`, `T7B_COMMIT` |
+| T7b | 4 | S4, S10 | The papers' policy (decided by the user): a gate for the page-text source — its entries are on their own pages, so typography cannot be the gate — plus the fallback when an index names no chapter | `internal/rag/app` | `T7B_COMMIT` |
 | T8 | 4 | S6, S9 | Docs and backfill: the README/ARCHITECTURE describe the table, its provenance and the null case; `reindex` verified to rebuild chunks against already-stored sections | `apps/go-middleware/README.md`, `ARCHITECTURE.md` | pending |
 
 **Risk per task.** No task reaches a Task Size high-risk item on its own: the
@@ -121,7 +122,8 @@ foundation is delivered in slices rather than one commit per phase:
 | 7 | `bab7f0a` | 4268 (branch) | The structure stage in the pipeline and its composition wiring (T5 closes here) |
 | 8 | `1f19ea0` | — | Attribution on the result, the DTO and the command's line (T6 closes here) |
 | 9 | `T7_COMMIT` | — | The acceptance measurement over the real corpus (T7 closes here) |
-| 10 | next | — | The papers' structure policy (T8, needs a product decision) |
+| 10 | `T7B_COMMIT` | 4.8k (branch) | The papers' structure policy: a gate for the page-text source and the no-chapter fallback (T7b closes here) |
+| 11 | next | — | Docs and the reindex backfill verification (T8 in the task table) |
 
 A slice boundary is recorded here before the commit that follows it, which is
 what keeps the review workload visible instead of inferring it from the diff.
@@ -335,3 +337,34 @@ double-counting. Relaxing the gate for the pattern source would give the papers
 some of them wrong (the table header `Characteristic` survives T3's rules today).
 Keeping the gate as it is means papers keep page-only citations, and T3 stays
 dead code in practice. Recorded, not decided.
+
+**L15 (2026-10-21, the papers' policy, decided and applied).** The user chose
+best-effort: give the papers the structure their own page text prints. Two
+changes, both in the decision layer:
+
+1. **A gate for the page-text source.** An entry read from a page is already on
+   that page, so there is no offset to infer and nothing a second reading could
+   confirm; requiring typographic confirmation rejected every paper, whose
+   headings are bold at the body size. The gate for that source is the shape of
+   the reading: at least two entries and one first level, capped at two levels,
+   because the deeper ones are where this corpus puts its noise. Provenance is
+   `pattern`, and `mixed` where the typography did happen to agree.
+2. **An index that names no chapter is not an index.** `paper-figuras.pdf` has
+   three leader-dot rows on a table page; the cascade accepted them and never
+   tried the fallback. It falls back now, and the pure gate still refuses the
+   result because that document's text names a single heading.
+
+The measurement after the change:
+
+| Document | Source | Sections | Gate | Why |
+| --- | --- | --- | --- | --- |
+| `DDD.pdf` | index | **110** | passes | unchanged: 17/17 chapters on the exact page |
+| `img-2610.22254.pdf` | pattern | **18** | passes | 7 first-level and 11 second-level headings its text prints |
+| `paper-figuras.pdf` | pattern | 0 | fails | its text names one heading: a figures paper, not a structured one |
+
+Both papers keep page-only citations where nothing is named, which is S10 doing
+its job. Two defects were caught while doing this and are worth recording: the
+planning loop still ranged over the unfiltered index after the cap (an out-of-range
+panic, caught by the first test), and an earlier scripted edit of `structure.go`
+corrupted the file and was reverted from HEAD before the change was redone with
+verified edits.

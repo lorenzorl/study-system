@@ -55,6 +55,15 @@ type StructureInput struct {
 	// reader. It is a confirmer: on the real book only 55 of its 100 candidates
 	// are entries the index also prints.
 	Typographic []domain.Heading
+
+	// Source names where the entries came from. The zero value means the printed
+	// index. domain.SourcePattern means they were read from each page's own text,
+	// which changes the gate: such an entry is already on its page, so there is no
+	// offset to infer and no second reading that could confirm it. The papers in
+	// this corpus are why this exists — their headings are set in bold at the body
+	// size, so the typographic reader returns nothing and an index-based gate could
+	// never pass.
+	Source domain.SectionSource
 }
 
 // StructureReport says what BuildSections decided, and why when it decided
@@ -121,13 +130,23 @@ func BuildSections(input StructureInput, now time.Time) ([]*domain.Section, Stru
 		return sections, report
 	}
 
-	offset := inferOffset(input.TOC, input.Typographic)
+	// A document read from its own page text prints its structure in two or three
+	// levels; the deeper ones are the paper's subsections and, in this corpus, the
+	// noise the name rules cannot tell from a heading. The index's levels are kept
+	// whole, because the index is the document's own claim.
+	headings := input.TOC
+	pattern := input.Source == domain.SourcePattern
+	if pattern {
+		headings = topLevels(headings)
+	}
+
+	offset := inferOffset(headings, input.Typographic)
 	report.Offset = offset
 
 	byPage := indexByPage(input.Typographic)
-	confirmed := make([]bool, len(input.TOC))
-	matches := make([]*domain.Heading, len(input.TOC))
-	for index, entry := range input.TOC {
+	confirmed := make([]bool, len(headings))
+	matches := make([]*domain.Heading, len(headings))
+	for index, entry := range headings {
 		matches[index] = confirmingHeading(byPage, entry.Title, entry.Page+offset)
 		confirmed[index] = matches[index] != nil
 
@@ -145,23 +164,35 @@ func BuildSections(input StructureInput, now time.Time) ([]*domain.Section, Stru
 		}
 	}
 
-	switch {
-	case report.ChaptersNamed == 0:
-		// A part or a section alone cannot establish the offset: confirming one
-		// would be confirming a guess with its own echo.
-		report.Reason = "the index names no chapter, so there is no page to confirm the offset against"
-		return sections, report
-	case report.ChaptersConfirmed*100 < minimumConfirmed*report.ChaptersNamed:
-		report.Reason = fmt.Sprintf(
-			"the index names %d chapters and %d of them are set large on the exact page, below the %d%% gate",
-			report.ChaptersNamed, report.ChaptersConfirmed, minimumConfirmed)
-		return sections, report
+	if pattern {
+		// The confirmation above still runs, because a page's typography is what
+		// gives an entry the stronger provenance. It cannot be the gate here: these
+		// documents set their headings at the body size, so a gate on typography
+		// would reject every one of them and leave the fallback dead.
+		if !namesStructure(headings) {
+			report.Reason = fmt.Sprintf(
+				"the page text names %d heading(s), too thin to call a structure", len(headings))
+			return sections, report
+		}
+	} else {
+		switch {
+		case report.ChaptersNamed == 0:
+			// A part or a section alone cannot establish the offset: confirming one
+			// would be confirming a guess with its own echo.
+			report.Reason = "the index names no chapter, so there is no page to confirm the offset against"
+			return sections, report
+		case report.ChaptersConfirmed*100 < minimumConfirmed*report.ChaptersNamed:
+			report.Reason = fmt.Sprintf(
+				"the index names %d chapters and %d of them are set large on the exact page, below the %d%% gate",
+				report.ChaptersNamed, report.ChaptersConfirmed, minimumConfirmed)
+			return sections, report
+		}
 	}
 
 	report.GatePassed = true
 
-	entries := make([]plannedSection, 0, len(input.TOC))
-	for index, entry := range input.TOC {
+	entries := make([]plannedSection, 0, len(headings))
+	for index, entry := range headings {
 		start := entry.Page + offset
 		if start < 1 || start > input.PageCount {
 			// A page the document does not have is a misread row, not a section:
@@ -172,7 +203,7 @@ func BuildSections(input StructureInput, now time.Time) ([]*domain.Section, Stru
 		entries = append(entries, plannedSection{
 			heading: titled(entry, byPage[entry.Page+offset]),
 			start:   start,
-			source:  sourceFor(confirmed[index]),
+			source:  sourceFor(confirmed[index], pattern),
 		})
 	}
 
@@ -373,11 +404,43 @@ func titled(entry domain.Heading, page []domain.Heading) domain.Heading {
 
 // sourceFor records provenance: an entry only the index names is the index's
 // claim, and one a page's typography confirms is mixed (S4).
-func sourceFor(confirmed bool) domain.SectionSource {
+func sourceFor(confirmed, pattern bool) domain.SectionSource {
 	if confirmed {
 		return domain.SourceMixed
 	}
+	if pattern {
+		return domain.SourcePattern
+	}
 	return domain.SourceTOC
+}
+
+// topLevels keeps the entries a page-text reading can be trusted with: the
+// document's numbered sections and their first level of children.
+func topLevels(entries []domain.Heading) []domain.Heading {
+	kept := make([]domain.Heading, 0, len(entries))
+	for _, entry := range entries {
+		if entry.Level <= 2 {
+			kept = append(kept, entry)
+		}
+	}
+	return kept
+}
+
+// namesStructure reports whether a page-text reading looks like a structure at
+// all: at least two entries, one of them the document's own first level.
+//
+// One entry is a numbered list item, and two entries with no first level are a
+// table's rows; neither is worth storing as a citation.
+func namesStructure(entries []domain.Heading) bool {
+	if len(entries) < 2 {
+		return false
+	}
+	for _, entry := range entries {
+		if entry.Level == 1 {
+			return true
+		}
+	}
+	return false
 }
 
 // titleSimilarity scores how well a line the page sets large confirms a printed

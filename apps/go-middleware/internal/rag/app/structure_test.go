@@ -423,3 +423,45 @@ func TestBuildSections_KeepsTheIndexTitleWhenThePrintSaysSomethingElse(t *testin
 
 	assert.Equal(t, "Crunching Knowledge", sections[0].Title, "the index names the section")
 }
+
+// A paper prints its structure in its page text and sets its headings no larger
+// than the body, so the typography cannot confirm anything. The gate for that
+// source is the shape of the reading, not a confirmation: an entry read from a
+// page is already on that page.
+func TestBuildSections_ReadsAPaperFromItsPageText(t *testing.T) {
+	input := app.StructureInput{
+		DocumentID: "paper",
+		PageCount:  18,
+		Source:     domain.SourcePattern,
+		TOC: []domain.Heading{
+			printed(1, "INTRODUCTION", 1),
+			printed(2, "TRES Spectra", 3),
+			printed(3, "Wavelength coverage", 3),
+		},
+		Typographic: []domain.Heading{set("TRES Spectra", 3)},
+	}
+
+	sections, report := buildSections(input)
+	require.True(t, report.GatePassed, "the reading names a first level and more than one entry")
+	require.Len(t, sections, 2, "a page-text reading is trusted to two levels, no deeper")
+
+	assert.Equal(t, "INTRODUCTION", sections[0].Title)
+	assert.Equal(t, domain.SourcePattern, sections[0].Source, "no page set that title large")
+	assert.Equal(t, "TRES Spectra", sections[1].Title)
+	assert.Equal(t, domain.SourceMixed, sections[1].Source, "the page did set that title large")
+	assert.Equal(t, domain.SourcePattern, sections[0].Source)
+}
+
+func TestBuildSections_RefusesToCallOneHeadingAStructure(t *testing.T) {
+	input := app.StructureInput{
+		DocumentID: "paper",
+		PageCount:  8,
+		Source:     domain.SourcePattern,
+		TOC:        []domain.Heading{printed(1, "Introduction", 1)},
+	}
+
+	sections, report := buildSections(input)
+	assert.False(t, report.GatePassed)
+	assert.Empty(t, sections)
+	assert.Contains(t, report.Reason, "too thin")
+}

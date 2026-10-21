@@ -154,7 +154,10 @@ func (uc *StructureDocumentUseCase) Execute(
 	entries, indexErr := sourceHeadings(ctx, sources.Index)
 	provenance := domain.SourceTOC
 
-	if indexErr != nil || len(entries) == 0 {
+	// An index that names no chapter is not an index: three leader-dot rows on a
+	// table page look exactly like an index to the reader, and falling back here is
+	// what keeps that from becoming the document's only structure source.
+	if indexErr != nil || !namesAChapter(entries) {
 		pattern, patternErr := uc.numberedHeadings(ctx, job.ID)
 		if patternErr != nil {
 			report.Reason = fmt.Sprintf("read the recorded page text: %v", patternErr)
@@ -187,12 +190,9 @@ func (uc *StructureDocumentUseCase) Execute(
 		PageCount:   job.TotalPages,
 		TOC:         entries,
 		Typographic: typographic,
+		Source:      provenance,
 	}, uc.now())
 	report.Structure = &structure
-
-	if provenance == domain.SourcePattern {
-		sections = asPattern(sections)
-	}
 
 	// The empty list is stored too: it is how a document with no confirmable
 	// structure is represented, and it is what clears a structure a later reading
@@ -238,20 +238,14 @@ func (uc *StructureDocumentUseCase) numberedHeadings(ctx context.Context, jobID 
 	return headings, nil
 }
 
-// asPattern records the numbered headings' provenance as theirs.
-//
-// BuildSections is written against "the document's own list of entries" and calls
-// an entry no page confirmed the index's. Here that list came from the page text
-// instead, so the row must not claim a printed index the document does not have
-// (S4: no section without provenance). The entries the typography did confirm
-// stay mixed: two sources did agree on them.
-func asPattern(sections []*domain.Section) []*domain.Section {
-	for _, section := range sections {
-		if section.Source == domain.SourceTOC {
-			section.Source = domain.SourcePattern
+// namesAChapter reports whether the entries name at least one chapter.
+func namesAChapter(entries []domain.Heading) bool {
+	for _, entry := range entries {
+		if entry.Level == 2 {
+			return true
 		}
 	}
-	return sections
+	return false
 }
 
 // sourceHeadings asks one reading for its entries, treating an absent reading as
