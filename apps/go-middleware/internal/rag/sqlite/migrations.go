@@ -49,6 +49,11 @@ func Migrations() []db.Migration {
 			Description: "chunk_embeddings: stored vectors with the model and dimension that produced them",
 			Up:          migrateChunkEmbeddings,
 		},
+		{
+			Version:     103,
+			Description: "document_sections: the parts, chapters and sections that own page ranges",
+			Up:          migrateSections,
+		},
 	}
 }
 
@@ -184,6 +189,46 @@ func migrateChunkEmbeddings(ctx context.Context, tx *sql.Tx) error {
 
 	if _, err := tx.ExecContext(ctx, schema); err != nil {
 		return fmt.Errorf("create chunk embeddings: %w", err)
+	}
+	return nil
+}
+
+// migrateSections creates the document structure: one row per part, chapter or
+// section, carrying the page range it owns and the source it came from.
+//
+// Two properties of the shape are deliberate:
+//
+//   - The table is derived data with the same rebuildable life cycle as the
+//     chunk index. A run replaces a document's sections rather than editing
+//     them, so the extractor can change without a data migration.
+//   - end_page is stored and not derived from the next row's start_page. The
+//     question the index asks is "which section owns page N", and a stored range
+//     answers it with one BETWEEN on one index instead of a window over the
+//     document's rows.
+//
+// level and source carry no CHECK, for the reason the ingestion vocabulary does
+// not either: they may grow, and SQLite would require rebuilding the table to
+// widen one. domain.Section is what validates them.
+func migrateSections(ctx context.Context, tx *sql.Tx) error {
+	schema := `
+	CREATE TABLE IF NOT EXISTS document_sections (
+		id          TEXT PRIMARY KEY,
+		document_id TEXT NOT NULL REFERENCES documents(id),
+		parent_id   TEXT REFERENCES document_sections(id),
+		level       INTEGER NOT NULL CHECK (level >= 1),
+		title       TEXT NOT NULL,
+		start_page  INTEGER NOT NULL CHECK (start_page >= 1),
+		end_page    INTEGER NOT NULL CHECK (end_page >= start_page),
+		source      TEXT NOT NULL,
+		created_at  TEXT NOT NULL
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_document_sections_document_id
+		ON document_sections (document_id, start_page);
+	`
+
+	if _, err := tx.ExecContext(ctx, schema); err != nil {
+		return fmt.Errorf("create section schema: %w", err)
 	}
 	return nil
 }
