@@ -1,7 +1,7 @@
 import { ItemView, type WorkspaceLeaf } from "obsidian"
 import { createApp, type App as VueApp } from "vue"
-import { createPinia } from "pinia"
 import { router } from "./router"
+import { pinia } from "./pinia"
 import App from "./ui/App.vue"
 import { setObsidianApp } from "@/shared/obsidian"
 
@@ -19,7 +19,7 @@ export class StudyView extends ItemView {
   }
 
   getDisplayText(): string {
-    return "Study"
+    return "Estudio"
   }
 
   getIcon(): string {
@@ -31,8 +31,8 @@ export class StudyView extends ItemView {
     setObsidianApp(this.app)
 
     this.vueApp = createApp(App)
+    this.vueApp.use(pinia)
     this.vueApp.use(router)
-    this.vueApp.use(createPinia())
     this.vueApp.mount(this.contentEl)
   }
 
