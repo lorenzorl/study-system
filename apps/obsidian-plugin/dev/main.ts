@@ -35,10 +35,8 @@ const routes = [
     component: FeynmanPage,
     props: true,
   },
-  // Harness-only for now: the deck imports Reveal's stylesheets, and the
-  // production bundle (esbuild, CJS) cannot handle those yet. The page joins the
-  // plugin router in the CSS slice, once Reveal's styles live in its own
-  // stylesheet.
+  // Same route as the plugin router. Reveal's stylesheets arrive as text in both
+  // bundlers and are injected into a shadow root by `DeckViewer`.
   {
     path: "/present/:deckId",
     name: "presentation",

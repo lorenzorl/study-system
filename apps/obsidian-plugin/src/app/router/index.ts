@@ -5,6 +5,7 @@ import { ConceptPage } from "@/pages/concept"
 import { FlashcardSessionPage } from "@/pages/flashcard-session"
 import { FeynmanPage } from "@/pages/feynman"
 import { DueCardsPage } from "@/pages/due-cards"
+import { PresentationPage } from "@/pages/presentation"
 
 const routes = [
   {
@@ -45,6 +46,13 @@ const routes = [
     name: "feynman",
     component: FeynmanPage,
     props: true,
+  },
+  // The deck tab (§3). Reveal's stylesheets reach this page as text and land in
+  // the deck's shadow root, so the page can live in the plugin graph.
+  {
+    path: "/present/:deckId",
+    name: "presentation",
+    component: PresentationPage,
   },
 ]
 

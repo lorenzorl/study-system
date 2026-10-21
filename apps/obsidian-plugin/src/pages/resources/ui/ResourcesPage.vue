@@ -98,8 +98,10 @@
 
 <script setup lang="ts">
 import { computed, nextTick, ref } from "vue"
+import { useRouter } from "vue-router"
 import { ReviewModal } from "@/widgets/review-modal"
 import type { ReviewCard } from "@/widgets/review-modal"
+import { deckRouteFor } from "../model/deckRoute"
 import { filterResources } from "../model/filter"
 import {
   continueFixture,
@@ -126,6 +128,8 @@ const KIND_CHIPS: { value: ResourceKindFilter; label: string; glyph: string }[] 
   { value: "deck", label: "Diapositivas", glyph: KIND_GLYPHS.deck },
   { value: "exam", label: "Exámenes", glyph: KIND_GLYPHS.exam },
 ]
+
+const router = useRouter()
 
 const continueResource = continueFixture
 
@@ -221,7 +225,15 @@ function openResource(resource: Resource, event: MouseEvent) {
     return
   }
 
-  // TODO(slice: surfaces): open the deck tab or the exam tab.
+  // A deck opens as a tab, not as an overlay (§3): the deck is a session-length
+  // surface, and leaving it is a route change the deck's own exit button makes.
+  const deckRoute = deckRouteFor(resource)
+  if (deckRoute) {
+    router.push(deckRoute)
+    return
+  }
+
+  // TODO(slice: surfaces): open the exam tab.
 }
 </script>
 

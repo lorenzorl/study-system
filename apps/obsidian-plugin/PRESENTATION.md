@@ -230,11 +230,60 @@ before it is trusted in Obsidian.
 
 | Risk | Why it matters | Mitigation |
 | --- | --- | --- |
-| Reveal's theme CSS touches `:root` and sometimes `body` | A theme can repaint the whole Obsidian app | Own theme, or scope the bundled CSS to the view |
+| Reveal's theme CSS touches `:root` and sometimes `body` | A theme can repaint the whole Obsidian app | Closed by the shadow root (§3.1) |
 | Bundle growth (~200 KB) | Plugin already ships ~545 KB | Accepted; measure before shipping |
 | Dialect ownership (D4) | Callouts, embeds, Dataview are not free | Keep the deck's needs explicit; implement only what the UI shows |
 | Island mounting is manual | Easy to leak Pinia context or listeners | One mount helper, one unmount path, exercised in the harness |
 | Obsidian mobile is a webview | Fullscreen API is limited there | Scroll view is the mobile path; do not depend on fullscreen |
+
+### 3.1 The deck is mounted in a shadow root (closes the first risk)
+
+**Decision.** `DeckViewer` renders a host element and attaches a shadow root on
+mount. Inside that root there is exactly one `<style>` — Reveal's base
+stylesheet, the theme, and the deck's own `.deck-*` layout — followed by
+`<div class="reveal"><div class="slides"></div></div>`. The slides markup is still
+assigned once, imperatively, before Reveal is constructed (D8). Both of Reveal's
+stylesheets are imported as **text**: `esbuild.config.mjs` maps `.css` to the
+`text` loader, and `vite.config.ts` resolves those same two specifiers to
+`export default "<css>"` with a `pre` plugin that runs in serve and in build. No
+`?raw`, no `?inline`, one specifier per file in both pipelines. The plugin's
+`styles.css` is never touched, so nothing is added to the 545 KB the plugin
+already ships as CSS.
+
+**Why.** `reveal.css` is written for a whole document: it styles
+`html:not(.print-pdf) body`, `html.reveal-print *` and, through the theme,
+declares the whole palette on `:root`. Obsidian loads a single `styles.css` for
+the entire application, so a light-DOM `<style>` would centre text, reset
+margins and repaint backgrounds in the editor, the sidebar and every modal. The
+shadow root makes the leak structurally impossible rather than something to be
+reviewed: none of those selectors can match outside the deck, and `destroy()`
+leaves no stylesheet behind at all.
+
+**Consequences.**
+
+- `:root` is retargeted to `:host` on the way into the style element. No element
+  is the document root inside a shadow tree, so the theme's custom properties
+  would otherwise resolve to nothing and the deck would lose its palette. The
+  host is where they belong: custom properties inherit from it into the tree.
+- The keyboard predicate and the `ResizeObserver` target the **host**, not the
+  inner `.reveal`. Events inside a shadow root are retargeted to the host on the
+  way out, so a predicate scoped to the inner element would reject every key and
+  the deck would be unnavigable. Focus goes to the host for the same reason:
+  it is the only node the rest of the app can address.
+- The deck's `.deck-*` content layout moved from `PresentationPage.vue` into the
+  deck-viewer widget (`ui/deckContentStyles.ts`). Isolation cuts both ways: a
+  document-level rule can no longer reach the slides either.
+- The host element must be the one Vue named, so the widget's root is a wrapper
+  and the host is its child; attribute and class fallthrough still work.
+- Bundle cost is real and larger than this table first estimated: the bundled
+  `theme/black.css` of Reveal 6 carries its font as a base64 `@font-face`
+  payload, so the text of both stylesheets adds roughly 600 KB to `main.js`.
+  Measured at the time of this slice; a self-hosted theme without the embedded
+  font is the obvious follow-up.
+- Reveal's constructor is called with the reveal element **and** the options.
+  Given a single argument it treats it as the config and resolves the deck with
+  `document.querySelector(".reveal")`, a query that cannot cross a shadow
+  boundary.
 
 ---
 
@@ -278,7 +327,7 @@ stay declarative and cannot fork the visual language.
 | Both builds alias `vue` to the runtime-only bundle | Verified in `esbuild.config.mjs` |
 | Reveal mounts cleanly inside an Obsidian `ItemView` | **Assumed** — no run yet |
 | Scroll view coexists with manually mounted islands | **Assumed** — no run yet |
-| Bundled Reveal CSS does not leak into Obsidian's UI | **Assumed** — no run yet |
+| Bundled Reveal CSS does not leak into Obsidian's UI | **Verified by construction** — the stylesheets live in the deck's shadow root (§3.1); there is no global rule left to leak |
 
-The three assumptions are the reason D9 exists: the harness rehearses the handoff
-before the plugin depends on it.
+The remaining assumptions are the reason D9 exists: the harness rehearses the
+handoff before the plugin depends on it.
