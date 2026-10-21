@@ -1,8 +1,8 @@
 {
   "name": "obsidian-flashcard-plugin",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "packageManager": "pnpm@11.5.2",
-  "description": "Obsidian plugin with Vue 3 SPA study dashboard — domain exploration, flashcards, Feynman technique, and command center",
+  "description": "Obsidian plugin with Vue 3 SPA study dashboard \u2014 domain exploration, flashcards, Feynman technique, and command center",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
