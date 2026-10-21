@@ -27,6 +27,7 @@ type ragRepos struct {
 	jobs      domain.JobRepository
 	pages     domain.PageOutcomeRepository
 	chunks    domain.ChunkRepository
+	sections  domain.SectionRepository
 }
 
 // openRepos opens an in-memory database with the ingestion schema applied.
@@ -49,6 +50,7 @@ func openRepos(t *testing.T) (*sql.DB, ragRepos) {
 		jobs:      ragsqlite.NewJobRepository(sqlDB),
 		pages:     ragsqlite.NewPageOutcomeRepository(sqlDB),
 		chunks:    ragsqlite.NewChunkRepository(sqlDB),
+		sections:  ragsqlite.NewSectionRepository(sqlDB),
 	}
 }
 

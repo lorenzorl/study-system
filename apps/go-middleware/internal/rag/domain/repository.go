@@ -102,6 +102,16 @@ type SearchResult struct {
 	// this is exact.
 	PageNumber int
 
+	// SectionTitle is the deepest section that owns PageNumber, and empty when the
+	// document has no confirmed structure. It is the other half of a citation: a
+	// page tells a reader where to look, a section tells them what they are
+	// looking at.
+	SectionTitle string
+
+	// SectionLevel is that section's nesting, 0 when there is none. It is carried
+	// so a client can render the hierarchy without another request.
+	SectionLevel int
+
 	// Snippet is a bounded window of the chunk's text with the matched terms
 	// marked, folded onto one line so a caller can print one line per result. It
 	// is a citation aid, not context: FTS5 builds it from twelve tokens.
@@ -189,4 +199,35 @@ type PageOutcomeRepository interface {
 	// answer it. A job with no recorded outcome returns a zero PageCounts and no
 	// error.
 	CountByJob(ctx context.Context, jobID string) (PageCounts, error)
+}
+
+// SectionRepository manages a document's structure: the parts, chapters and
+// sections that own page ranges.
+type SectionRepository interface {
+	// ReplaceDocumentSections deletes the document's sections and writes the
+	// given ones in their place, inside one transaction.
+	//
+	// Replace is the only write, for the same reason it is for chunks: the
+	// structure is derived data with a rebuildable life cycle, so recovering from
+	// a stale or half-written list is re-running the extractor. An empty list is
+	// meaningful and clears the document — that is how a document nobody can
+	// structure is stored.
+	//
+	// Insertion order is the storage's concern: the adapter writes parents before
+	// children, so the caller does not have to sort its tree.
+	//
+	// An unknown document is apperror.ErrNotFound.
+	ReplaceDocumentSections(ctx context.Context, documentID string, sections []*Section) error
+
+	// ListByDocument returns the document's sections in reading order (start
+	// page, then level), as an empty slice when it has none.
+	ListByDocument(ctx context.Context, documentID string) ([]*Section, error)
+
+	// SectionAt returns the deepest section that owns the given page, or
+	// apperror.ErrNotFound when no section does.
+	//
+	// It is the one question the index asks: a chunk carries a page number and
+	// nothing else about the structure, so attribution is a lookup and never a
+	// guess. A page below 1 is apperror.ErrInvalidInput.
+	SectionAt(ctx context.Context, documentID string, page int) (*Section, error)
 }

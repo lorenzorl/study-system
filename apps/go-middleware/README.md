@@ -425,6 +425,46 @@ crosses the language boundary between a Spanish query and an English book (S1).
   bigger is better) and `COSINE` (the semantic similarity, bigger is better). The
   score a stage did not produce reads 0.
 
+## Document structure
+
+A result cites a page; when the document's own structure can be read, it also
+cites the section that owns that page. The structure is derived data with the
+same rebuildable life cycle as the chunk index, and it is produced during
+ingestion, **after** the embeddings, so a structure problem can never cost a book
+its search.
+
+- **The cascade.** The printed table of contents, read from `pdftohtml -xml`;
+  when the document prints none — or an index that names no chapter — the
+  numbered headings of its own page text (`1. INTRODUCTION`,
+  `2.1. TRES Spectra`); and always the lines set above the body size, which is
+  what confirms either of them.
+- **The gate.** For an index, at least 95% of the chapters it names must be set
+  large on the exact page an inferred offset predicts. The offset is the constant
+  between the printed page and the PDF page, found by maximizing confirmations
+  over -20..+20, which is what handles front matter in roman numerals. A document
+  that fails the gate stores nothing rather than a guess.
+- **A page-text reading is gated on its shape**, because an entry read from a
+  page is already on that page: at least two entries and one first level, and no
+  deeper than two levels. No typography is required, which is what lets a paper
+  with bold-at-body-size headings have structure at all.
+- **Provenance is recorded per row**: `outline`, `toc`, `typography`, `pattern`,
+  or `mixed` when two sources agreed. In this corpus the book is `mixed` wherever
+  its pages also set the title large, and the papers are `pattern`.
+- **The schema is migration 103**: `document_sections` holds one row per part,
+  chapter or section with the page range it owns, indexed by
+  `(document_id, start_page)`. "Which section owns page N" is one `BETWEEN` on
+  that index, answered with the deepest section, which is what a citation wants.
+- **Nothing is invented.** A document nobody can structure, and a page no section
+  owns, cite no section, and `omitempty` keeps the field off the wire.
+- **A failing lookup costs the citation, not the search.** The ranking is the
+  index's answer and survives a locked or slow section table.
+- **The `search` command** prints the section next to the page, `-` when there is
+  none.
+
+Measured on the corpus: `DDD.pdf` yields 110 sections with all 17 chapters on the
+exact page the index claims; the 18-page paper yields 18 sections from its own
+numbering; the figures paper yields none, because its text names one heading.
+
 ## Retrieval API
 
 `GET /api/rag/search` is the HTTP surface of the same search the CLI runs, and it

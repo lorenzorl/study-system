@@ -63,6 +63,8 @@ func (h *SearchHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			DocumentID:    result.DocumentID,
 			DocumentTitle: result.DocumentTitle,
 			PageNumber:    result.PageNumber,
+			SectionTitle:  result.SectionTitle,
+			SectionLevel:  result.SectionLevel,
 			Snippet:       result.Snippet,
 			Text:          result.Text,
 			Stage:         string(result.Stage),
