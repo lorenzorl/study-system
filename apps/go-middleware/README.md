@@ -148,6 +148,11 @@ DEVICE=user@host ./scripts/build-android.sh              # builds and installs
 DEVICE=user@host SKIP_INSTALL=1 ./scripts/build-android.sh   # build only
 ```
 
+It installs to `~/study-system/bin/study-system` by default; `INSTALL_TO` overrides
+it. That default matches a consolidated layout where `STUDY_HOME=~/study-system`
+holds `.env` and `data/`, with `bin/` and `skill/` beside them — paths the CLI never
+reads.
+
 The script copies the module to a scratch tree, patches a **copy** of
 `modernc.org/libc` so its `fstatat` always takes the `fstatat64` path, vendors
 the result, and compiles on the phone with `-p 2` and `GOMEMLIMIT` because the

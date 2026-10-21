@@ -34,6 +34,10 @@
 #   DEVICE=user@host PORT=8022 INSTALL_TO=~/bin ./scripts/build-android.sh
 #   DEVICE=user@host SKIP_INSTALL=1 ./scripts/build-android.sh   # build only
 #
+# It installs to ~/study-system/bin/study-system by default, which is the layout a
+# consolidated setup uses: STUDY_HOME=~/study-system holds .env and data/ while
+# bin/ and skill/ sit beside them and are never read by the CLI.
+#
 # The build runs on the device and takes a few minutes: modernc.org/sqlite is a
 # very large generated package and the phone has little RAM. The script limits
 # parallelism and memory for that reason.
@@ -44,7 +48,7 @@ MODULE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 DEVICE="${DEVICE:-}"
 PORT="${PORT:-8022}"
-INSTALL_TO="${INSTALL_TO:-~/study-system}"
+INSTALL_TO="${INSTALL_TO:-~/study-system/bin/study-system}"
 LIBC_VERSION="${LIBC_VERSION:-}"
 WORK="${WORK:-/tmp/study-system-android}"
 
