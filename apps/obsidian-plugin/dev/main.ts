@@ -7,6 +7,7 @@ import { TopicPage } from "@/pages/topic"
 import { ConceptPage } from "@/pages/concept"
 import { FlashcardSessionPage } from "@/pages/flashcard-session"
 import { FeynmanPage } from "@/pages/feynman"
+import { PresentationPage } from "@/pages/presentation"
 
 const routes = [
   { path: "/", name: "dashboard", component: ResourcesPage },
@@ -33,6 +34,15 @@ const routes = [
     name: "feynman",
     component: FeynmanPage,
     props: true,
+  },
+  // Harness-only for now: the deck imports Reveal's stylesheets, and the
+  // production bundle (esbuild, CJS) cannot handle those yet. The page joins the
+  // plugin router in the CSS slice, once Reveal's styles live in its own
+  // stylesheet.
+  {
+    path: "/present/:deckId",
+    name: "presentation",
+    component: PresentationPage,
   },
 ]
 
