@@ -1,15 +1,15 @@
 import { createApp } from "vue"
 import { createRouter, createWebHistory } from "vue-router"
-import { createPinia } from "pinia"
+import { pinia } from "@/app/pinia"
 import App from "@/app/ui/App.vue"
-import { DashboardPage } from "@/pages/dashboard"
+import { ResourcesPage } from "@/pages/resources"
 import { TopicPage } from "@/pages/topic"
 import { ConceptPage } from "@/pages/concept"
 import { FlashcardSessionPage } from "@/pages/flashcard-session"
 import { FeynmanPage } from "@/pages/feynman"
 
 const routes = [
-  { path: "/", name: "dashboard", component: DashboardPage },
+  { path: "/", name: "dashboard", component: ResourcesPage },
   {
     path: "/topic/:topicId",
     name: "topic",
@@ -43,7 +43,7 @@ function init() {
   })
 
   const app = createApp(App)
-  app.use(createPinia())
+  app.use(pinia)
   app.use(router)
   app.mount("#app")
 }

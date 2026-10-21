@@ -1,5 +1,5 @@
 import { createRouter, createMemoryHistory } from "vue-router"
-import { DashboardPage } from "@/pages/dashboard"
+import { ResourcesPage } from "@/pages/resources"
 import { TopicPage } from "@/pages/topic"
 import { ConceptPage } from "@/pages/concept"
 import { FlashcardSessionPage } from "@/pages/flashcard-session"
@@ -10,7 +10,7 @@ const routes = [
   {
     path: "/",
     name: "dashboard",
-    component: DashboardPage,
+    component: ResourcesPage,
   },
   {
     path: "/study/due",

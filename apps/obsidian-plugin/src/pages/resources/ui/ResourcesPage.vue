@@ -1,0 +1,446 @@
+<template>
+  <div class="resources">
+    <!-- Filter row: search plus kind chips, both driving `filterResources`. -->
+    <div class="resources__filters">
+      <input
+        v-model="query"
+        class="resources__search"
+        type="search"
+        placeholder="Buscar…"
+        aria-label="Buscar recursos"
+      />
+      <div class="resources__chips" role="group" aria-label="Filtrar por tipo">
+        <button
+          v-for="chip in KIND_CHIPS"
+          :key="chip.value"
+          type="button"
+          class="resources__chip"
+          :class="{ 'resources__chip--active': kind === chip.value }"
+          :aria-pressed="kind === chip.value"
+          @click="kind = chip.value"
+        >
+          <span
+            v-if="chip.glyph"
+            class="resources__chip-glyph"
+            aria-hidden="true"
+            >{{ chip.glyph }}</span
+          >
+          {{ chip.label }}
+        </button>
+      </div>
+    </div>
+
+    <!-- At most one "continue" entry (§6): two would be a list. -->
+    <section class="resources__continue">
+      <h2 class="resources__section-title">Seguir donde quedaste</h2>
+      <div class="continue">
+        <span class="continue__glyph" aria-hidden="true">{{
+          KIND_GLYPHS.flashcards
+        }}</span>
+        <span class="continue__title">
+          {{ continueResource.kindLabel }} · {{ continueResource.title }}
+        </span>
+        <span class="continue__progress">
+          {{ continueResource.done }} / {{ continueResource.total }}
+        </span>
+        <button
+          type="button"
+          class="continue__action"
+          @click="openContinue($event)"
+        >
+          {{ continueResource.primaryActionLabel }}
+        </button>
+      </div>
+    </section>
+
+    <p class="resources__count">{{ countLabel }}</p>
+
+    <div class="resources__grid">
+      <article
+        v-for="resource in visibleResources"
+        :key="resource.id"
+        class="resource-card"
+      >
+        <span class="resource-card__badge">
+          <span class="resource-card__glyph" aria-hidden="true">{{
+            KIND_GLYPHS[resource.kind]
+          }}</span>
+          {{ KIND_LABELS[resource.kind] }}
+        </span>
+        <h3 class="resource-card__title">{{ resource.title }}</h3>
+        <p class="resource-card__context">{{ resource.topicTitle }} ›</p>
+        <p class="resource-card__status">{{ statusOf(resource) }}</p>
+        <button
+          type="button"
+          class="resource-card__action"
+          @click="openResource(resource, $event)"
+        >
+          {{ resource.primaryActionLabel }}
+        </button>
+      </article>
+    </div>
+
+    <p v-if="visibleResources.length === 0" class="resources__empty">
+      No hay recursos que coincidan con el filtro.
+    </p>
+
+    <!-- The review modal overlays the launcher; it owns its own session state. -->
+    <ReviewModal
+      v-if="reviewOpen"
+      :key="reviewKey"
+      :cards="reviewCards"
+      :title="reviewTitle"
+      :initial-index="reviewInitialIndex"
+      @close="closeReview"
+    />
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed, nextTick, ref } from "vue"
+import { ReviewModal } from "@/widgets/review-modal"
+import type { ReviewCard } from "@/widgets/review-modal"
+import { filterResources } from "../model/filter"
+import {
+  continueFixture,
+  fixtureCardsFor,
+  resourceFixtures,
+} from "../model/fixtures"
+import type { Resource, ResourceKind, ResourceKindFilter } from "../model/types"
+
+const KIND_GLYPHS: Record<ResourceKind, string> = {
+  flashcards: "⏰",
+  deck: "▤",
+  exam: "✎",
+}
+
+const KIND_LABELS: Record<ResourceKind, string> = {
+  flashcards: "Tarjetas",
+  deck: "Diapositivas",
+  exam: "Examen",
+}
+
+const KIND_CHIPS: { value: ResourceKindFilter; label: string; glyph: string }[] = [
+  { value: "all", label: "Todo", glyph: "" },
+  { value: "flashcards", label: "Tarjetas", glyph: KIND_GLYPHS.flashcards },
+  { value: "deck", label: "Diapositivas", glyph: KIND_GLYPHS.deck },
+  { value: "exam", label: "Exámenes", glyph: KIND_GLYPHS.exam },
+]
+
+const continueResource = continueFixture
+
+// Filter state is per session, never persisted (§6).
+const query = ref("")
+const kind = ref<ResourceKindFilter>("all")
+
+const visibleResources = computed(() =>
+  filterResources(resourceFixtures, kind.value, query.value),
+)
+
+const countLabel = computed(() =>
+  visibleResources.value.length === 1
+    ? "1 recurso"
+    : `${visibleResources.value.length} recursos`,
+)
+
+/** Each kind reports its own status; that status is why the card is clickable. */
+function statusOf(resource: Resource): string {
+  switch (resource.kind) {
+    case "flashcards":
+      if (resource.due === 0) return "al día"
+      return `${resource.due} pendiente${resource.due === 1 ? "" : "s"} hoy`
+    case "deck": {
+      const days = resource.updatedDaysAgo === 1 ? "día" : "días"
+      const slides = resource.slides === 1 ? "diapositiva" : "diapositivas"
+      return `${resource.slides} ${slides} · generado hace ${resource.updatedDaysAgo} ${days}`
+    }
+    case "exam":
+      if (resource.lastScore === null || resource.of === null) return "no rendido"
+      return `${resource.lastScore}/${resource.of}`
+  }
+}
+
+// ── Review modal ─────────────────────────────────────────────────────────────
+
+const reviewOpen = ref(false)
+const reviewCards = ref<ReviewCard[]>([])
+const reviewTitle = ref("")
+const reviewInitialIndex = ref(0)
+// Bumped per open, so every session starts from a fresh `useCardSession`.
+const reviewKey = ref(0)
+// The element that opened the modal, so focus can go back to it on close.
+let reviewOpener: HTMLElement | null = null
+
+function openReview(options: {
+  cards: ReviewCard[]
+  title: string
+  initialIndex: number
+  event: MouseEvent
+}) {
+  // A resource without cards would open a completed session over an empty deck.
+  if (options.cards.length === 0) return
+
+  const target = options.event.currentTarget
+  reviewOpener = target instanceof HTMLElement ? target : null
+  reviewCards.value = options.cards
+  reviewTitle.value = options.title
+  reviewInitialIndex.value = options.initialIndex
+  reviewKey.value += 1
+  reviewOpen.value = true
+}
+
+async function closeReview() {
+  reviewOpen.value = false
+
+  const opener = reviewOpener
+  reviewOpener = null
+
+  // Focus returns only after the overlay is gone, or it would move into the modal.
+  await nextTick()
+  opener?.focus()
+}
+
+/** `Seguir` resumes where the continue fixture left off (`done` cards seen). */
+function openContinue(event: MouseEvent) {
+  openReview({
+    cards: fixtureCardsFor(continueFixture.id),
+    title: continueFixture.title,
+    initialIndex: continueFixture.done,
+    event,
+  })
+}
+
+function openResource(resource: Resource, event: MouseEvent) {
+  if (resource.kind === "flashcards") {
+    openReview({
+      cards: fixtureCardsFor(resource.id),
+      title: resource.title,
+      initialIndex: 0,
+      event,
+    })
+    return
+  }
+
+  // TODO(slice: surfaces): open the deck tab or the exam tab.
+}
+</script>
+
+<style scoped>
+.resources {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  color: var(--text-normal);
+  font-family: var(--font-text, inherit);
+}
+
+.resources__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.resources__search {
+  flex: 1 1 140px;
+  min-width: 120px;
+  min-height: 44px;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-family: inherit;
+  font-size: 0.9rem;
+}
+
+.resources__search::placeholder {
+  color: var(--text-muted);
+}
+
+.resources__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.resources__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-height: 44px;
+  padding: 0.375rem 0.75rem;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.85rem;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.resources__chip--active {
+  border-color: var(--text-accent);
+  color: var(--text-accent);
+  background: var(--background-primary);
+}
+
+.resources__chip-glyph {
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.resources__section-title {
+  margin: 0 0 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.resources__continue {
+  display: flex;
+  flex-direction: column;
+}
+
+.continue {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 0.875rem;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-secondary);
+}
+
+.continue__glyph {
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--text-accent);
+}
+
+.continue__title {
+  flex: 1 1 140px;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.continue__progress {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.continue__action {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0.375rem 0.875rem;
+  border: 1px solid var(--text-accent);
+  border-radius: 6px;
+  background: var(--text-accent);
+  color: var(--background-primary);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: opacity 0.15s ease;
+}
+
+.continue__action:hover {
+  opacity: 0.85;
+}
+
+.resources__count {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.resources__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0.75rem;
+}
+
+.resource-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.75rem 0.875rem;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-primary);
+}
+
+.resource-card__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.resource-card__glyph {
+  font-size: 0.85rem;
+  line-height: 1;
+  color: var(--text-accent);
+}
+
+.resource-card__title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.resource-card__context {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.resource-card__status {
+  margin: 0 0 0.375rem;
+  font-size: 0.8rem;
+  color: var(--text-accent);
+}
+
+.resource-card__action {
+  align-self: flex-start;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0.375rem 0.875rem;
+  border: 1px solid var(--text-accent);
+  border-radius: 6px;
+  background: var(--text-accent);
+  color: var(--background-primary);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: opacity 0.15s ease;
+}
+
+.resource-card__action:hover {
+  opacity: 0.85;
+}
+
+.resources__empty {
+  margin: 0;
+  padding: 1.5rem 0.5rem;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+@media (max-width: 520px) {
+  .resources__grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>
