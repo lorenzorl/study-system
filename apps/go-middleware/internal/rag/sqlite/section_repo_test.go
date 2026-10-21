@@ -280,3 +280,28 @@ func TestSectionRepository_SectionAtRejectsAPageBelowOne(t *testing.T) {
 	_, err := repos.sections.SectionAt(ctx, document.ID, 0)
 	assert.ErrorIs(t, err, apperror.ErrInvalidInput)
 }
+
+// Reindexing rebuilds a document's chunks. The sections are a different table and
+// must survive that: a citation is resolved by page at query time, so a reindex
+// that swept them away would silently downgrade every result to a bare page
+// number. This guards the foreign keys from a future cascade.
+func TestSectionRepository_ChunksBeingReplacedLeavesTheSectionsAlone(t *testing.T) {
+	sqlDB, repos := openRepos(t)
+	ctx := t.Context()
+	document := seedDocument(t, ctx, repos.documents, "ddd")
+	tree := chapterTree(t, document.ID)
+	require.NoError(t, repos.sections.ReplaceDocumentSections(ctx, document.ID, tree))
+
+	job := seedJob(t, ctx, repos, document.ID, 24, instant)
+	require.NoError(t, repos.chunks.ReplaceDocumentChunks(ctx, document.ID, job.ID,
+		[]domain.Chunk{{PageNumber: 21, Ordinal: 0, Text: "el obstáculo del diseño"}}, instant))
+	// A reindex replaces again; the second write is what a later run does.
+	require.NoError(t, repos.chunks.ReplaceDocumentChunks(ctx, document.ID, job.ID,
+		[]domain.Chunk{{PageNumber: 21, Ordinal: 0, Text: "el obstáculo, reformulado"}}, instant))
+
+	assert.Equal(t, 3, sectionsRows(t, sqlDB, document.ID), "reindexing must not touch the sections")
+
+	found, err := repos.sections.SectionAt(ctx, document.ID, 21)
+	require.NoError(t, err)
+	assert.Equal(t, "UBIQUITOUS LANGUAGE", found.Title, "the citation still resolves after a reindex")
+}
