@@ -82,7 +82,7 @@ where a writer subagent pays for its own startup.
 
 | ID | Phase | Linked | What | Where | Commit |
 | --- | --- | --- | --- | --- | --- |
-| T1 | 1 | S3, S9 | Migration 103, `Section` value, `SectionRepository` port, `section_repo.go` (replace-per-document, list-by-document, section-at-page), with repo tests | `internal/rag/{sqlite,domain}` | pending |
+| T1 | 1 | S3, S9 | Migration 103, `Section` value, `SectionRepository` port, `section_repo.go` (replace-per-document, list-by-document, section-at-page), with repo tests | `internal/rag/{sqlite,domain}` | `e1b8664`, `eb0b6f2`, `e5dbbe8` |
 | T2 | 2 | S2, S3 | TOC extractor over `pdftohtml -xml` through the runner seam: index-page detection by leader-dot density, line clustering with a drop-cap-safe anchor, page after the dots, level by indent/number, de-spaced and small-caps titles | `internal/rag/infra/pdf` | pending |
 | T3 | 2 | S2, S10 | Numbered-heading fallback for documents without a TOC (`1. INTRODUCTION`, `2.1. TRES Spectra`), rejected when the line is a sentence or carries no following body | `internal/rag/infra/pdf` | pending |
 | T4 | 2 | S3, S4 | Confirmation: infer the printed-page↔PDF-page offset by maximizing matches, confirm every entry against a heading larger than the body size, and apply the ≥95% gate at chapter level; below the gate the result is empty | `internal/rag/app` | pending |
