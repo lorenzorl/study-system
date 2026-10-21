@@ -263,7 +263,13 @@ Open:
 | --- | --- | --- |
 | 1 | `d87cfe9` | Study view as a main-area tab, shared Pinia, Spanish labels |
 | 2 | `71a9caa` | Resource launcher + review modal, fixture-driven (~1500 authored lines, accepted as one UI unit: the modal wiring lives inside the launcher page and splitting it would leave a commit that does not build) |
-| next | — | Deck surface (Reveal, §4.4). Own slice: mounting adapter, scroll-view mode, theme scoping |
+| 3 | `f5398a2` | Deck surface: Reveal mount adapter, fixture deck, harness route `present/deck-atencion` (§4.4). Harness-only on purpose |
+| next | — | Deck delivery: `deck.md` parser (`markdown-it` + containers), Reveal CSS inside `styles.css`, plugin route, launcher wiring |
+
+Slice 3 is harness-only for a mechanical reason: the production bundle is esbuild
+and cannot import CSS, so wiring the page into the plugin router before the
+stylesheet strategy exists would break `pnpm build`. It is still the first unit
+that owns DOM, which is why it was isolated rather than bundled with the parser.
 
 Slice 2 exceeded the ~400-line review budget on purpose. It is one behavior —
 "a list of resources you can act on" — and its two halves cannot be separated
