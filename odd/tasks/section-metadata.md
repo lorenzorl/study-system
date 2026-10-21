@@ -84,7 +84,7 @@ where a writer subagent pays for its own startup.
 | --- | --- | --- | --- | --- | --- |
 | T1 | 1 | S3, S9 | Migration 103, `Section` value, `SectionRepository` port, `section_repo.go` (replace-per-document, list-by-document, section-at-page), with repo tests | `internal/rag/{sqlite,domain}` | `e1b8664`, `eb0b6f2`, `e5dbbe8` |
 | T2 | 2 | S2, S3 | TOC extractor over `pdftohtml -xml` through the runner seam: index-page detection by leader-dot density, line clustering with a drop-cap-safe anchor, page after the dots, level by indent/number, de-spaced and small-caps titles | `internal/rag/infra/pdf`, `internal/rag/domain` | `605ca55` |
-| T3 | 2 | S2, S10 | Numbered-heading fallback as a pure function over one page's text (`1. INTRODUCTION`, `2.1. TRES Spectra`), levels from the printed numbering, rejecting prose, links, numeric rows and lower-case continuations | `internal/rag/domain` | `T3_COMMIT` |
+| T3 | 2 | S2, S10 | Numbered-heading fallback as a pure function over one page's text (`1. INTRODUCTION`, `2.1. TRES Spectra`), levels from the printed numbering, rejecting prose, links, numeric rows and lower-case continuations | `internal/rag/domain` | `0ea10eb` |
 | T4 | 2 | S3, S4 | Confirmation: infer the printed-page↔PDF-page offset by maximizing matches, confirm every entry against a heading larger than the body size, and apply the ≥95% gate at chapter level; below the gate the result is empty | `internal/rag/app` | pending |
 | T5 | 3 | S5, S9 | `StructureDocumentUseCase` wired into ingestion: persists sections, is non-fatal on every path, and leaves a document with no structure indexing exactly as before | `internal/rag/app`, `internal/composition` | pending |
 | T6 | 3 | S7, S8 | Attribution at query time: deepest section containing the chunk's page, exposed on `SearchResult`, the HTTP DTO and the CLI line; the chunk text and its vectors are untouched | `internal/rag/{sqlite,app,http}`, `internal/cli` | pending |
@@ -116,7 +116,8 @@ foundation is delivered in slices rather than one commit per phase:
 | 2 | `eb0b6f2` | 510 (branch) | Migration 103 and its migration tests |
 | 3 | `e5dbbe8` | 1011 (branch) | The SQLite adapter and its repository tests (T1 closes here) |
 | 4 | `605ca55` | 1950 (branch) | The TOC extractor, `domain.Heading` and their tests (T2 closes here) |
-| 5 | `T3_COMMIT` | — | The numbered-heading fallback, `domain.HeadingsFromPageText` (T3 closes here) |
+| 5 | `0ea10eb` | 2413 (branch) | The numbered-heading fallback, `domain.HeadingsFromPageText` (T3 closes here) |
+| 6 | next | — | Offset inference, typographic confirmation and the >=95% gate (T4) |
 
 A slice boundary is recorded here before the commit that follows it, which is
 what keeps the review workload visible instead of inferring it from the diff.
