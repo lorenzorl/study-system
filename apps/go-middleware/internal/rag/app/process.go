@@ -30,10 +30,16 @@ type ProcessReport struct {
 
 	// Embeddings is how many vectors the embedding stage wrote.
 	Embeddings int
+
+	// Sections is how many sections the structure stage stored. Zero is a normal
+	// answer: a document nobody can structure is still a processed document
+	// (S5).
+	Sections int
 }
 
 // ProcessDocumentUseCase runs the whole pipeline for one already-registered
-// document: ingestion, then the lexical index, then the embeddings.
+// document: ingestion, then the lexical index, then the embeddings, and last the
+// structure stage when one was added.
 //
 // The document is registered by the caller (the upload endpoint) before this
 // runs, so the use case starts from the stored payload and never stores it
@@ -46,6 +52,10 @@ type ProcessDocumentUseCase struct {
 	ingest    *IngestDocumentUseCase
 	index     *IndexDocumentUseCase
 	embed     *EmbedDocumentUseCase
+
+	// structure is the optional fourth stage. It is nil in a pipeline built
+	// without one, and then the run is exactly the three searchable stages.
+	structure *StructureDocumentUseCase
 }
 
 // NewProcessDocumentUseCase wires the full pipeline for one document.
@@ -65,7 +75,19 @@ func NewProcessDocumentUseCase(
 	}
 }
 
-// Execute runs the three stages in order. The first failure stops the pipeline
+// WithStructure adds the structure stage, which the pipeline then runs last.
+//
+// The stage is added rather than taken by the constructor because it is the only
+// one that reads the PDF itself: a pipeline built without it runs the three
+// searchable stages exactly as it did before this feature existed, which is what
+// an ingestion harness with no PDF tooling needs. Production adds it in the
+// composition package, so the pipeline a book actually runs through is complete.
+func (uc *ProcessDocumentUseCase) WithStructure(structure *StructureDocumentUseCase) *ProcessDocumentUseCase {
+	uc.structure = structure
+	return uc
+}
+
+// Execute runs the stages in order. The first failure stops the pipeline
 // and is returned, so a partially processed document is reported as failed
 // rather than as done.
 func (uc *ProcessDocumentUseCase) Execute(ctx context.Context, documentID string) (ProcessReport, error) {
@@ -109,6 +131,23 @@ func (uc *ProcessDocumentUseCase) Execute(ctx context.Context, documentID string
 		return report, fmt.Errorf("embed document %s: %w", documentID, err)
 	}
 	report.Embeddings = embedded.Embeddings
+
+	// Structure last, after the vectors. It is the only stage that reads the PDF
+	// itself and the only one whose failure must never cost the document its
+	// searchability (S5): a book whose structure cannot be read is still a book
+	// that answers. It reports its own failures instead of returning them, so the
+	// only error it can produce is a section table it could not store — and by
+	// then the chunks and the vectors are already written.
+	if uc.structure != nil {
+		structured, err := uc.structure.Execute(ctx, StructureRequest{
+			DocumentID: documentID,
+			PDFPath:    payloadPath,
+		})
+		if err != nil {
+			return report, fmt.Errorf("structure document %s: %w", documentID, err)
+		}
+		report.Sections = structured.Sections
+	}
 
 	return report, nil
 }

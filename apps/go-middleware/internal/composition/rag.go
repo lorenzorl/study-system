@@ -33,6 +33,7 @@ type RAG struct {
 	pages      *ragsqlite.PageOutcomeRepository
 	chunks     *ragsqlite.ChunkRepository
 	embeddings *ragsqlite.EmbeddingRepository
+	sections   *ragsqlite.SectionRepository
 }
 
 // NewRAG wires the RAG context's repositories over an open database.
@@ -43,6 +44,7 @@ func NewRAG(sqlDB *sql.DB) *RAG {
 		pages:      ragsqlite.NewPageOutcomeRepository(sqlDB),
 		chunks:     ragsqlite.NewChunkRepository(sqlDB),
 		embeddings: ragsqlite.NewEmbeddingRepository(sqlDB),
+		sections:   ragsqlite.NewSectionRepository(sqlDB),
 	}
 }
 
@@ -115,8 +117,33 @@ func (r *RAG) Embed(clients Clients, embeddingModel string) (*ragapp.EmbedDocume
 		r.documents, r.chunks, r.embeddings, clients.Embedding, embeddingModel), nil
 }
 
+// Structure builds the structure stage: the cascade that reads a document's own
+// index, its numbered headings and its typography, decides what its sections are,
+// and stores them.
+//
+// The two readers are built here, and not in the application layer, because they
+// are the only part of the cascade that drives a poppler binary: the application
+// layer works against the HeadingsSource port so its decision stays testable
+// without one.
+func (r *RAG) Structure() *ragapp.StructureDocumentUseCase {
+	return ragapp.NewStructureDocumentUseCase(
+		r.sections, r.jobs, r.pages,
+		func(pdfPath string) (ragapp.StructureSources, error) {
+			index, err := pdf.NewTOCExtractor(pdfPath, nil)
+			if err != nil {
+				return ragapp.StructureSources{}, err
+			}
+			typographic, err := pdf.NewTypographicHeadings(pdfPath, nil)
+			if err != nil {
+				return ragapp.StructureSources{}, err
+			}
+			return ragapp.StructureSources{Index: index, Typographic: typographic}, nil
+		},
+	)
+}
+
 // Process builds the full pipeline for one already-registered document:
-// ingestion, then the index, then the embeddings.
+// ingestion, then the index, then the embeddings, then the structure.
 //
 // It requires a model client for the same reason Embed does, and reports its
 // absence here rather than letting a nil dereference surface mid-run. The rest of
@@ -135,7 +162,7 @@ func (r *RAG) Process(
 		r.Ingest(clients, store),
 		r.Index(),
 		embed,
-	), nil
+	).WithStructure(r.Structure()), nil
 }
 
 // Status builds the processing-status read.

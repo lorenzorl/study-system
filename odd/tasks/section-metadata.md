@@ -86,7 +86,7 @@ where a writer subagent pays for its own startup.
 | T2 | 2 | S2, S3 | TOC extractor over `pdftohtml -xml` through the runner seam: index-page detection by leader-dot density, line clustering with a drop-cap-safe anchor, page after the dots, level by indent/number, de-spaced and small-caps titles | `internal/rag/infra/pdf`, `internal/rag/domain` | `605ca55` |
 | T3 | 2 | S2, S10 | Numbered-heading fallback as a pure function over one page's text (`1. INTRODUCTION`, `2.1. TRES Spectra`), levels from the printed numbering, rejecting prose, links, numeric rows and lower-case continuations | `internal/rag/domain` | `0ea10eb` |
 | T4 | 2 | S3, S4 | Typographic reader (`Headings`) plus the pure assembly: offset inference by maximizing confirmations, confirmation against lines set at least four points above the body, the ≥95% chapter gate, ranges, parents and the print's own title spacing | `internal/rag/{infra/pdf,app}` | `ec0f96c` |
-| T5 | 3 | S5, S9 | `StructureDocumentUseCase` wired into ingestion: persists sections, is non-fatal on every path, and leaves a document with no structure indexing exactly as before | `internal/rag/app`, `internal/composition` | pending |
+| T5 | 3 | S5, S9 | `StructureDocumentUseCase` and its cascade (index, then numbered headings, then typography), run last in the pipeline, non-fatal on every read path; only a storage failure is returned | `internal/rag/app`, `internal/composition` | `T5_COMMIT` |
 | T6 | 3 | S7, S8 | Attribution at query time: deepest section containing the chunk's page, exposed on `SearchResult`, the HTTP DTO and the CLI line; the chunk text and its vectors are untouched | `internal/rag/{sqlite,app,http}`, `internal/cli` | pending |
 | T7 | 4 | S4, S7 | Acceptance measurement over the real corpus (DDD plus both papers): chapters validated on the exact page, source of every section, pages covered, chunks per section; failure of the gate recorded, not hidden | `data/`, task log | pending |
 | T8 | 4 | S6, S9 | Docs and backfill: the README/ARCHITECTURE describe the table, its provenance and the null case; `reindex` verified to rebuild chunks against already-stored sections | `apps/go-middleware/README.md`, `ARCHITECTURE.md` | pending |
@@ -256,3 +256,26 @@ largest font on the page.
 Known limit, unchanged and deliberate: the gate is 95% of the chapters the index
 names; a book whose index names chapters it does not set large gets nothing, which
 is the safe direction (S10).
+
+**L11 (2026-10-21, T5 finished by hand after a worker stall).** The worker wrote
+the use case, the pipeline hook and seven tests, then stalled while reading and
+was cut off before wiring `internal/composition`. I finished the wiring and
+committed the whole unit. Three decisions of the delivered code are worth keeping
+in view:
+
+1. **`WithStructure` is an optional stage, not a constructor argument.** A
+   pipeline built without it runs exactly the three searchable stages it always
+   ran, which is what an ingestion harness with no poppler needs. Production adds
+   it in `composition`, so the path a real book takes is complete.
+2. **A run that could not read the document writes nothing at all** — it does not
+   store an empty list. Zero sections is a verdict ("this document has no
+   confirmable structure"), and a reader that never ran has not reached one: the
+   sections an earlier run read from the same payload are still what the document
+   printed.
+3. **The numbered-heading fallback rewrites provenance to `pattern`.** Its entries
+   come from the page text, not from a printed index, so a row must not claim an
+   index the document does not have. The ones the typography confirmed keep
+   `mixed`, because two sources did agree.
+
+Only a storage failure is returned as an error; every failure to read is reported
+and never fatal (S5), which is what keeps a paper nobody can structure searchable.
