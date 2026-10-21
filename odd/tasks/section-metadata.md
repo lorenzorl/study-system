@@ -1,6 +1,6 @@
 # Section metadata for chunks — chapter and section attribution
 
-**Status:** planned · **Created:** 2026-10-21 · **Depends on:** step 4
+**Status:** in progress · **Created:** 2026-10-21 · **Depends on:** step 4
 (`documents`, `ingestion_jobs`, `job_pages`), step 5 (`chunks`, `documents`),
 `rag/infra/pdf` (poppler runner seam), `platform/db` (migrations).
 
@@ -105,6 +105,20 @@ wires persistence and exposure. Phase 4 (`C4`) is measurement and docs, and
 closes the feature. Each commit lands with its tests and docs alongside the
 behaviour.
 
+## Delivery slices
+
+The 400-line review slice is measured cumulatively on this branch, so the
+foundation is delivered in slices rather than one commit per phase:
+
+| Slice | Commit | Authored lines | What it adds |
+| --- | --- | --- | --- |
+| 1 | `e1b8664` | 415 (branch) | The `Section` value, its validation, the `SectionRepository` port, this document |
+| 2 | `eb0b6f2` | 510 (branch) | Migration 103 and its migration tests |
+| 3 | next | — | The SQLite adapter and its repository tests (T1 closes here) |
+
+A slice boundary is recorded here before the commit that follows it, which is
+what keeps the review workload visible instead of inferring it from the diff.
+
 ## Log
 
 **L1 (2026-10-21, original request)** — "ok quiero que evalues la posibilidad de
@@ -157,3 +171,7 @@ across the corpus. The specs above inherit the corrected numbers, not the 33.
 **L6 (2026-10-21, authorization)** — "si", authorizing this document with the
 scope and acceptance criteria above. Section filtering stays out (S6); the
 citation is what ships (S7).
+
+**L7 (2026-10-21, implementation start)** — "arranca". T1 implemented test-first
+(RED observed as the compile failure of the new tests, then GREEN) and delivered
+in slices 1 and 2 above; the adapter is slice 3.
