@@ -28,6 +28,11 @@ const ctx = await esbuild.context({
   platform: "browser",
   outfile: "main.js",
   sourcemap: isProduction ? false : "inline",
+  // The deck imports Reveal's stylesheets as text and mounts them inside its own
+  // shadow root (src/widgets/deck-viewer/ui/DeckViewer.vue), so the plugin's
+  // styles.css is never touched. `vite.config.ts` resolves the same two
+  // specifiers the same way; the import specifiers must stay identical.
+  loader: { ".css": "text" },
   plugins: [vuePlugin()],
   alias: {
     vue: "vue/dist/vue.runtime.esm-bundler.js",

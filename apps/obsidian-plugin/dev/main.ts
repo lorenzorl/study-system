@@ -1,15 +1,16 @@
 import { createApp } from "vue"
 import { createRouter, createWebHistory } from "vue-router"
-import { createPinia } from "pinia"
+import { pinia } from "@/app/pinia"
 import App from "@/app/ui/App.vue"
-import { DashboardPage } from "@/pages/dashboard"
+import { ResourcesPage } from "@/pages/resources"
 import { TopicPage } from "@/pages/topic"
 import { ConceptPage } from "@/pages/concept"
 import { FlashcardSessionPage } from "@/pages/flashcard-session"
 import { FeynmanPage } from "@/pages/feynman"
+import { PresentationPage } from "@/pages/presentation"
 
 const routes = [
-  { path: "/", name: "dashboard", component: DashboardPage },
+  { path: "/", name: "dashboard", component: ResourcesPage },
   {
     path: "/topic/:topicId",
     name: "topic",
@@ -34,6 +35,13 @@ const routes = [
     component: FeynmanPage,
     props: true,
   },
+  // Same route as the plugin router. Reveal's stylesheets arrive as text in both
+  // bundlers and are injected into a shadow root by `DeckViewer`.
+  {
+    path: "/present/:deckId",
+    name: "presentation",
+    component: PresentationPage,
+  },
 ]
 
 function init() {
@@ -43,7 +51,7 @@ function init() {
   })
 
   const app = createApp(App)
-  app.use(createPinia())
+  app.use(pinia)
   app.use(router)
   app.mount("#app")
 }
