@@ -122,6 +122,45 @@ read too, if present; a real environment variable always beats the file, and the
 file always beats the built-in default. See the Configuration section below for
 the variables, and create `.env` with the ones you need to override.
 
+### Android / Termux
+
+Android is not a normal build target for this binary, for two reasons that are
+both environmental rather than code:
+
+- **SQLite dies on open.** Android's seccomp filter answers a forbidden syscall
+  with `SECCOMP_RET_KILL`, so the process dies with `SIGSYS` instead of getting
+  `ENOSYS`. `modernc.org/libc` bundles musl's `fstatat`, which probes `statx`
+  (397) first and only falls back to `fstatat64` (327) on `ENOSYS`; this kernel
+  has no `statx`, so the fallback never runs and every command that opens the
+  database is killed.
+- **A static build has no DNS.** With `CGO_ENABLED=0`, Go's resolver reads
+  `/etc/resolv.conf`, which Android does not have (it resolves through netd), so
+  network calls fail with `lookup <host> on [::1]:53: connection refused`.
+
+Both are handled by building **on the device** with cgo, which is what
+`scripts/build-android.sh` does. Building with `GOOS=android` also disables two
+further seccomp traps on its own, because Go's own android guards cover
+`faccessat2` (439, `exec.LookPath`) and `pidfd_open` (434, `os.startProcess`).
+
+```bash
+# on the device first: pkg install golang clang poppler
+DEVICE=user@host ./scripts/build-android.sh              # builds and installs
+DEVICE=user@host SKIP_INSTALL=1 ./scripts/build-android.sh   # build only
+```
+
+The script copies the module to a scratch tree, patches a **copy** of
+`modernc.org/libc` so its `fstatat` always takes the `fstatat64` path, vendors
+the result, and compiles on the phone with `-p 2` and `GOMEMLIMIT` because the
+device has little RAM. The build takes a few minutes.
+
+**`go.mod` is never modified.** The patch lives in a throwaway modfile, so a
+normal `go build` on any other platform is unaffected and needs no patch at all —
+there, `statx` exists and is permitted.
+
+Do not cross-compile a static binary and expect it to work end to end: `list`,
+`topics` and the other database commands will crash with `SIGSYS`, and `search`
+will be lexical-only because it cannot reach the embedding API.
+
 ## API
 
 | Method | Route | Purpose |
