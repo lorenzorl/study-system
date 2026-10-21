@@ -83,7 +83,7 @@ where a writer subagent pays for its own startup.
 | ID | Phase | Linked | What | Where | Commit |
 | --- | --- | --- | --- | --- | --- |
 | T1 | 1 | S3, S9 | Migration 103, `Section` value, `SectionRepository` port, `section_repo.go` (replace-per-document, list-by-document, section-at-page), with repo tests | `internal/rag/{sqlite,domain}` | `e1b8664`, `eb0b6f2`, `e5dbbe8` |
-| T2 | 2 | S2, S3 | TOC extractor over `pdftohtml -xml` through the runner seam: index-page detection by leader-dot density, line clustering with a drop-cap-safe anchor, page after the dots, level by indent/number, de-spaced and small-caps titles | `internal/rag/infra/pdf` | pending |
+| T2 | 2 | S2, S3 | TOC extractor over `pdftohtml -xml` through the runner seam: index-page detection by leader-dot density, line clustering with a drop-cap-safe anchor, page after the dots, level by indent/number, de-spaced and small-caps titles | `internal/rag/infra/pdf`, `internal/rag/domain` | `605ca55` |
 | T3 | 2 | S2, S10 | Numbered-heading fallback for documents without a TOC (`1. INTRODUCTION`, `2.1. TRES Spectra`), rejected when the line is a sentence or carries no following body | `internal/rag/infra/pdf` | pending |
 | T4 | 2 | S3, S4 | Confirmation: infer the printed-page↔PDF-page offset by maximizing matches, confirm every entry against a heading larger than the body size, and apply the ≥95% gate at chapter level; below the gate the result is empty | `internal/rag/app` | pending |
 | T5 | 3 | S5, S9 | `StructureDocumentUseCase` wired into ingestion: persists sections, is non-fatal on every path, and leaves a document with no structure indexing exactly as before | `internal/rag/app`, `internal/composition` | pending |
@@ -114,7 +114,9 @@ foundation is delivered in slices rather than one commit per phase:
 | --- | --- | --- | --- |
 | 1 | `e1b8664` | 415 (branch) | The `Section` value, its validation, the `SectionRepository` port, this document |
 | 2 | `eb0b6f2` | 510 (branch) | Migration 103 and its migration tests |
-| 3 | next | — | The SQLite adapter and its repository tests (T1 closes here) |
+| 3 | `e5dbbe8` | 1011 (branch) | The SQLite adapter and its repository tests (T1 closes here) |
+| 4 | `605ca55` | 1950 (branch) | The TOC extractor, `domain.Heading` and their tests (T2 closes here) |
+| 5 | next | — | The numbered-heading fallback (T3) |
 
 A slice boundary is recorded here before the commit that follows it, which is
 what keeps the review workload visible instead of inferring it from the diff.
@@ -175,3 +177,28 @@ citation is what ships (S7).
 **L7 (2026-10-21, implementation start)** — "arranca". T1 implemented test-first
 (RED observed as the compile failure of the new tests, then GREEN) and delivered
 in slices 1 and 2 above; the adapter is slice 3.
+
+**L8 (2026-10-21, T2 delivered and corrected)** — T2 was delegated to a worker
+with the probe as its reference and returned 940 authored lines across
+`domain/heading.go` and `infra/pdf/toc.go` plus 18 tests; I verified it and found
+two defects that the worker's fixtures could not see:
+
+1. **Dedupe by title alone lost real sections.** `Section` rows repeat a title
+   across chapters ("Summary" closes most of them), and collapsing by
+   `(level, title)` would keep the first and silently drop the rest. The key is
+   now `(level, page, title)`: the same row reprinted across a page break still
+   collapses, and the same title on another page survives. Pinned by
+   `TestTOCExtractor_KeepsTheSameTitleOnDifferentPages`.
+2. **De-spacing welded words.** The probe's rule (join when *any* token is short)
+   produced "Modelto" and "ofa"; a real letter-spaced word can contain long glyphs
+   ("ild", "l-Dr"). The rule is now a majority of short glyphs, plus a label
+   boundary so "Part I. Putting…" does not become "I.Putting". Pinned by
+   `JoinsAWordWhoseGlyphsAreLongerThanTwoCharacters` and
+   `KeepsTheSpacesOfANormallySetTitle`.
+
+The reality check ran the Go extractor over `DDD.pdf` and got **110 entries**,
+the same count as the probe, with correct levels and pages. Two titles remain
+imperfect ("Modelto", "ofa"): when the typesetter collapsed a word boundary to a
+single space, no run-level geometry can recover it. That is recorded in
+`despaced` and is what T4 fixes by taking the title from the page's own heading,
+which is not letter-spaced.
