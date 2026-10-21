@@ -193,7 +193,6 @@ type PageOutcomeRepository interface {
 
 // SectionRepository manages a document's structure: the parts, chapters and
 // sections that own page ranges.
-//
 type SectionRepository interface {
 	// ReplaceDocumentSections deletes the document's sections and writes the
 	// given ones in their place, inside one transaction.
