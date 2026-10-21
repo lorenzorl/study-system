@@ -59,8 +59,26 @@ if [ -z "$DEVICE" ]; then
     exit 1
 fi
 
-MODCACHE="$(go env GOMODCACHE)"
+# The libc patch is applied with python3 and the tree is staged with rsync. Both
+# must exist before the script starts mutating anything.
+for required in python3 rsync; do
+    command -v "$required" >/dev/null || {
+        echo "error: $required is required on this machine to run the build" >&2
+        exit 1
+    }
+done
 
+# WORK is removed recursively, so only a scoped directory under /tmp is accepted:
+# a mistyped value must not be able to delete a broader tree.
+case "$WORK" in
+    /tmp/?*) ;;
+    *)
+        echo "error: WORK must be a directory under /tmp (got: $WORK)" >&2
+        exit 1
+        ;;
+esac
+
+MODCACHE="$(go env GOMODCACHE)"
 # Resolve the libc version from go.mod so this never drifts from the dependency
 # the module actually uses.
 if [ -z "$LIBC_VERSION" ]; then
@@ -75,6 +93,22 @@ LIBC_SRC="$MODCACHE/modernc.org/libc@$LIBC_VERSION"
     exit 1
 }
 
+# The patch rewrites one per-architecture generated file, so the device's own
+# toolchain decides which one. Refuse early rather than shipping a binary whose
+# SQLite path still calls statx.
+DEVICE_GOARCH="$(ssh -p "$PORT" -o BatchMode=yes -o ConnectTimeout=10 "$DEVICE" 'go env GOARCH' 2>/dev/null || true)"
+[ -n "$DEVICE_GOARCH" ] || {
+    echo "error: could not read 'go env GOARCH' on $DEVICE (is golang installed there?)" >&2
+    exit 1
+}
+if [ "$DEVICE_GOARCH" != "arm" ]; then
+    echo "error: only android/arm (32-bit) is supported today." >&2
+    echo "  $DEVICE reports GOARCH=$DEVICE_GOARCH, which would instead need" >&2
+    echo "  ccgo_linux_${DEVICE_GOARCH}.go patched and reviewed on its own." >&2
+    exit 1
+fi
+LIBCCGO="ccgo_linux_${DEVICE_GOARCH}.go"
+
 PATCHED_LIBC="$WORK/patched-libc"
 SRC="$WORK/src"
 
@@ -88,7 +122,7 @@ rsync -a --exclude 'data' --exclude '.env' --exclude 'bin' "$MODULE_DIR/" "$SRC/
 echo "==> patching modernc.org/libc@$LIBC_VERSION so fstatat skips statx"
 cp -R "$LIBC_SRC" "$PATCHED_LIBC"
 chmod -R u+w "$PATCHED_LIBC"
-python3 - "$PATCHED_LIBC/ccgo_linux_arm.go" <<'PY'
+python3 - "$PATCHED_LIBC/$LIBCCGO" <<'PY'
 import sys
 
 path = sys.argv[1]
@@ -132,7 +166,7 @@ grep -q '^# modernc.org/libc ' vendor/modules.txt || {
     echo "error: vendor/modules.txt lost the libc declaration" >&2
     exit 1
 }
-grep -q 'patched: Android seccomp' vendor/modernc.org/libc/ccgo_linux_arm.go || {
+grep -q 'patched: Android seccomp' "vendor/modernc.org/libc/$LIBCCGO" || {
     echo "error: the vendored libc does not carry the patch" >&2
     exit 1
 }
@@ -156,6 +190,19 @@ ssh -p "$PORT" -o BatchMode=yes -o ConnectTimeout=15 "$DEVICE" "
   chmod +x \$HOME/study-system-native
   echo '    built:' \$(du -h \$HOME/study-system-native | cut -f1)
   \$HOME/study-system-native help >/dev/null && echo '    smoke: help exits 0'
+  # A binary whose SQLite path still calls statx answers help perfectly well, so
+  # exercise the database too. The expected failure is 'not found' (a fresh home),
+  # never SIGSYS.
+  DBHOME=\$(mktemp -d)
+  dbout=\$(STUDY_HOME=\$DBHOME \$HOME/study-system-native review smoke-probe -grade 3 2>&1 || true)
+  rm -rf \$DBHOME
+  case \$dbout in
+    *SIGSYS*)
+      echo 'error: the SQLite path crashes with SIGSYS; the libc patch did not take effect' >&2
+      exit 1
+      ;;
+  esac
+  echo '    smoke: SQLite path opens without SIGSYS'
 "
 
 if [ "${SKIP_INSTALL:-0}" = "1" ]; then
