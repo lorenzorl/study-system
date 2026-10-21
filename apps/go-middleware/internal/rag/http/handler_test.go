@@ -408,3 +408,33 @@ func TestRouter_RejectsOtherMethods(t *testing.T) {
 	require.Equal(t, http.StatusMethodNotAllowed, rec.Code)
 	assert.Equal(t, 0, mock.calls)
 }
+
+// The section is part of the citation, so it has to survive to the wire: a client
+// that draws "Chapter 5, page 91" cannot ask for the section in a second request.
+func TestSearchHandler_CarriesTheSectionThatOwnsThePage(t *testing.T) {
+	mock := &mockSearchUseCase{results: []domain.SearchResult{{
+		ChunkID:       "chunk-1",
+		DocumentID:    "doc-1",
+		DocumentTitle: "Domain-Driven Design",
+		PageNumber:    91,
+		SectionTitle:  "Crunching Knowledge",
+		SectionLevel:  2,
+		Stage:         domain.StageLexical,
+	}}}
+
+	handler := httppkg.NewSearchHandler(mock)
+	req := httptest.NewRequest(http.MethodGet, "/api/rag/search?q=obstáculo&limit=5", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var raw []map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &raw))
+	require.Len(t, raw, 1)
+
+	assert.Contains(t, keysOf(raw[0]), "section_title")
+	assert.Contains(t, keysOf(raw[0]), "section_level")
+	assert.JSONEq(t, `"Crunching Knowledge"`, string(raw[0]["section_title"]))
+	assert.JSONEq(t, `2`, string(raw[0]["section_level"]))
+}

@@ -1,12 +1,14 @@
 package app_test
 
 import (
+	"context"
 	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/platform/apperror"
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/rag/app"
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/rag/domain"
 )
@@ -244,4 +246,76 @@ func TestSearchUseCase_FusionRespectsTheLimit(t *testing.T) {
 	results, err := hybrid.Search(ctx, "aggregate repository", 1)
 	require.NoError(t, err)
 	assert.Len(t, results, 1)
+}
+
+// sectionLookup is the port the search asks for attribution: it answers the
+// deepest section that owns a page, or nothing.
+type sectionLookup struct {
+	byPage map[int]*domain.Section
+	err    error
+}
+
+func (lookup sectionLookup) SectionAt(
+	ctx context.Context, documentID string, page int,
+) (*domain.Section, error) {
+	if lookup.err != nil {
+		return nil, lookup.err
+	}
+	if section, ok := lookup.byPage[page]; ok {
+		return section, nil
+	}
+	return nil, apperror.ErrNotFound
+}
+
+// A page without a section and a lookup that fails both cost the citation and
+// never the search: the ranking is the index's answer and must survive either.
+func TestSearchUseCase_NamesTheSectionThatOwnsThePage(t *testing.T) {
+	h := newIndexHarness(t)
+	ctx := t.Context()
+	embedder := spanishToEnglishEmbedder()
+
+	document := indexAndEmbed(t, h, embedder, "test/model", "A book", map[int]string{
+		1: "el obstáculo del diseño",
+		2: "otra página cualquiera",
+	})
+	_ = document
+
+	searcher := app.NewSearchUseCase(h.chunks).WithSections(sectionLookup{
+		byPage: map[int]*domain.Section{
+			1: {Level: 2, Title: "Crunching Knowledge"},
+		},
+	})
+
+	results, err := searcher.Search(ctx, "obstáculo", 5)
+	require.NoError(t, err)
+	require.NotEmpty(t, results)
+
+	assert.Equal(t, 1, results[0].PageNumber)
+	assert.Equal(t, "Crunching Knowledge", results[0].SectionTitle)
+	assert.Equal(t, 2, results[0].SectionLevel)
+
+	unattributed, err := searcher.Search(ctx, "página cualquiera", 5)
+	require.NoError(t, err)
+	require.NotEmpty(t, unattributed)
+	assert.Empty(t, unattributed[0].SectionTitle, "a page no section owns cites no section")
+	assert.Zero(t, unattributed[0].SectionLevel)
+}
+
+func TestSearchUseCase_ASectionLookupFailureCostsOnlyTheCitation(t *testing.T) {
+	h := newIndexHarness(t)
+	ctx := t.Context()
+	embedder := spanishToEnglishEmbedder()
+
+	indexAndEmbed(t, h, embedder, "test/model", "A book", map[int]string{
+		1: "el obstáculo del diseño",
+	})
+
+	searcher := app.NewSearchUseCase(h.chunks).WithSections(sectionLookup{
+		err: errors.New("the section table is locked"),
+	})
+
+	results, err := searcher.Search(ctx, "obstáculo", 5)
+	require.NoError(t, err, "a broken section read must not fail the search")
+	require.NotEmpty(t, results)
+	assert.Empty(t, results[0].SectionTitle)
 }

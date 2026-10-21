@@ -40,6 +40,15 @@ type ChunkSearchRepository interface {
 	SearchInDocument(ctx context.Context, query, documentID string, limit int) ([]domain.SearchResult, error)
 }
 
+// SectionLookup answers which section owns a page.
+//
+// It is a separate port from the search repository on purpose: the ranking is the
+// index's answer and the attribution is the document's, and a search built without
+// one still ranks exactly as it did before this feature existed.
+type SectionLookup interface {
+	SectionAt(ctx context.Context, documentID string, page int) (*domain.Section, error)
+}
+
 // SearchUseCase answers a query over the chunk index.
 //
 // The lexical stage is always available and reads only the database. The semantic
@@ -57,6 +66,11 @@ type SearchUseCase struct {
 
 	// model filters the stored vectors to the model the query was embedded with.
 	model string
+
+	// sections attributes a result to the section that owns its page. It is nil
+	// when no structure is wired in, and then a result carries no section and
+	// answers exactly as it did before.
+	sections SectionLookup
 }
 
 // NewSearchUseCase wires a lexical-only search.
@@ -82,6 +96,17 @@ func NewHybridSearchUseCase(
 		embedder:   embedder,
 		model:      model,
 	}
+}
+
+// WithSections adds attribution: every result then names the section that owns its
+// page, or nothing when the document has no confirmed structure.
+//
+// It is a builder rather than a constructor argument so the two existing
+// constructors keep their shape: a caller that does not want attribution writes
+// the same line it wrote before.
+func (uc *SearchUseCase) WithSections(sections SectionLookup) *SearchUseCase {
+	uc.sections = sections
+	return uc
 }
 
 // semanticEnabled reports whether the semantic stage has everything it needs.
@@ -149,7 +174,7 @@ func (uc *SearchUseCase) search(
 	// return a neighbour that no reader asked for. The lexical stage already
 	// answered it with nothing.
 	if !uc.semanticEnabled() || !domain.HasIndexableText(query) {
-		return lexical, nil
+		return uc.attribute(ctx, lexical), nil
 	}
 
 	semantic, err := uc.semanticRanking(ctx, query, documentID, limit)
@@ -157,10 +182,33 @@ func (uc *SearchUseCase) search(
 		return nil, err
 	}
 	if len(semantic) == 0 {
-		return lexical, nil
+		return uc.attribute(ctx, lexical), nil
 	}
 
-	return fuseResults(lexical, semantic, limit), nil
+	return uc.attribute(ctx, fuseResults(lexical, semantic, limit)), nil
+}
+
+// attribute names the section that owns each result's page.
+//
+// A page no section owns is the normal answer for a document nobody could
+// structure, and a failed lookup is not: it is a broken read, and it costs the
+// citation rather than the search. The same asymmetry the structure stage keeps
+// (S5) — a book must still answer — applies one layer up, where the reader would
+// otherwise lose a page of results to a section table that is slow or locked.
+func (uc *SearchUseCase) attribute(ctx context.Context, results []domain.SearchResult) []domain.SearchResult {
+	if uc.sections == nil {
+		return results
+	}
+
+	for index := range results {
+		section, err := uc.sections.SectionAt(ctx, results[index].DocumentID, results[index].PageNumber)
+		if err != nil {
+			continue
+		}
+		results[index].SectionTitle = section.Title
+		results[index].SectionLevel = section.Level
+	}
+	return results
 }
 
 // lexical runs the ranked query over the whole corpus or over one document. The

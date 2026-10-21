@@ -102,6 +102,16 @@ type SearchResult struct {
 	// this is exact.
 	PageNumber int
 
+	// SectionTitle is the deepest section that owns PageNumber, and empty when the
+	// document has no confirmed structure. It is the other half of a citation: a
+	// page tells a reader where to look, a section tells them what they are
+	// looking at.
+	SectionTitle string
+
+	// SectionLevel is that section's nesting, 0 when there is none. It is carried
+	// so a client can render the hierarchy without another request.
+	SectionLevel int
+
 	// Snippet is a bounded window of the chunk's text with the matched terms
 	// marked, folded onto one line so a caller can print one line per result. It
 	// is a citation aid, not context: FTS5 builds it from twelve tokens.

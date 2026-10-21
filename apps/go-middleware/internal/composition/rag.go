@@ -62,9 +62,10 @@ func NewRAG(sqlDB *sql.DB) *RAG {
 // "model".
 func (r *RAG) Search(clients Clients, embeddingModel string) *ragapp.SearchUseCase {
 	if clients.Embedding == nil {
-		return ragapp.NewSearchUseCase(r.chunks)
+		return ragapp.NewSearchUseCase(r.chunks).WithSections(r.sections)
 	}
-	return ragapp.NewHybridSearchUseCase(r.chunks, r.embeddings, clients.Embedding, embeddingModel)
+	return ragapp.NewHybridSearchUseCase(r.chunks, r.embeddings, clients.Embedding, embeddingModel).
+		WithSections(r.sections)
 }
 
 // Ingest builds the conversion run.

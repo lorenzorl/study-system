@@ -20,6 +20,13 @@ type SearchResultResponse struct {
 	// this is exact.
 	PageNumber int `json:"page_number"`
 
+	// SectionTitle is the deepest section that owns PageNumber, empty when the
+	// document has no confirmed structure.
+	SectionTitle string `json:"section_title,omitempty"`
+
+	// SectionLevel is that section's nesting, absent when there is none.
+	SectionLevel int `json:"section_level,omitempty"`
+
 	// Snippet is the bounded window of the chunk's text with the matched terms
 	// marked, folded onto one line.
 	Snippet string `json:"snippet"`

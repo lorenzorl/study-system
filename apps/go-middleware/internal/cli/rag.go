@@ -208,7 +208,7 @@ func printResults(
 
 	if len(results) > 0 {
 		writer := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(writer, "#\tTITLE\tPAGE\tMATCH\tBM25\tCOSINE\tSNIPPET")
+		fmt.Fprintln(writer, "#\tTITLE\tPAGE\tSECTION\tMATCH\tBM25\tCOSINE\tSNIPPET")
 
 		for i, result := range results {
 			// bm25 is smaller-is-better, so its magnitude is printed under a name
@@ -217,8 +217,14 @@ func printResults(
 			// chunk prints 0 for its score, and MATCH names the stage that did.
 			// math.Abs keeps that 0 positive: negating a zero score would print
 			// "-0.000", which reads as a score rather than as "not ranked here".
-			fmt.Fprintf(writer, "%d\t%s\t%d\t%s\t%.3f\t%.3f\t%s\n",
-				i+1, result.DocumentTitle, result.PageNumber, result.Stage,
+			// A document nobody could structure has no section, and "-" says that
+			// rather than an empty cell a reader would read as a missing column.
+			section := result.SectionTitle
+			if section == "" {
+				section = "-"
+			}
+			fmt.Fprintf(writer, "%d\t%s\t%d\t%s\t%s\t%.3f\t%.3f\t%s\n",
+				i+1, result.DocumentTitle, result.PageNumber, section, result.Stage,
 				math.Abs(result.Score), result.Similarity, result.Snippet)
 		}
 		if err := writer.Flush(); err != nil {
