@@ -88,8 +88,8 @@ where a writer subagent pays for its own startup.
 | T4 | 2 | S3, S4 | Typographic reader (`Headings`) plus the pure assembly: offset inference by maximizing confirmations, confirmation against lines set at least four points above the body, the ≥95% chapter gate, ranges, parents and the print's own title spacing | `internal/rag/{infra/pdf,app}` | `ec0f96c` |
 | T5 | 3 | S5, S9 | `StructureDocumentUseCase` and its cascade (index, then numbered headings, then typography), run last in the pipeline, non-fatal on every read path; only a storage failure is returned | `internal/rag/app`, `internal/composition` | ``bab7f0a`` |
 | T6 | 3 | S7, S8 | Attribution resolved after the fusion: the deepest section owning a result's page, through the repository port, exposed on `SearchResult`, the HTTP DTO (`omitempty`) and a new command column; the search statement and the chunk text are untouched | `internal/rag/{domain,app,http}`, `internal/cli`, `internal/composition` | `1f19ea0` |
-| T7 | 4 | S4, S7 | Acceptance measurement over the real corpus (DDD plus both papers): chapters validated on the exact page, source of every section, pages covered, chunks per section; failure of the gate recorded, not hidden | `data/`, task log | `b8889e6`, `T7B_COMMIT` |
-| T7b | 4 | S4, S10 | The papers' policy (decided by the user): a gate for the page-text source — its entries are on their own pages, so typography cannot be the gate — plus the fallback when an index names no chapter | `internal/rag/app` | `T7B_COMMIT` |
+| T7 | 4 | S4, S7 | Acceptance measurement over the real corpus (DDD plus both papers): chapters validated on the exact page, source of every section, pages covered, chunks per section; failure of the gate recorded, not hidden | `data/`, task log | `b8889e6`, `eeb5190` |
+| T7b | 4 | S4, S10 | The papers' policy (decided by the user): a gate for the page-text source — its entries are on their own pages, so typography cannot be the gate — plus the fallback when an index names no chapter | `internal/rag/app` | `eeb5190` |
 | T8 | 4 | S6, S9 | Docs and backfill: the README/ARCHITECTURE describe the table, its provenance and the null case; `reindex` verified to rebuild chunks against already-stored sections | `apps/go-middleware/README.md`, `ARCHITECTURE.md` | pending |
 
 **Risk per task.** No task reaches a Task Size high-risk item on its own: the
@@ -122,7 +122,7 @@ foundation is delivered in slices rather than one commit per phase:
 | 7 | `bab7f0a` | 4268 (branch) | The structure stage in the pipeline and its composition wiring (T5 closes here) |
 | 8 | `1f19ea0` | — | Attribution on the result, the DTO and the command's line (T6 closes here) |
 | 9 | `T7_COMMIT` | — | The acceptance measurement over the real corpus (T7 closes here) |
-| 10 | `T7B_COMMIT` | 4.8k (branch) | The papers' structure policy: a gate for the page-text source and the no-chapter fallback (T7b closes here) |
+| 10 | `eeb5190` | 4.8k (branch) | The papers' structure policy: a gate for the page-text source and the no-chapter fallback (T7b closes here) |
 | 11 | next | — | Docs and the reindex backfill verification (T8 in the task table) |
 
 A slice boundary is recorded here before the commit that follows it, which is
