@@ -383,3 +383,26 @@ func TestTOCExtractor_KeepsTheSpacesOfANormallySetTitle(t *testing.T) {
 
 	assert.Equal(t, "Read the Book", headings[0].Title)
 }
+
+// The index rules read position and text, never size, so a font spec that sets an
+// index row at the document's largest size must not change a single entry. Only
+// the typographic reading looks at sizes at all.
+func TestTOCExtractor_ReadsTheSameEntriesWhateverTheFontSizesAre(t *testing.T) {
+	document := tocDocument(tocPage(3, 1188, tocRuns(
+		[]string{
+			`<text top="200" left="150" width="90" height="15" font="1">1.Crunching Knowledge</text>`,
+			tocLeader(200),
+			tocText(200, 560, "15"),
+		},
+		tocRow(220, 180, "Listen to Language", "145"),
+		tocRow(240, 180, "Try, Try Again", "154"),
+	)...))
+
+	headings := tocHeadings(t, document)
+
+	assert.Equal(t, []domain.Heading{
+		{Level: 2, Title: "Crunching Knowledge", Page: 15},
+		{Level: 3, Title: "Listen to Language", Page: 145},
+		{Level: 3, Title: "Try, Try Again", Page: 154},
+	}, headings)
+}

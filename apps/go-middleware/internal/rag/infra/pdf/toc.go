@@ -82,14 +82,22 @@ var (
 )
 
 // tocRun is one <text> element: a styled fragment of text at one baseline.
+//
+// font is the id of the <fontspec> the run's size comes from, and size is that
+// spec's point size. The index rules read neither — position and text decide an
+// entry — while the typographic reading is nothing but size, so one scan of the
+// XML serves both.
 type tocRun struct {
 	top  int
 	left int
 	text string
+	font int
+	size int
 }
 
 // tocPage is one <page> element's runs, in the order poppler wrote them.
 type tocPage struct {
+	number int
 	height int
 	runs   []tocRun
 }
@@ -99,6 +107,11 @@ type tocLine struct {
 	top  int
 	left int
 	text string
+
+	// size is the largest size among the line's runs: a small-caps title sets its
+	// first letter one size and the rest another, and the line is as large as the
+	// largest thing on it.
+	size int
 }
 
 // parseTOC reads pdftohtml's XML into the index entries it prints.
@@ -137,19 +150,35 @@ func parseTOC(output []byte) ([]domain.Heading, error) {
 // them, which is the document's own reading order.
 func parseTOCPages(output []byte) ([]tocPage, error) {
 	pages := []tocPage{}
+	sizes := map[int]int{}
 	open := -1
 
 	for _, raw := range strings.Split(string(output), "\n") {
 		line := strings.TrimSpace(raw)
 
 		switch {
+		case strings.HasPrefix(line, "<fontspec "):
+			// A font spec the file cannot describe is skipped rather than fatal: the
+			// index rules do not need sizes, and a run whose size is unknown is a run
+			// the typographic reading ignores.
+			attributes := parseAttributes(line)
+			id, idErr := strconv.Atoi(attributes["id"])
+			size, sizeErr := strconv.Atoi(attributes["size"])
+			if idErr == nil && sizeErr == nil {
+				sizes[id] = size
+			}
+
 		case strings.HasPrefix(line, "<page "):
 			attributes := parseAttributes(line)
 			height, err := numericAttribute(attributes, "height", line)
 			if err != nil {
 				return nil, err
 			}
-			pages = append(pages, tocPage{height: height})
+			// The page number is read leniently and never validated: the index reads
+			// pages in the order poppler wrote them, and only the typographic
+			// reading, which reports PDF pages, needs the number.
+			number, _ := strconv.Atoi(attributes["number"])
+			pages = append(pages, tocPage{number: number, height: height})
 			open = len(pages) - 1
 
 		case strings.HasPrefix(line, "<text ") && open >= 0:
@@ -162,8 +191,21 @@ func parseTOCPages(output []byte) ([]tocPage, error) {
 			if err != nil {
 				return nil, err
 			}
+			font := -1
+			if id, err := strconv.Atoi(attributes["font"]); err == nil {
+				font = id
+			}
 			pages[open].runs = append(pages[open].runs,
-				tocRun{top: top, left: left, text: innerText(line)})
+				tocRun{top: top, left: left, text: innerText(line), font: font})
+		}
+	}
+
+	// Sizes are resolved once the whole file has been read: font specs describe the
+	// document and poppler declares them first, but nothing in the format promises
+	// that, and a second pass costs one loop.
+	for index := range pages {
+		for at := range pages[index].runs {
+			pages[index].runs[at].size = sizes[pages[index].runs[at].font]
 		}
 	}
 
@@ -400,10 +442,15 @@ func clusterRuns(runs []tocRun) []tocLine {
 		})
 
 		var text strings.Builder
+		line := tocLine{top: group[0].top, left: group[0].left}
 		for _, run := range group {
 			text.WriteString(run.text)
+			if run.size > line.size {
+				line.size = run.size
+			}
 		}
-		lines = append(lines, tocLine{top: group[0].top, left: group[0].left, text: text.String()})
+		line.text = text.String()
+		lines = append(lines, line)
 	}
 	return lines
 }
