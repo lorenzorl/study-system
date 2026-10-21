@@ -120,7 +120,8 @@ foundation is delivered in slices rather than one commit per phase:
 | 6 | `ec0f96c` | 3789 (branch) | Typographic headings, offset inference, confirmation and the >=95% gate (T4 closes here) |
 | 7 | `bab7f0a` | 4268 (branch) | The structure stage in the pipeline and its composition wiring (T5 closes here) |
 | 8 | `1f19ea0` | — | Attribution on the result, the DTO and the command's line (T6 closes here) |
-| 9 | next | — | The acceptance measurement over the real corpus (T7) |
+| 9 | `T7_COMMIT` | — | The acceptance measurement over the real corpus (T7 closes here) |
+| 10 | next | — | The papers' structure policy (T8, needs a product decision) |
 
 A slice boundary is recorded here before the commit that follows it, which is
 what keeps the review workload visible instead of inferring it from the diff.
@@ -304,3 +305,33 @@ when the next patch's own assertion failed. The file was restored from `bab7f0a`
 the last commit that still had the text, and the T5 and T6 records re-applied. No
 code was affected; every other patch in this feature already used the safe
 pattern — read into a variable, assert, then write.
+
+**L14 (2026-10-21, the acceptance measurement — and what it broke).** The same
+code path the pipeline runs was measured over the three documents that exist.
+
+| Document | Source | Pages | Entries | Typographic | Offset | Chapters | Gate | Sections |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `DDD.pdf` | index | 359 | 110 | 100 | 0 | 17/17 | passes | **110** |
+| `paper-figuras.pdf` | index | 15 | 1 | 5 | 0 | 0/0 | fails | 0 |
+| `img-2610.22254.pdf` | pattern | 18 | 27 | **0** | 0 | 0/11 | fails | 0 |
+
+The book is exactly the promise: every chapter on the page the index claims, and
+110 sections to cite. The two papers get nothing, and the measurement says why:
+
+1. **A one-entry "index".** `paper-figuras.pdf` has three leader-dot rows on some
+   page — a table, not an index — and the cascade accepts any non-empty index. An
+   index that names no chapter is not an index, and the fallback should have been
+   tried instead.
+2. **A paper has no typographic confirmation.** Its headings are set in bold at
+   the body size, so the size-based reader returns zero candidates. The gate is
+   defined as "95% of the chapters confirmed by typography", so a pattern source
+   can never pass it — and the pattern source is the whole reason T3 exists.
+
+That is the fork this measurement opened, and it is a product decision rather than
+a bug: a paper's numbered heading was read **from the page's own text**, so its
+page is exact by construction and confirming it against a second reading is
+double-counting. Relaxing the gate for the pattern source would give the papers
+~27 sections each, with provenance `pattern` and no typographic confirmation —
+some of them wrong (the table header `Characteristic` survives T3's rules today).
+Keeping the gate as it is means papers keep page-only citations, and T3 stays
+dead code in practice. Recorded, not decided.
