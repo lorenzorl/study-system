@@ -84,7 +84,7 @@ where a writer subagent pays for its own startup.
 | --- | --- | --- | --- | --- | --- |
 | T1 | 1 | S3, S9 | Migration 103, `Section` value, `SectionRepository` port, `section_repo.go` (replace-per-document, list-by-document, section-at-page), with repo tests | `internal/rag/{sqlite,domain}` | `e1b8664`, `eb0b6f2`, `e5dbbe8` |
 | T2 | 2 | S2, S3 | TOC extractor over `pdftohtml -xml` through the runner seam: index-page detection by leader-dot density, line clustering with a drop-cap-safe anchor, page after the dots, level by indent/number, de-spaced and small-caps titles | `internal/rag/infra/pdf`, `internal/rag/domain` | `605ca55` |
-| T3 | 2 | S2, S10 | Numbered-heading fallback for documents without a TOC (`1. INTRODUCTION`, `2.1. TRES Spectra`), rejected when the line is a sentence or carries no following body | `internal/rag/infra/pdf` | pending |
+| T3 | 2 | S2, S10 | Numbered-heading fallback as a pure function over one page's text (`1. INTRODUCTION`, `2.1. TRES Spectra`), levels from the printed numbering, rejecting prose, links, numeric rows and lower-case continuations | `internal/rag/domain` | `T3_COMMIT` |
 | T4 | 2 | S3, S4 | Confirmation: infer the printed-page↔PDF-page offset by maximizing matches, confirm every entry against a heading larger than the body size, and apply the ≥95% gate at chapter level; below the gate the result is empty | `internal/rag/app` | pending |
 | T5 | 3 | S5, S9 | `StructureDocumentUseCase` wired into ingestion: persists sections, is non-fatal on every path, and leaves a document with no structure indexing exactly as before | `internal/rag/app`, `internal/composition` | pending |
 | T6 | 3 | S7, S8 | Attribution at query time: deepest section containing the chunk's page, exposed on `SearchResult`, the HTTP DTO and the CLI line; the chunk text and its vectors are untouched | `internal/rag/{sqlite,app,http}`, `internal/cli` | pending |
@@ -116,7 +116,7 @@ foundation is delivered in slices rather than one commit per phase:
 | 2 | `eb0b6f2` | 510 (branch) | Migration 103 and its migration tests |
 | 3 | `e5dbbe8` | 1011 (branch) | The SQLite adapter and its repository tests (T1 closes here) |
 | 4 | `605ca55` | 1950 (branch) | The TOC extractor, `domain.Heading` and their tests (T2 closes here) |
-| 5 | next | — | The numbered-heading fallback (T3) |
+| 5 | `T3_COMMIT` | — | The numbered-heading fallback, `domain.HeadingsFromPageText` (T3 closes here) |
 
 A slice boundary is recorded here before the commit that follows it, which is
 what keeps the review workload visible instead of inferring it from the diff.
@@ -202,3 +202,28 @@ imperfect ("Modelto", "ofa"): when the typesetter collapsed a word boundary to a
 single space, no run-level geometry can recover it. That is recorded in
 `despaced` and is what T4 fixes by taking the title from the page's own heading,
 which is not letter-spaced.
+
+**L9 (2026-10-21, T3 and the review outcome).** The native review of T1+T2 ended
+**approved and burned** (lineage `review-7090fc3e19d27997`, target
+`sha256:3005ecea…`). It found one CRITICAL defect that the tests had missed
+(R2-001: an empty section replace returned success for an unknown document,
+because a zero-row DELETE never trips the foreign key) — corrected in `a21ba01`
+with the test that reaches the empty path — and returned twelve informational
+findings, all non-blocking. The two worth later work: a foreign-key failure in
+the section insert can now only mean a bad `parent_id`, yet it is still mapped to
+`ErrNotFound`; and nothing checks that a `parent_id` names a section of the same
+document.
+
+**T3 changed place and lost a rule, both from contact with the corpus.** The
+document put the numbered-heading fallback in `infra/pdf`; it belongs in
+`domain` as `HeadingsFromPageText(text, page)` because the text is already stored
+in `job_pages`, so it needs no poppler run and it also works on a page a vision
+model transcribed. And the rule "a heading has no body when the next line is
+blank" is wrong: the real paper sets `1. INTRODUCTION`, then a blank line, then
+the body, so that rule rejected every heading the document prints. A blank line
+is layout, not structure. The first run over the real eighteen pages returned 41
+candidates including axis ticks (`0.0 0.1 0.2 0.3`), footnote links and body
+lines beginning with a reference number; requiring a title to open with a capital
+letter and hold a letter, and refusing links, brought it to 27, of which the
+visible remainder is a table header ("Characteristic") that the typographic
+confirmation is meant to drop.
