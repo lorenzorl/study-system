@@ -1,107 +1,13 @@
 import type { ReviewCard } from "@/widgets/review-modal"
-import type { ContinueResource, Resource } from "./types"
 
 /**
- * Fixture data for the browser dev harness. There is no backend for the
- * launcher yet, so these eight resources stand in for it.
+ * Card content for the review modal, standing in for the endpoint that does not
+ * exist yet (`GET /api/study/due` is the real source of a due session).
  *
- * The order is the display order, and it is stable (§6): most-due cards first,
- * then up-to-date cards, then decks by recency, then exams.
+ * This is **not** launcher data: the launcher's resources come from
+ * `GET /api/resources`, so a material card never looks up a session here, and a
+ * flashcard resource only appears once its own endpoint lands.
  */
-export const resourceFixtures: Resource[] = [
-  {
-    id: "fc-atencion-selectiva",
-    kind: "flashcards",
-    title: "Atención selectiva",
-    topicTitle: "Atención",
-    conceptTitle: "Atención selectiva",
-    primaryActionLabel: "Repasar",
-    due: 5,
-    total: 8,
-  },
-  {
-    id: "fc-sesgos-cognitivos",
-    kind: "flashcards",
-    title: "Sesgos cognitivos",
-    topicTitle: "Pensamiento",
-    conceptTitle: "Sesgo de confirmación",
-    primaryActionLabel: "Repasar",
-    due: 12,
-    total: 30,
-  },
-  {
-    id: "fc-atencion-dividida",
-    kind: "flashcards",
-    title: "Atención dividida",
-    topicTitle: "Atención",
-    conceptTitle: "Atención dividida",
-    primaryActionLabel: "Repasar",
-    due: 1,
-    total: 4,
-  },
-  {
-    id: "fc-carga-cognitiva",
-    kind: "flashcards",
-    title: "Carga cognitiva",
-    topicTitle: "Memoria",
-    conceptTitle: "Carga cognitiva",
-    primaryActionLabel: "Repasar",
-    due: 0,
-    total: 12,
-  },
-  {
-    id: "deck-atencion",
-    kind: "deck",
-    title: "Atención",
-    topicTitle: "Atención",
-    conceptTitle: "Atención selectiva",
-    primaryActionLabel: "Presentar",
-    slides: 12,
-    updatedDaysAgo: 2,
-  },
-  {
-    id: "deck-memoria",
-    kind: "deck",
-    title: "Memoria de trabajo",
-    topicTitle: "Memoria",
-    conceptTitle: "Memoria de trabajo",
-    primaryActionLabel: "Presentar",
-    slides: 9,
-    updatedDaysAgo: 7,
-  },
-  {
-    id: "exam-pensamiento",
-    kind: "exam",
-    title: "Pensamiento",
-    topicTitle: "Pensamiento",
-    conceptTitle: "Sesgo de confirmación",
-    primaryActionLabel: "Empezar",
-    questions: 10,
-    lastScore: null,
-    of: null,
-  },
-  {
-    id: "exam-memoria",
-    kind: "exam",
-    title: "Memoria",
-    topicTitle: "Memoria",
-    conceptTitle: "Memoria de trabajo",
-    primaryActionLabel: "Empezar",
-    questions: 10,
-    lastScore: 8,
-    of: 10,
-  },
-]
-
-/** The single "Seguir donde quedaste" entry. */
-export const continueFixture: ContinueResource = {
-  id: "continue-atencion-selectiva",
-  kindLabel: "Repaso",
-  title: "Atención selectiva",
-  done: 4,
-  total: 8,
-  primaryActionLabel: "Seguir",
-}
 
 // ─── Card fixtures for the review modal ──────────────────────────────────────
 

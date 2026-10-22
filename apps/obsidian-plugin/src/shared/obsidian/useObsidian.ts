@@ -63,6 +63,19 @@ export function setObsidianApp(app: App): void {
   _app = app
 }
 
+/**
+ * Open a vault path or an `obsidian://` URI in Obsidian's own workspace.
+ *
+ * A no-op when no app is mounted (the browser dev harness): there is no vault to
+ * open the path in, and a vault path sent to a browser tab would be a blank page.
+ */
+export function openVaultPath(path: string): void {
+  const trimmed = path.trim()
+  if (trimmed === "") return
+
+  void _app?.workspace.openLinkText(trimmed, "", false)
+}
+
 export function useObsidian() {
   function getActiveFilePath(): string | null {
     return _app?.workspace.getActiveFile()?.path ?? null
