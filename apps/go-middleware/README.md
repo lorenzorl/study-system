@@ -176,6 +176,7 @@ will be lexical-only because it cannot reach the embedding API.
 | `POST` | `/api/sync/concept` | Upsert topic + concept from an Obsidian note path |
 | `POST` | `/api/sync/flashcards` | Batch-upsert flashcards by `obsidian_id` |
 | `POST` | `/api/sync/resource` | Upsert an external study resource by `source_uri` |
+| `GET` | `/api/resources` | Every stored resource with its topic name, newest first; the array is `[]` when none exists |
 | `GET` | `/api/study/due` | Flashcards whose next review is due |
 | `POST` | `/api/study/review` | Record a review, recompute the card state |
 | `GET` | `/api/rag/search` | Ranked chunks for a query (`q`, `limit`, and an optional `document_id` that scopes it to one document); no key required |

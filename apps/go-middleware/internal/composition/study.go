@@ -21,6 +21,7 @@ type Study struct {
 	CreateTopic    *studyapp.CreateTopicUseCase
 	CreateConcept  *studyapp.CreateConceptUseCase
 	SyncResource   *studyapp.SyncResourceUseCase
+	ListResources  *studyapp.ListResourcesUseCase
 	GetDueCards    *studyapp.GetDueCardsUseCase
 	SubmitReview   *studyapp.SubmitReviewUseCase
 }
@@ -41,6 +42,7 @@ func NewStudy(sqlDB *sql.DB) *Study {
 		CreateTopic:    studyapp.NewCreateTopicUseCase(topics),
 		CreateConcept:  studyapp.NewCreateConceptUseCase(topics, concepts),
 		SyncResource:   studyapp.NewSyncResourceUseCase(topics, resources),
+		ListResources:  studyapp.NewListResourcesUseCase(resources),
 		GetDueCards:    studyapp.NewGetDueCardsUseCase(flashcards),
 		SubmitReview:   studyapp.NewSubmitReviewUseCase(cardStates, reviewLogs, domain.DummyFSRS{}),
 	}

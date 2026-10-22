@@ -407,7 +407,7 @@ reintroduced without a new decision:
 | `widgets/search-results` | widgets | Rendered RAG search results. |
 | `features/upload-document`, `features/search-corpus` | features | Uploading a document to the corpus and querying it. |
 | `entities/document`, `entities/search-result` | entities | Document and search-result models plus their `api/` segments. |
-| `entities/resource` | entities | The `syncResource` scaffold, which no feature ever called. |
+| `entities/resource` | entities | The `syncResource` scaffold, which no feature ever called. Superseded by §15 on 2026-10-22. |
 
 `shared/config` keeps one field, `apiBase`, and `app/settings-tab.ts` renders it
 with Obsidian's own `Setting` — no Vue form behind the tab. `normalizeSettings`
@@ -417,3 +417,22 @@ keeps its base URL.
 
 The Go backend is untouched: the endpoints it still exposes are simply unused by
 the plugin.
+
+## 15. `entities/resource` returns, for the launcher (2026-10-22)
+
+§14 removed `entities/resource` as a `syncResource` scaffold and said it is not to
+be reintroduced without a new decision. The decision is this one: the launcher
+reads the stored resources from `GET /api/resources` instead of rendering
+fixtures, so the plugin needs one owner for that wire shape.
+
+| File | Owns |
+| --- | --- |
+| `model/types.ts` | `ResourceType` (the four stored values), `ResourceResponse` (the wire), `Resource` (the domain shape: `sourceUri`, `topicTitle`, `createdAt`) |
+| `api/resource-api.ts` | `fetchResources()`, one `GET /api/resources` |
+| `model/useResourcesStore.ts` | `resources`, `loading`, `error`, `loadResources`, `clearError` |
+
+It is not the old scaffold: the plugin still has no `syncResource` and no
+`SyncResourceRequest` — the middleware owns the write. What comes back is a read
+model, and the launcher's view model (`kind`, the per-kind status line, the
+primary action) stays inside `pages/resources`: the entity must not know how the
+launcher decides to render a card.

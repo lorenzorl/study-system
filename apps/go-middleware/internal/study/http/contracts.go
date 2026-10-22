@@ -42,6 +42,11 @@ type SyncResourceUseCase interface {
 	Execute(ctx context.Context, topicName, title, resourceType, sourceURI string) (string, error)
 }
 
+// ListResourcesUseCase returns every stored study resource with its topic name.
+type ListResourcesUseCase interface {
+	Execute(ctx context.Context) ([]app.ResourceSummary, error)
+}
+
 // GetDueCardsUseCase returns flashcards whose next review is due.
 type GetDueCardsUseCase interface {
 	Execute(ctx context.Context) ([]app.DueCard, error)

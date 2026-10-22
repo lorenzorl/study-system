@@ -875,3 +875,50 @@ func TestFlashcardRepository_FindByObsidianID_NotFound(t *testing.T) {
 	_, err := flashcardRepo.FindByObsidianID(ctx, "obs-nonexistent")
 	assert.ErrorIs(t, err, apperror.ErrNotFound)
 }
+
+func TestResourceRepository_List_Empty(t *testing.T) {
+	_, _, _, resourceRepo, _, _, cleanup := openTestDBFull(t)
+	defer cleanup()
+
+	resources, err := resourceRepo.List(context.Background())
+	require.NoError(t, err)
+	assert.Empty(t, resources)
+}
+
+func TestResourceRepository_List_CarriesTheTopicNameAndTheNewestFirst(t *testing.T) {
+	topicRepo, _, _, resourceRepo, _, _, cleanup := openTestDBFull(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	ddd := &domain.Topic{ID: uuid.New().String(), Name: "DDD", CreatedAt: time.Now().UTC()}
+	psych := &domain.Topic{ID: uuid.New().String(), Name: "Psicología", CreatedAt: time.Now().UTC()}
+	require.NoError(t, topicRepo.Create(ctx, ddd))
+	require.NoError(t, topicRepo.Create(ctx, psych))
+
+	// The tie-break case is deliberate: two rows share an instant, so the id is
+	// the only thing that can keep the order stable between two reads.
+	newest := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	middle := time.Date(2026, 2, 1, 12, 0, 0, 0, time.UTC)
+	older := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+
+	rows := []*domain.Resource{
+		{ID: "r-older", TopicID: ddd.ID, Title: "Clean Architecture", Type: domain.ResourceTypeBook, SourceURI: "obsidian://ca.md", CreatedAt: older},
+		{ID: "r-newest", TopicID: psych.ID, Title: "Atención", Type: domain.ResourceTypeNote, SourceURI: "obsidian://atencion.md", CreatedAt: newest},
+		{ID: "r-middle-a", TopicID: ddd.ID, Title: "Paper A", Type: domain.ResourceTypeArticle, SourceURI: "obsidian://a.md", CreatedAt: middle},
+		{ID: "r-middle-b", TopicID: ddd.ID, Title: "Video B", Type: domain.ResourceTypeVideo, SourceURI: "obsidian://b.md", CreatedAt: middle},
+	}
+	for _, row := range rows {
+		require.NoError(t, resourceRepo.Create(ctx, row))
+	}
+
+	found, err := resourceRepo.List(ctx)
+	require.NoError(t, err)
+	require.Len(t, found, 4)
+
+	assert.Equal(t, []string{"r-newest", "r-middle-a", "r-middle-b", "r-older"},
+		[]string{found[0].ID, found[1].ID, found[2].ID, found[3].ID})
+	assert.Equal(t, "Psicología", found[0].TopicName)
+	assert.Equal(t, domain.ResourceTypeNote, found[0].Type)
+	assert.Equal(t, "obsidian://atencion.md", found[0].SourceURI)
+	assert.WithinDuration(t, newest, found[0].CreatedAt, time.Second)
+}

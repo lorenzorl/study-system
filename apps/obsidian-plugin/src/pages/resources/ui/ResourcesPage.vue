@@ -30,8 +30,10 @@
       </div>
     </div>
 
-    <!-- At most one "continue" entry (§6): two would be a list. -->
-    <section class="resources__continue">
+    <!-- At most one "continue" entry (§6): two would be a list. No progress
+         endpoint exists yet, so the slot stays empty and the section stays
+         hidden rather than showing a fixture. -->
+    <section v-if="continueResource" class="resources__continue">
       <h2 class="resources__section-title">Seguir donde quedaste</h2>
       <div class="continue">
         <span class="continue__glyph" aria-hidden="true">{{
@@ -53,36 +55,52 @@
       </div>
     </section>
 
-    <p class="resources__count">{{ countLabel }}</p>
-
-    <div class="resources__grid">
-      <article
-        v-for="resource in visibleResources"
-        :key="resource.id"
-        class="resource-card"
-      >
-        <span class="resource-card__badge">
-          <span class="resource-card__glyph" aria-hidden="true">{{
-            KIND_GLYPHS[resource.kind]
-          }}</span>
-          {{ KIND_LABELS[resource.kind] }}
-        </span>
-        <h3 class="resource-card__title">{{ resource.title }}</h3>
-        <p class="resource-card__context">{{ resource.topicTitle }} ›</p>
-        <p class="resource-card__status">{{ statusOf(resource) }}</p>
-        <button
-          type="button"
-          class="resource-card__action"
-          @click="openResource(resource, $event)"
-        >
-          {{ resource.primaryActionLabel }}
-        </button>
-      </article>
+    <div v-if="loading" class="resources__state">
+      <span class="resources__spinner" aria-hidden="true"></span> Cargando...
     </div>
 
-    <p v-if="visibleResources.length === 0" class="resources__empty">
-      No hay recursos que coincidan con el filtro.
-    </p>
+    <div v-else-if="error" class="resources__state resources__state--error">
+      <p class="resources__error">{{ error }}</p>
+      <button type="button" class="resources__retry" @click="retry">
+        Reintentar
+      </button>
+    </div>
+
+    <template v-else>
+      <p class="resources__count">{{ countLabel }}</p>
+
+      <div class="resources__grid">
+        <article
+          v-for="resource in visibleResources"
+          :key="resource.id"
+          class="resource-card"
+        >
+          <span class="resource-card__badge">
+            <span class="resource-card__glyph" aria-hidden="true">{{
+              KIND_GLYPHS[resource.kind]
+            }}</span>
+            {{ KIND_LABELS[resource.kind] }}
+          </span>
+          <h3 class="resource-card__title">{{ resource.title }}</h3>
+          <p class="resource-card__context">{{ resource.topicTitle }} ›</p>
+          <p class="resource-card__status">{{ statusOf(resource) }}</p>
+          <button
+            type="button"
+            class="resource-card__action"
+            @click="openResource(resource, $event)"
+          >
+            {{ resource.primaryActionLabel }}
+          </button>
+        </article>
+      </div>
+
+      <p v-if="!hasAnyResource" class="resources__empty">
+        Todavía no hay recursos.
+      </p>
+      <p v-else-if="visibleResources.length === 0" class="resources__empty">
+        No hay recursos que coincidan con el filtro.
+      </p>
+    </template>
 
     <!-- The review modal overlays the launcher; it owns its own session state. -->
     <ReviewModal
@@ -97,33 +115,42 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref } from "vue"
+import { computed, nextTick, onMounted, ref } from "vue"
+import { storeToRefs } from "pinia"
 import { useRouter } from "vue-router"
+import { useResourcesStore } from "@/entities/resource"
 import { ReviewModal } from "@/widgets/review-modal"
 import type { ReviewCard } from "@/widgets/review-modal"
+import { openVaultPath } from "@/shared/obsidian"
+import { fixtureCardsFor } from "../model/cardFixtures"
 import { deckRouteFor } from "../model/deckRoute"
 import { filterResources } from "../model/filter"
-import {
-  continueFixture,
-  fixtureCardsFor,
-  resourceFixtures,
-} from "../model/fixtures"
-import type { Resource, ResourceKind, ResourceKindFilter } from "../model/types"
+import { materialStatus, toMaterialResources } from "../model/materials"
+import { sourceTargetOf } from "../model/openSource"
+import type {
+  ContinueResource,
+  Resource,
+  ResourceKind,
+  ResourceKindFilter,
+} from "../model/types"
 
 const KIND_GLYPHS: Record<ResourceKind, string> = {
   flashcards: "⏰",
   deck: "▤",
   exam: "✎",
+  material: "▦",
 }
 
 const KIND_LABELS: Record<ResourceKind, string> = {
   flashcards: "Tarjetas",
   deck: "Diapositivas",
   exam: "Examen",
+  material: "Material",
 }
 
 const KIND_CHIPS: { value: ResourceKindFilter; label: string; glyph: string }[] = [
   { value: "all", label: "Todo", glyph: "" },
+  { value: "material", label: "Material", glyph: KIND_GLYPHS.material },
   { value: "flashcards", label: "Tarjetas", glyph: KIND_GLYPHS.flashcards },
   { value: "deck", label: "Diapositivas", glyph: KIND_GLYPHS.deck },
   { value: "exam", label: "Exámenes", glyph: KIND_GLYPHS.exam },
@@ -131,14 +158,26 @@ const KIND_CHIPS: { value: ResourceKindFilter; label: string; glyph: string }[] 
 
 const router = useRouter()
 
-const continueResource = continueFixture
+// The launcher's list is the middleware's, not a fixture set (§2).
+const resourcesStore = useResourcesStore()
+const { resources, loading, error } = storeToRefs(resourcesStore)
+
+// No endpoint reports a resumable session yet, so the slot stays empty and the
+// section stays hidden instead of showing a fixture.
+const continueResource = ref<ContinueResource | null>(null)
 
 // Filter state is per session, never persisted (§6).
 const query = ref("")
 const kind = ref<ResourceKindFilter>("all")
 
+const materialResources = computed(() =>
+  toMaterialResources(resources.value, new Date()),
+)
+
+const hasAnyResource = computed(() => materialResources.value.length > 0)
+
 const visibleResources = computed(() =>
-  filterResources(resourceFixtures, kind.value, query.value),
+  filterResources(materialResources.value, kind.value, query.value),
 )
 
 const countLabel = computed(() =>
@@ -146,6 +185,15 @@ const countLabel = computed(() =>
     ? "1 recurso"
     : `${visibleResources.value.length} recursos`,
 )
+
+onMounted(() => {
+  resourcesStore.loadResources()
+})
+
+function retry() {
+  resourcesStore.clearError()
+  resourcesStore.loadResources()
+}
 
 /** Each kind reports its own status; that status is why the card is clickable. */
 function statusOf(resource: Resource): string {
@@ -161,6 +209,8 @@ function statusOf(resource: Resource): string {
     case "exam":
       if (resource.lastScore === null || resource.of === null) return "no rendido"
       return `${resource.lastScore}/${resource.of}`
+    case "material":
+      return materialStatus(resource)
   }
 }
 
@@ -204,17 +254,38 @@ async function closeReview() {
   opener?.focus()
 }
 
-/** `Seguir` resumes where the continue fixture left off (`done` cards seen). */
+/** `Seguir` resumes where the continue entry left off (`done` cards seen). */
 function openContinue(event: MouseEvent) {
+  const current = continueResource.value
+  if (!current) return
+
   openReview({
-    cards: fixtureCardsFor(continueFixture.id),
-    title: continueFixture.title,
-    initialIndex: continueFixture.done,
+    cards: fixtureCardsFor(current.id),
+    title: current.title,
+    initialIndex: current.done,
     event,
   })
 }
 
+/** Open a material where it lives: a URL in a tab, a vault path in Obsidian. */
+function openSource(uri: string) {
+  const target = sourceTargetOf(uri)
+  if (!target) return
+
+  if (target.kind === "external") {
+    window.open(target.uri, "_blank", "noopener")
+    return
+  }
+
+  openVaultPath(target.uri)
+}
+
 function openResource(resource: Resource, event: MouseEvent) {
+  if (resource.kind === "material") {
+    openSource(resource.sourceUri)
+    return
+  }
+
   if (resource.kind === "flashcards") {
     openReview({
       cards: fixtureCardsFor(resource.id),
@@ -448,6 +519,55 @@ function openResource(resource: Resource, event: MouseEvent) {
   padding: 1.5rem 0.5rem;
   text-align: center;
   color: var(--text-muted);
+}
+
+.resources__state {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1.5rem 0.5rem;
+  color: var(--text-muted);
+}
+
+.resources__state--error {
+  flex-direction: column;
+  align-items: flex-start;
+  color: var(--text-error, #d64545);
+}
+
+.resources__error {
+  margin: 0;
+}
+
+.resources__retry {
+  min-height: 44px;
+  padding: 0.375rem 0.875rem;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.85rem;
+}
+
+.resources__retry:hover {
+  background: var(--background-modifier-hover);
+}
+
+.resources__spinner {
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid var(--background-modifier-border);
+  border-top-color: var(--text-accent);
+  border-radius: 50%;
+  animation: resources-spin 0.8s linear infinite;
+}
+
+@keyframes resources-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @media (max-width: 520px) {

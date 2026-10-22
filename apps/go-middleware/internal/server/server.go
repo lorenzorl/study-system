@@ -117,6 +117,7 @@ func Run(ctx context.Context, cfg *config.Config, port int) error {
 		study.CreateTopic,
 		study.CreateConcept,
 		study.SyncResource,
+		study.ListResources,
 		study.GetDueCards,
 		study.SubmitReview,
 	)

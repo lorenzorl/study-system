@@ -1,6 +1,7 @@
 # Study UI — resource launcher
 
-**Status: proposal, nothing implemented. 2026-10-21.**
+**Status: implemented through the launcher slice. 2026-10-22.** The launcher's
+list comes from `GET /api/resources`; the other kinds wait for their endpoints.
 Companion to `PRESENTATION.md` (the slide deck). This document is the plugin's own
 interface: what the user sees, and what each surface is for.
 
@@ -20,7 +21,7 @@ still exists, because a library that only lists is a file manager, but it answer
 ```
 Resource
 ├── id
-├── kind        flashcards | deck | exam | (future kinds)
+├── kind        flashcards | deck | exam | material | (future kinds)
 ├── title
 ├── topicId
 ├── conceptId?  cards belong to a concept; a deck may cover a whole topic
@@ -36,6 +37,7 @@ worth clicking:
 | Flashcards | ⏰ | 5 pendientes hoy / al día | Repasar | Modal |
 | Deck | ▤ | 12 diapositivas · generado hace 2 días | Presentar | Tab |
 | Exam | ✎ | no rendido / 8/10 / vencido | Empezar | Tab |
+| Material | ▦ | Libro · agregado hace 3 días | Abrir | Where it lives |
 
 Consequence: the resource card is not one generic component with a type label. It
 has a per-kind status slot. A card that cannot say what the user gains by opening
@@ -43,9 +45,20 @@ it is decoration.
 
 **Architectural note.** `ARCHITECTURE.md` §14 removed `entities/resource` and says
 it is not to be reintroduced without a new decision. This proposal reintroduces
-the slice, with a different shape and a real consumer (the launcher). That
-requires an entry superseding §14 for `entities/resource`; it is not the old
-`syncResource` scaffold coming back.
+the slice, with a different shape and a real consumer (the launcher): §15 records
+that decision. It is not the old `syncResource` scaffold coming back.
+
+**Where the list comes from.** The launcher renders `GET /api/resources` through
+`entities/resource`, mapping every stored resource (`book`, `note`, `article`,
+`video`) to the `material` kind: the card's action opens its `source_uri` — an
+`http(s)` URL in a new tab, a vault path or an `obsidian://` URI through the
+workspace — and the stored type is the status label (`Libro · agregado hace 3
+días`; a timestamp it cannot read drops the age instead of inventing "hoy").
+
+The other three kinds have no endpoint yet. Their model, filter and surfaces stay
+in place and they render nothing until one exists: that is why the "continue" slot
+is currently empty (no endpoint reports a resumable session) and why the review
+modal keeps card content in the dev harness only.
 
 ## 3. Surface map
 
@@ -216,6 +229,10 @@ it only routes to one.
 - A kind with zero resources in a topic is not rendered as an empty card.
 - Filter state is per session, not persisted: a user who filtered to decks last
   week does not want to wonder where their cards went.
+- The list has four states, and none of them is a blank area: loading, a failure
+  with the server's message and a `Reintentar` button, an empty corpus
+  (`Todavía no hay recursos.`) and a filter that matches nothing
+  (`No hay recursos que coincidan con el filtro.`).
 
 ## 7. Component inventory
 
@@ -229,7 +246,7 @@ it only routes to one.
 | Deck view | `pages/presentation` | pages |
 | Exam view | `pages/exam` (future) | pages |
 | In-note widget | `widgets/note-resources` + post-processor | widgets + app |
-| Resource entity | `entities/resource` (reintroduced, see §2) | entities |
+| Resource entity | `entities/resource` (reintroduced; `ARCHITECTURE.md` §15) | entities |
 | Status bar item | `app/status-bar.ts` | app |
 
 ## 8. Decisions and open questions

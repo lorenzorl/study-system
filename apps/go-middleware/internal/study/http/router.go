@@ -20,6 +20,7 @@ func NewRouter(
 	createTopic CreateTopicUseCase,
 	createConcept CreateConceptUseCase,
 	syncResource SyncResourceUseCase,
+	listResources ListResourcesUseCase,
 	getDueCards GetDueCardsUseCase,
 	submitReview SubmitReviewUseCase,
 ) http.Handler {
@@ -31,6 +32,7 @@ func NewRouter(
 	mux.Handle("POST /api/topics", NewCreateTopicHandler(createTopic))
 	mux.Handle("POST /api/concepts", NewCreateConceptHandler(createConcept))
 	mux.Handle("POST /api/sync/resource", NewSyncResourceHandler(syncResource))
+	mux.Handle("GET /api/resources", NewListResourcesHandler(listResources))
 	mux.Handle("GET /api/study/due", NewDueCardsHandler(getDueCards))
 	mux.Handle("POST /api/study/review", NewReviewHandler(submitReview))
 
