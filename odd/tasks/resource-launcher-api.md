@@ -1,6 +1,6 @@
 # Resource launcher reads the API — `GET /api/resources` and the `material` kind
 
-**Status:** in progress · **Created:** 2026-10-22 · **Depends on:** the
+**Status:** done (2026-10-22) · **Created:** 2026-10-22 · **Depends on:** the
 `resources` table and `POST /api/sync/resource` (already in the middleware), the
 `pages/resources` launcher slice, and `PRESENTATION-UI.md` §§2, 3, 6.
 
@@ -100,3 +100,15 @@ server in a detached worktree and ran the same sequence against both binaries:
 `topics`, `concepts` POST and GET, `study/due`, `study/review` on an unknown card.
 After normalizing ids and timestamps the two outputs were **identical**;
 `GET /api/resources` is the only new surface.
+
+**L8 (closing, 2026-10-22).** Native assess read this candidate as `medium` with
+`reviewDue: false` (`under_budget`) and no escalated high-risk item, so no review
+transaction was started: the switch stays on and the candidate sits under its
+budget. What ships is what S1–S4 asked for, and the known limits are the ones the
+specs accepted:
+
+- the three other kinds render nothing until their endpoints exist (S3);
+- the "continue" slot stays empty because no endpoint reports a resumable session;
+- the list is read once when the launcher mounts — no polling, no refresh button;
+- a material's `source_uri` opens as it was stored: `http(s)` in a browser tab,
+  anything else through the vault.
