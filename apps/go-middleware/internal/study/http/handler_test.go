@@ -72,6 +72,15 @@ type mockSyncResourceUseCase struct {
 	err        error
 }
 
+type mockListResourcesUseCase struct {
+	summaries []app.ResourceSummary
+	err       error
+}
+
+func (m *mockListResourcesUseCase) Execute(ctx context.Context) ([]app.ResourceSummary, error) {
+	return m.summaries, m.err
+}
+
 func (m *mockSyncResourceUseCase) Execute(ctx context.Context, topicName, title, resourceType, sourceURI string) (string, error) {
 	return m.resourceID, m.err
 }
@@ -496,6 +505,66 @@ func TestHandleSyncResource_InternalError(t *testing.T) {
 	body := `{"topic_name":"DDD","resource_title":"Book","type":"book","source_uri":"obsidian://x.md"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/sync/resource", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+}
+
+// --- ListResourcesHandler tests ---
+
+func TestHandleListResources_Success(t *testing.T) {
+	created := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	handler := httppkg.NewListResourcesHandler(&mockListResourcesUseCase{
+		summaries: []app.ResourceSummary{
+			{
+				ID:        "r-1",
+				Title:     "Clean Architecture",
+				Type:      domain.ResourceTypeBook,
+				SourceURI: "obsidian://clean-arch.md",
+				TopicName: "DDD",
+				CreatedAt: created,
+			},
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/resources", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var resources []httppkg.ResourceSummaryResponse
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resources))
+	require.Len(t, resources, 1)
+	assert.Equal(t, "r-1", resources[0].ID)
+	assert.Equal(t, "Clean Architecture", resources[0].Title)
+	assert.Equal(t, "book", resources[0].Type)
+	assert.Equal(t, "obsidian://clean-arch.md", resources[0].SourceURI)
+	assert.Equal(t, "DDD", resources[0].TopicName)
+	assert.Equal(t, "2026-03-01T12:00:00Z", resources[0].CreatedAt)
+}
+
+func TestHandleListResources_EmptyCorpusEncodesAsArray(t *testing.T) {
+	handler := httppkg.NewListResourcesHandler(&mockListResourcesUseCase{
+		summaries: []app.ResourceSummary{},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/resources", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "[]", strings.TrimSpace(rec.Body.String()))
+}
+
+func TestHandleListResources_InternalError(t *testing.T) {
+	handler := httppkg.NewListResourcesHandler(&mockListResourcesUseCase{err: errors.New("db down")})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/resources", nil)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)

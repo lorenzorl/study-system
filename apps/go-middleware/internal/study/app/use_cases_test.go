@@ -119,6 +119,14 @@ func (m *MockResourceRepository) Create(ctx context.Context, resource *domain.Re
 	return args.Error(0)
 }
 
+func (m *MockResourceRepository) List(ctx context.Context) ([]domain.ResourceWithTopic, error) {
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]domain.ResourceWithTopic), args.Error(1)
+}
+
 // MockCardStateRepository mocks domain.CardStateRepository.
 type MockCardStateRepository struct {
 	mock.Mock
@@ -533,6 +541,65 @@ func TestSyncResourceUseCase_InvalidType(t *testing.T) {
 
 	_, err := uc.Execute(ctx, "DDD", "Title", "podcast", "obsidian://x.md")
 	assert.ErrorIs(t, err, apperror.ErrInvalidInput)
+}
+
+// --- ListResourcesUseCase tests ---
+
+func TestListResourcesUseCase_MapsEachResourceWithItsTopicName(t *testing.T) {
+	resourceRepo := new(MockResourceRepository)
+	uc := app.NewListResourcesUseCase(resourceRepo)
+	ctx := context.Background()
+
+	created := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	resourceRepo.On("List", ctx).Return([]domain.ResourceWithTopic{
+		{
+			Resource: domain.Resource{
+				ID:        "r-1",
+				TopicID:   "t-ddd",
+				Title:     "Clean Architecture",
+				Type:      domain.ResourceTypeBook,
+				SourceURI: "obsidian://clean-arch.md",
+				CreatedAt: created,
+			},
+			TopicName: "DDD",
+		},
+	}, nil)
+
+	summaries, err := uc.Execute(ctx)
+	require.NoError(t, err)
+	require.Len(t, summaries, 1)
+	assert.Equal(t, app.ResourceSummary{
+		ID:        "r-1",
+		Title:     "Clean Architecture",
+		Type:      domain.ResourceTypeBook,
+		SourceURI: "obsidian://clean-arch.md",
+		TopicName: "DDD",
+		CreatedAt: created,
+	}, summaries[0])
+}
+
+func TestListResourcesUseCase_EmptyCorpusIsNotAnError(t *testing.T) {
+	resourceRepo := new(MockResourceRepository)
+	uc := app.NewListResourcesUseCase(resourceRepo)
+	ctx := context.Background()
+
+	resourceRepo.On("List", ctx).Return([]domain.ResourceWithTopic{}, nil)
+
+	summaries, err := uc.Execute(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, summaries)
+}
+
+func TestListResourcesUseCase_RepositoryError(t *testing.T) {
+	resourceRepo := new(MockResourceRepository)
+	uc := app.NewListResourcesUseCase(resourceRepo)
+	ctx := context.Background()
+
+	resourceRepo.On("List", ctx).Return(nil, errors.New("db down"))
+
+	_, err := uc.Execute(ctx)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "list resources")
 }
 
 // --- GetDueCardsUseCase tests ---

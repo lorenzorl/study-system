@@ -104,6 +104,16 @@ type SyncResourceResponse struct {
 	ResourceID string `json:"resource_id"`
 }
 
+// ResourceSummaryResponse is one item of the JSON array returned by GET /api/resources.
+type ResourceSummaryResponse struct {
+	ID        string `json:"id"`
+	Title     string `json:"title"`
+	Type      string `json:"type"`
+	SourceURI string `json:"source_uri"`
+	TopicName string `json:"topic_name"`
+	CreatedAt string `json:"created_at"`
+}
+
 // DueCardResponse is the JSON body returned by GET /api/study/due.
 type DueCardResponse struct {
 	ID           string `json:"flashcard_id"`

@@ -37,3 +37,38 @@ func (h *SyncResourceHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 
 	httpx.WriteJSON(w, http.StatusCreated, SyncResourceResponse{ResourceID: resourceID})
 }
+
+// ListResourcesHandler handles GET /api/resources.
+type ListResourcesHandler struct {
+	useCase ListResourcesUseCase
+}
+
+// NewListResourcesHandler creates a ListResourcesHandler.
+func NewListResourcesHandler(uc ListResourcesUseCase) *ListResourcesHandler {
+	return &ListResourcesHandler{useCase: uc}
+}
+
+func (h *ListResourcesHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	summaries, err := h.useCase.Execute(r.Context())
+	if err != nil {
+		httpx.WriteErrorFrom(w, err)
+		return
+	}
+
+	// make with len guarantees an empty corpus encodes as [] and never as null:
+	// the launcher ranges over this array, and "no resources yet" must not be a
+	// case it has to special-case.
+	response := make([]ResourceSummaryResponse, 0, len(summaries))
+	for _, summary := range summaries {
+		response = append(response, ResourceSummaryResponse{
+			ID:        summary.ID,
+			Title:     summary.Title,
+			Type:      string(summary.Type),
+			SourceURI: summary.SourceURI,
+			TopicName: summary.TopicName,
+			CreatedAt: instant(summary.CreatedAt),
+		})
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, response)
+}

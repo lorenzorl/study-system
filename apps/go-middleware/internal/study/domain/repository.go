@@ -42,6 +42,8 @@ type FlashcardRepository interface {
 type ResourceRepository interface {
 	FindBySourceURI(ctx context.Context, sourceURI string) (*Resource, error) // nil,nil on miss
 	Create(ctx context.Context, resource *Resource) error
+	// List returns every resource with its topic name, newest first.
+	List(ctx context.Context) ([]ResourceWithTopic, error)
 }
 
 // CardStateRepository manages persistence of CardState entities.

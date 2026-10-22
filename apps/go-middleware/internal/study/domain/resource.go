@@ -31,3 +31,13 @@ type Resource struct {
 	SourceURI string
 	CreatedAt time.Time
 }
+
+// ResourceWithTopic is a resource plus the name of the topic it belongs to.
+//
+// The launcher shows the topic as the card's context line, so the read path
+// resolves the name in the same query that reads the resource: a second lookup
+// per row would be a per-item N+1 over a table the join already has open.
+type ResourceWithTopic struct {
+	Resource
+	TopicName string
+}
