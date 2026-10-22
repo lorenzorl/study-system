@@ -112,3 +112,30 @@ specs accepted:
 - the list is read once when the launcher mounts — no polling, no refresh button;
 - a material's `source_uri` opens as it was stored: `http(s)` in a browser tab,
   anything else through the vault.
+
+**L9 (native review, 2026-10-22).** The review switch being on, the controller
+pointed at this candidate; inspect offered `review.start`, the start created
+lineage `review-a5508a5bb6b80e0f` (tier medium, 1796 changed lines, correction
+budget 200), and the four selected lenses ran. The review **approved** on the last
+admitted event and the exact acknowledgement burned the authority
+(`gentle-ai.review-acknowledged/v1`). No correction was opened.
+
+Eleven advisory findings arrived with the approval, every one informational and
+non-blocking. They are follow-ups, never a reason to re-review this candidate:
+
+| Finding | Lens | Where | Severity |
+| --- | --- | --- | --- |
+| `R1-resources-endpoint-no-auth` | risk | `study/http/router.go:35` | warning |
+| `R2-001` | readability | `study/sqlite/resource_repo.go:88` | warning |
+| `R2-002`, `R2-003` | readability | `pages/resources/ui/ResourcesPage.vue:174,177` | suggestion |
+| `R2-004` | readability | `ARCHITECTURE.md:425` | warning |
+| `R3-001` | reliability | `study/sqlite/resource_repo.go:88` | warning |
+| `R3-002` | reliability | `shared/obsidian/useObsidian.ts:76` | suggestion |
+| `R4-1` | resilience | `shared/obsidian/useObsidian.ts:72-77` | warning |
+| `R4-2`, `R4-3` | resilience | `study/sqlite/resource_repo.go:69-72,88` | suggestion |
+| `R4-4` | resilience | `study/app/list_resources.go:39-58` | suggestion |
+
+The repeated `resource_repo.go:88` is the one worth doing next: the scan drops
+`time.Parse`'s error, so an unreadable stored timestamp travels as the zero time
+and the card would read "agregado hace 740000 días". Delivery follows ordinary
+repository policy: nothing is pushed.
