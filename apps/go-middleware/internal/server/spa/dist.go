@@ -14,7 +14,6 @@ import (
 // `go build` fails outright on an embed pattern with no matching files.
 //
 //go:generate ../../../scripts/sync-web.sh
-//
 //go:embed all:dist
 var embedded embed.FS
 
