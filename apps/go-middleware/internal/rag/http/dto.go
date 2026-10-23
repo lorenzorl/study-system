@@ -63,6 +63,44 @@ type UploadDocumentResponse struct {
 	State string `json:"state"`
 }
 
+// IngestTextRequest is the body of POST /api/rag/documents/text.
+//
+// Both fields are trimmed before they are validated, so a paste that carries a
+// stray leading newline is not refused for being blank.
+type IngestTextRequest struct {
+	// Title is the material's name in the corpus list.
+	Title string `json:"title"`
+
+	// Text is the pasted material itself.
+	Text string `json:"text"`
+}
+
+// IngestTextResponse is the body of the 201 returned by
+// POST /api/rag/documents/text.
+//
+// The first two fields are the ones the upload endpoint returns, so a client
+// treats both creation paths the same: DocumentID names the document and State
+// is the derived processing state. The two counts are what say which of the two
+// outcomes happened — Chunks > 0 with Embedded == 0 means the corpus has no
+// embedding client and the document is searchable lexically only — and they are
+// the same names with the same meanings the status endpoint reports, so the two
+// surfaces cannot disagree about them.
+type IngestTextResponse struct {
+	// DocumentID identifies the document the pasted text became.
+	DocumentID string `json:"document_id"`
+
+	// State is the derived processing state: "completed" once every chunk has a
+	// vector, "indexing" while some do not — which is the permanent state of a
+	// corpus built without an embedding client.
+	State string `json:"state"`
+
+	// Chunks is how many chunks the lexical index holds for the document.
+	Chunks int `json:"chunks"`
+
+	// Embedded is how many of those chunks have a vector.
+	Embedded int `json:"embedded"`
+}
+
 // DocumentStatusResponse is the status object returned by
 // GET /api/rag/documents/{documentID}/status.
 //

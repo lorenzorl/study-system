@@ -130,7 +130,9 @@ func TestRouter_RegistersTheDocumentRoutes(t *testing.T) {
 	upload := httppkg.NewUploadDocumentHandler(store, documents, &fakeProcessor{}, true)
 	status := &fakeStatusUseCase{status: app.DocumentStatus{DocumentID: "doc-1", State: app.StateQueued}}
 	router := httppkg.NewRouter(&mockSearchUseCase{}, upload,
-		httppkg.NewDocumentStatusHandler(status), httppkg.NewDocumentsHandler(&fakeDocumentListUseCase{}))
+		httppkg.NewDocumentStatusHandler(status), httppkg.NewDocumentsHandler(&fakeDocumentListUseCase{}),
+		// The text route is a second creation path; this test owns the PDF one.
+		newTextHandler(&fakeIngestTextUseCase{}))
 
 	post := httptest.NewRecorder()
 	router.ServeHTTP(post, multipartRequest(t, "/api/rag/documents", "file", "book.pdf", []byte("%PDF-1.7")))

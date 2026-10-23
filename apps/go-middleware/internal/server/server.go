@@ -123,11 +123,19 @@ func Run(ctx context.Context, cfg *config.Config, port int) error {
 		study.SubmitReview,
 	)
 
+	// The pasted-text path needs no key to accept material: it indexes always and
+	// embeds only when a client exists (composition.TextIngest says why).
+	textIngest, err := rag.TextIngest(clients, cfg.EmbeddingModel, store)
+	if err != nil {
+		return fmt.Errorf("build the pasted-text stage: %w", err)
+	}
+
 	ragRoutes := raghttp.NewRouter(
 		searchUC,
 		raghttp.NewUploadDocumentHandler(store, rag.DocumentRepo(), submitter, clients.Embedding != nil),
 		raghttp.NewDocumentStatusHandler(statusUC),
 		raghttp.NewDocumentsHandler(rag.ListDocuments()),
+		raghttp.NewIngestTextHandler(textIngest, cfg.MaxUploadBytes),
 	)
 
 	rootMux := http.NewServeMux()
