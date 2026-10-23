@@ -239,6 +239,7 @@ func TestRouter_RegistersTheTextIngestRoute(t *testing.T) {
 		httppkg.NewDocumentStatusHandler(nil),
 		httppkg.NewDocumentsHandler(&fakeDocumentListUseCase{}),
 		newTextHandler(useCase),
+		newURLHandler(&fakeIngestTextUseCase{}),
 	)
 
 	rec := httptest.NewRecorder()

@@ -178,3 +178,57 @@ func TestIngestTextUseCase_EmbedsWhenAClientIsWired(t *testing.T) {
 	require.NotEmpty(t, results)
 	assert.Equal(t, report.DocumentID, results[0].DocumentID)
 }
+
+// T4/S4: a document records where its bytes were read from, and the field is
+// informational — identity is still the content hash, so the same bytes fetched
+// from two URLs are one document. A paste passes nothing and records nothing,
+// which is the behaviour this field must not change.
+func TestIngestTextUseCase_RecordsTheSourceURIItIsGiven(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		source   string
+		expected string
+	}{
+		{"a paste has no origin", "", ""},
+		{"whitespace is not an origin", "   ", ""},
+		{"a fetches origin is recorded", "https://example.test/notas.md", "https://example.test/notas.md"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newTextHarness(t)
+
+			report, err := h.ingest.Execute(t.Context(), app.IngestTextRequest{
+				Title:     "Notes",
+				Text:      "material about the source origin",
+				SourceURI: tc.source,
+			})
+			require.NoError(t, err)
+
+			document, err := h.docs.FindByID(t.Context(), report.DocumentID)
+			require.NoError(t, err)
+			assert.Equal(t, tc.expected, document.SourceURI)
+		})
+	}
+}
+
+// T4/S4: the content hash stays the document's identity when an origin is given,
+// so the same bytes under a second URL is a conflict rather than a second
+// document.
+func TestIngestTextUseCase_TheSameTextFromAnotherSourceIsAConflict(t *testing.T) {
+	h := newTextHarness(t)
+	ctx := t.Context()
+	text := "el mismo texto desde dos direcciones"
+
+	_, err := h.ingest.Execute(ctx, app.IngestTextRequest{
+		Title: "Notes", Text: text, SourceURI: "https://example.test/one.md",
+	})
+	require.NoError(t, err)
+
+	_, err = h.ingest.Execute(ctx, app.IngestTextRequest{
+		Title: "Notes again", Text: text, SourceURI: "https://example.test/two.md",
+	})
+	require.ErrorIs(t, err, apperror.ErrConflict)
+
+	summaries, err := h.list.Execute(ctx)
+	require.NoError(t, err)
+	assert.Len(t, summaries, 1)
+}

@@ -1,7 +1,6 @@
 package http
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -22,6 +21,13 @@ import (
 // pasted title stays within what an uploaded one could carry and still fits one
 // list row. It is not a database limit; the column is unbounded TEXT.
 const MaxTextDocumentTitleRunes = 200
+
+// duplicateTextMessage is the refusal for material the corpus already holds.
+//
+// Both text-creating routes answer it, with these words: the refusal is decided
+// by the content hash, which one use case owns, so a client that shows it to a
+// user must not have to read two differently-worded versions of the same fact.
+const duplicateTextMessage = "a document with the same text already exists"
 
 // IngestTextHandler handles POST /api/rag/documents/text.
 //
@@ -46,28 +52,8 @@ func NewIngestTextHandler(useCase IngestTextUseCase, maxBodyBytes int64) *Ingest
 }
 
 func (h *IngestTextHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// An announced length over the ceiling is refused before a byte is read: a
-	// client pasting a book has nothing to gain from watching it upload first.
-	if r.ContentLength > h.maxBodyBytes {
-		httpx.WriteError(w, http.StatusRequestEntityTooLarge, h.tooLargeMessage())
-		return
-	}
-
-	// MaxBytesReader is the streaming half of the same ceiling: a body that lies
-	// about its length, or sends none, cannot make the decoder buffer past the
-	// limit. The body is therefore never held in memory beyond it.
-	body := http.MaxBytesReader(w, r.Body, h.maxBodyBytes)
-
 	var request IngestTextRequest
-	if err := json.NewDecoder(body).Decode(&request); err != nil {
-		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
-			httpx.WriteError(w, http.StatusRequestEntityTooLarge, h.tooLargeMessage())
-			return
-		}
-		// The decoder's own reason, not a generic message: a client that sent a
-		// trailing comma should be able to see where.
-		httpx.WriteError(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
+	if !readJSONBody(w, r, h.maxBodyBytes, &request) {
 		return
 	}
 
@@ -89,13 +75,18 @@ func (h *IngestTextHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	report, err := h.useCase.Execute(r.Context(), app.IngestTextRequest{
 		Title: title,
 		Text:  request.Text,
+		// A paste was read from nowhere, so it records no origin. The field is
+		// passed explicitly rather than left out: the URL route writes the same
+		// field, and a reader of this call should see that "" is the answer and
+		// not an omission.
+		SourceURI: "",
 	})
 	if err != nil {
 		// A duplicate is a refusal a client can explain to a user — the material is
 		// already in the corpus — so it gets a message of its own instead of the
 		// bare "conflict" the generic mapping prints.
 		if errors.Is(err, apperror.ErrConflict) {
-			httpx.WriteError(w, http.StatusConflict, "a document with the same text already exists")
+			httpx.WriteError(w, http.StatusConflict, duplicateTextMessage)
 			return
 		}
 		httpx.WriteErrorFrom(w, err)
@@ -108,10 +99,4 @@ func (h *IngestTextHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Chunks:     report.Chunks,
 		Embedded:   report.Embedded,
 	})
-}
-
-// tooLargeMessage names the bound, so a caller knows what to trim rather than
-// only that it was refused.
-func (h *IngestTextHandler) tooLargeMessage() string {
-	return fmt.Sprintf("the request body must be at most %d bytes", h.maxBodyBytes)
 }

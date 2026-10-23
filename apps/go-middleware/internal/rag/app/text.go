@@ -39,6 +39,14 @@ type IngestTextRequest struct {
 	// stored, which is also what makes identity ignore a trailing newline: a
 	// paste and the same paste with a stray blank line are one material.
 	Text string
+
+	// SourceURI is where the material was read from, and it is informational
+	// only: identity is the content hash, so two URLs that serve the same bytes
+	// are one document. It is empty for a paste, which was read from nowhere, and
+	// the URL route passes the URL that was finally fetched after any redirects,
+	// so a document's origin records where its bytes actually came from rather
+	// than the address the user typed.
+	SourceURI string
 }
 
 // IngestTextReport is what one pasted material produced.
@@ -179,7 +187,7 @@ func (uc *IngestTextUseCase) Execute(
 		ID:            uc.newID(),
 		Title:         title,
 		ArtifactID:    artifact.ID,
-		SourceURI:     "",
+		SourceURI:     strings.TrimSpace(request.SourceURI),
 		ContentSHA256: contentHash,
 		CreatedAt:     now,
 	}

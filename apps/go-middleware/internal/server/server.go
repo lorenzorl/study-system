@@ -23,8 +23,8 @@ import (
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/platform/storage"
 	ragapp "github.com/lorenzorangel/study-system/apps/go-middleware/internal/rag/app"
 	raghttp "github.com/lorenzorangel/study-system/apps/go-middleware/internal/rag/http"
-	studyhttp "github.com/lorenzorangel/study-system/apps/go-middleware/internal/study/http"
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/server/spa"
+	studyhttp "github.com/lorenzorangel/study-system/apps/go-middleware/internal/study/http"
 )
 
 // Run serves until ctx is cancelled, then drains and returns.
@@ -124,7 +124,9 @@ func Run(ctx context.Context, cfg *config.Config, port int) error {
 	)
 
 	// The pasted-text path needs no key to accept material: it indexes always and
-	// embeds only when a client exists (composition.TextIngest says why).
+	// embeds only when a client exists (composition.TextIngest says why). The URL
+	// route below is handed this very use case, so a paste and a download are
+	// ingested by one piece of code.
 	textIngest, err := rag.TextIngest(clients, cfg.EmbeddingModel, store)
 	if err != nil {
 		return fmt.Errorf("build the pasted-text stage: %w", err)
@@ -136,6 +138,12 @@ func Run(ctx context.Context, cfg *config.Config, port int) error {
 		raghttp.NewDocumentStatusHandler(statusUC),
 		raghttp.NewDocumentsHandler(rag.ListDocuments()),
 		raghttp.NewIngestTextHandler(textIngest, cfg.MaxUploadBytes),
+		// NewIngestURLHandler installs the production address rule itself; there is
+		// no argument here that could relax it. Refusing loopback, private and
+		// link-local targets is the only thing standing between this endpoint and a
+		// proxy into the machine the server runs on, so an operator must not be
+		// able to turn it off either — hence no configuration knob.
+		raghttp.NewIngestURLHandler(textIngest, cfg.MaxUploadBytes),
 	)
 
 	rootMux := http.NewServeMux()

@@ -101,6 +101,34 @@ type IngestTextResponse struct {
 	Embedded int `json:"embedded"`
 }
 
+// IngestURLRequest is the body of POST /api/rag/documents/url.
+//
+// Both fields are trimmed before they are validated, so a URL copied with a
+// stray newline is not refused for being blank.
+type IngestURLRequest struct {
+	// Title is the material's name in the corpus list. It is optional: a fetch
+	// always has a URL to name the material after, where a paste has nothing.
+	Title string `json:"title"`
+
+	// URL is the absolute http(s) address of the text to fetch.
+	URL string `json:"url"`
+}
+
+// IngestURLResponse is the body of the 201 returned by
+// POST /api/rag/documents/url.
+//
+// It carries the paste route's fields unchanged — the same document, state and
+// counts, because the same use case produced them — plus the URL that was
+// actually fetched. That last field is the server's answer to "what did you read
+// on my behalf": after a redirect it is not the URL the caller sent, and it is
+// what the document records as its origin.
+type IngestURLResponse struct {
+	IngestTextResponse
+
+	// SourceURI is the URL the fetched bytes came from, after any redirects.
+	SourceURI string `json:"source_uri"`
+}
+
 // DocumentStatusResponse is the status object returned by
 // GET /api/rag/documents/{documentID}/status.
 //
