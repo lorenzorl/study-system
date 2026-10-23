@@ -86,6 +86,8 @@ cd apps/go-middleware
 go build -o bin/study-system ./cmd/cli
 
 bin/study-system serve                              # the HTTP API on :8080; -port overrides
+                                                    #   and the web app on the same origin:
+                                                    #   open http://localhost:8080/
 go run ./cmd/cli serve                              # same thing, without building
 
 go run ./cmd/cli convert -pdf book.pdf -out ~/vault/book.md
@@ -101,7 +103,6 @@ go run ./cmd/cli due                               # what is due now
 go run ./cmd/cli review <flashcard-id> -grade 3    # record a review: 1 again .. 4 easy
 go run ./cmd/cli topics                            # the topics and their concept counts
 go run ./cmd/cli concepts [topic]                  # the concepts of one topic, or of all of them
-
 go test ./...
 go vet ./...
 ```

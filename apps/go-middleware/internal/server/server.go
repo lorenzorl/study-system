@@ -24,6 +24,7 @@ import (
 	ragapp "github.com/lorenzorangel/study-system/apps/go-middleware/internal/rag/app"
 	raghttp "github.com/lorenzorangel/study-system/apps/go-middleware/internal/rag/http"
 	studyhttp "github.com/lorenzorangel/study-system/apps/go-middleware/internal/study/http"
+	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/server/spa"
 )
 
 // Run serves until ctx is cancelled, then drains and returns.
@@ -131,7 +132,10 @@ func Run(ctx context.Context, cfg *config.Config, port int) error {
 
 	rootMux := http.NewServeMux()
 	rootMux.Handle("/api/rag/", ragRoutes)
-	rootMux.Handle("/", studyRoutes)
+	// The study context keeps its routes under `/api/`; the app itself is mounted
+	// at the root and owns every other path, client routes included.
+	rootMux.Handle("/api/", studyRoutes)
+	rootMux.Handle("/", spa.New(spa.App))
 
 	server := &http.Server{
 		Addr:    ":" + strconv.Itoa(port),
@@ -140,7 +144,7 @@ func Run(ctx context.Context, cfg *config.Config, port int) error {
 
 	serveErr := make(chan error, 1)
 	go func() {
-		log.Printf("server listening on :%d (cors origins: %d)", port, len(cfg.CORSAllowedOrigins))
+		log.Printf("server listening on :%d (cors origins: %d, web app embedded)", port, len(cfg.CORSAllowedOrigins))
 		serveErr <- server.ListenAndServe()
 	}()
 

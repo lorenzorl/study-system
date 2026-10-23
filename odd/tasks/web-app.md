@@ -29,7 +29,7 @@ text path and a URL path; today `POST /api/rag/documents` accepts PDF only
 
 ## Tasks
 
-- T1 — Extract `apps/web` from the plugin SPA: it builds, its 24 suites pass, and `/` serves the resource launcher against the real API (S2) — route: inline — commit: —
+- T1 — Extract `apps/web` from the plugin SPA: it builds, its 22 suites pass, and `/` serves the resource launcher against the real API (S2) — route: inline — commit: `1deecd4`
 - T2 — Serve the built SPA from the Go binary at `/` with an SPA fallback (S3) — route: inline — commit: —
 - T3 — Text ingest: `POST /api/rag/documents/text` stores pasted markdown as a document with its chunks (S4) — route: inline — commit: —
 - T4 — URL ingest: `POST /api/rag/documents/url` fetches http(s) only, refuses loopback/private targets, then ingests (S4) — route: inline — commit: —
