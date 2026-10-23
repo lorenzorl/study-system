@@ -1,0 +1,29 @@
+{
+  "name": "study-web",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.5.2",
+  "description": "Study system web app: resource launcher, flashcards, Feynman notes and decks, served by the Go middleware",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -noEmit -skipLibCheck && vite build",
+    "typecheck": "tsc -noEmit -skipLibCheck",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "pinia": "^2.1.7",
+    "reveal.js": "^6.0.2",
+    "vue": "^3.4.0",
+    "vue-router": "^4.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@vitejs/plugin-vue": "^5.2.4",
+    "@vue/compiler-sfc": "^3.4.0",
+    "typescript": "^5.3.3",
+    "vite": "^5.4.21",
+    "vitest": "^2.1.0"
+  }
+}
