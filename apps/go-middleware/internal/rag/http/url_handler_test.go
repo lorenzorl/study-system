@@ -459,6 +459,42 @@ func TestIngestURLHandler_WritesASearchableDocument(t *testing.T) {
 	assert.Equal(t, resp.DocumentID, results[0].DocumentID)
 }
 
+// T4/S4 — a URL's credentials are used for the fetch and never persisted.
+//
+// The fixture only answers a request that carries them, so this proves both
+// halves at once: the fetch still authenticates, and the corpus row and the
+// response that name the material do not carry the password.
+func TestIngestURLHandler_NeverPersistsURLCredentials(t *testing.T) {
+	corpus := newURLCorpus(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if user, pass, ok := r.BasicAuth(); !ok || user != "ana" || pass != "secreto" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = w.Write([]byte(urlFixtureBody))
+	}))
+	defer server.Close()
+
+	handler := httppkg.NewIngestURLHandlerWithRule(corpus.ingest, urlBodyCeiling, allowEveryAddress)
+
+	withCredentials := strings.Replace(server.URL, "http://", "http://ana:secreto@", 1)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, urlPostFor(t, "", withCredentials+"/notas.md"))
+
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+
+	var resp httppkg.IngestURLResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Equal(t, server.URL+"/notas.md", resp.SourceURI,
+		"the response names the request without its credentials")
+
+	document, err := corpus.documents.FindByID(t.Context(), resp.DocumentID)
+	require.NoError(t, err)
+	assert.Equal(t, server.URL+"/notas.md", document.SourceURI,
+		"the stored origin never carries a password")
+}
+
 // T4/S4: the same URL twice is the same material twice, which the content hash
 // already decides. The second answer is a 409 and the corpus keeps one document.
 func TestIngestURLHandler_PostingTheSameURLTwiceIsAConflict(t *testing.T) {

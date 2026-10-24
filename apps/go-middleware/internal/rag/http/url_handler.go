@@ -231,7 +231,7 @@ func (h *IngestURLHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	report, err := h.useCase.Execute(r.Context(), app.IngestTextRequest{
 		Title:     titleFor(title, fetched.url),
 		Text:      fetched.text,
-		SourceURI: fetched.url.String(),
+		SourceURI: persistableURI(fetched.url),
 	})
 	if err != nil {
 		if errors.Is(err, apperror.ErrConflict) {
@@ -249,8 +249,23 @@ func (h *IngestURLHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Chunks:     report.Chunks,
 			Embedded:   report.Embedded,
 		},
-		SourceURI: fetched.url.String(),
+		SourceURI: persistableURI(fetched.url),
 	})
+}
+
+// persistableURI is the URL as it may be stored and shown: the same request
+// without its credentials.
+//
+// A caller may type `https://user:pass@host/path`, and that is what the fetch
+// uses because it is what they asked for. But the corpus row and the launcher's
+// card outlive the request, and a password in either is a password on disk and
+// on screen long after the fetch. Nothing downstream needs the userinfo to reopen
+// the material, so it is dropped before anything is persisted or returned.
+func persistableURI(u *url.URL) string {
+	stored := *u
+	stored.User = nil
+
+	return stored.String()
 }
 
 // fetch downloads the text raw names, validating every hop before it is fetched.

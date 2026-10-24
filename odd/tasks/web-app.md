@@ -151,3 +151,19 @@ only in the snapshot identity because the docs commit changed. No START was issu
 for it: the ceiling was already proven independent of candidate size by probe 4 in
 L10 (two files, one lens, same refusal), and this candidate is strictly larger than
 that one. The disposition stands — unreviewed, cause recorded, nothing to repair.
+
+L12 — L10 and L11 were wrong, and this corrects them. The reviewer budget is a real
+size ceiling, not a broken one: every probe in L10 was a large candidate because
+`baseRef..HEAD` always ends at the tip, so passing an older base made the range
+BIGGER, not smaller (the "two files" probe actually carried seven commits). The
+probe that settled it used a candidate whose tip WAS the slice:
+`git switch -c review/t4 5be5c1d`, START with `baseRef=38de868`. The review ran with
+lineage `review-31d1edca294d85bb`, tier medium, lenses risk + resilience, 15 files /
+2,071 lines, two reviewer runs through `pi_host_relay`, and closed **approved**; the
+authority was acknowledged and burned (`gentle-ai.review-acknowledged/v1`).
+Six advisory findings came back, all non-blocking and each recorded as later work:
+three from risk (`userinfo credential persisted`, `resolved address disclosed in a
+400`, `unauthenticated outbound egress`) and three from resilience (`R4-001`, `R4-002`,
+`R4-003`). The fix below closes the only one that leaks a secret to disk and screen.
+A lesson worth keeping: to review one commit in isolation, that commit must be the
+tip; the candidate is never a subset of the branch.
