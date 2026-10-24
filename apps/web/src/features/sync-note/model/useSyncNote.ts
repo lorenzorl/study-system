@@ -93,6 +93,10 @@ function toCachedFlashcards(
 export const useSyncNote = defineStore("sync-note", () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
+  // Visibility of the paste surface lives with the flow it opens rather than in
+  // the page: this app's test environment has no DOM, so a render test can only
+  // see the open panel by seeding a store before rendering.
+  const panelOpen = ref(false)
   const topicsStore = useTopicsStore()
   const flashcardCache = useFlashcardCache()
 
@@ -143,10 +147,25 @@ export const useSyncNote = defineStore("sync-note", () => {
     error.value = null
   }
 
+  function openPanel(): void {
+    error.value = null
+    panelOpen.value = true
+  }
+
+  function closePanel(): void {
+    panelOpen.value = false
+    // A refusal belongs to the attempt that produced it: reopening the panel
+    // must not show the last failure over fields the reader may have fixed.
+    error.value = null
+  }
+
   return {
     loading,
     error,
+    panelOpen,
     syncCurrentNote,
     clearError,
+    openPanel,
+    closePanel,
   }
 })

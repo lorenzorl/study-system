@@ -27,6 +27,7 @@
         >
           +
         </button>
+        <SyncNoteTrigger />
       </h2>
 
       <CreateTopicForm
@@ -38,11 +39,15 @@
       />
 
       <div v-if="topics.length === 0" class="dashboard__state">
-        <p>No hay temas todavía. Creá el primero con +.</p>
+        <p>No hay temas todavía. Creá el primero con + o sincronizá una nota.</p>
       </div>
 
       <TopicList v-else :topics="topics" @select="goToTopic" />
     </section>
+
+    <!-- The sync overlay is the trigger's counterpart in the header above: it
+         sits outside the heading, where a block element is valid. -->
+    <SyncNoteForm @synced="goToSyncedConcept" />
   </div>
 </template>
 
@@ -54,10 +59,13 @@ import { useTopicsStore } from "@/entities/topic"
 import { useTopicSelection } from "@/features/select-topic"
 import { useConceptSelection } from "@/features/select-concept"
 import { CreateTopicForm, useCreateTopic } from "@/features/create-topic"
+import { SyncNoteForm, SyncNoteTrigger } from "@/features/sync-note"
+import type { SyncNoteResult } from "@/features/sync-note"
 import { useReviewSession } from "@/features/review-card"
 import { MetricsBar } from "@/widgets/metrics-bar"
 import { DailyReviewCard } from "@/widgets/daily-review"
 import { TopicList } from "@/widgets/topic-list"
+import { flashcardsRouteFor } from "../model/syncedRoute"
 
 const router = useRouter()
 const topicsStore = useTopicsStore()
@@ -124,6 +132,19 @@ function cancelNewTopic() {
   showNewTopicForm.value = false
   newTopicName.value = ""
   clearErrors()
+}
+
+/**
+ * Land the reader on what they just synced, the way the vault flow did.
+ * The panel reports the flow's own result; without a resolvable topic the list
+ * stays, which the sync has already reloaded and where the concept now is.
+ */
+function goToSyncedConcept(result: SyncNoteResult) {
+  topicSelection.selectTopic(result.topicId)
+  conceptSelection.selectConcept(result.conceptId)
+
+  const route = flashcardsRouteFor(result)
+  if (route !== null) router.push(route)
 }
 </script>
 

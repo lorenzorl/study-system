@@ -5,4 +5,6 @@ export type {
   SyncNotePayload,
   SyncNoteResult,
 } from "./model/useSyncNote"
-export { default as SyncNoteButton } from "./ui/SyncNoteButton.vue"
+export { noteFilePath, useNoteForm } from "./model/useNoteForm"
+export { default as SyncNoteForm } from "./ui/SyncNoteForm.vue"
+export { default as SyncNoteTrigger } from "./ui/SyncNoteTrigger.vue"
