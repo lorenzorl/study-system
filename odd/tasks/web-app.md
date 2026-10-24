@@ -111,7 +111,8 @@ public address), and the response header block is capped. The 25-second deadline
 test was replaced by a 50ms one through an injected timeout, so the suite runs in
 2.4s instead of 25s.
 
-L9 — Accepted limitations of T4, named so they are not silent:- No port policy: the server will fetch an http URL on any port of a public
+L9 — Accepted limitations of T4, named so they are not silent:
+- No port policy: the server will fetch an http URL on any port of a public
   address, so it can probe a public Redis or Memcached. Refusing the ports would
   need the rule to see the port, not just the address, and the spec named address
   classes only. A candidate follow-up, not a gap in the loopback guarantee.
@@ -120,3 +121,25 @@ L9 — Accepted limitations of T4, named so they are not silent:- No port policy
 - A malformed `Location` surfaces as 502 (the Go client parses the header before
   the handler sees it), so the handler's 400 branch for that case is unreachable.
   Harmless, and left rather than restructured mid-slice.
+
+L10 — Native review could not start, and the candidate is left unreviewed for that
+reason. RDD is on; the user never left this target unreviewed explicitly, so START
+was attempted for target `sha256:6b3d5c87…` (master..HEAD, nine commits) and then for
+progressively smaller candidates:
+1. the whole committed range, four lenses → refused;
+2. T4 alone (`38de868..5be5c1d`, 2,033 lines), risk + resilience → refused;
+3. T2 alone (`1deecd4..b7ae10d`, 620 lines), risk + resilience → refused;
+4. a two-file, no-behaviour chore (`b7ae10d..cbec75e`), one lens → refused.
+All four failed at preflight with the same provider-owned code,
+`lens_context_budget_exceeded`: `mutation_outcome: none`, `lineage_created: false`,
+no authority created, nothing to abandon or repair, and no consent prompt ever
+reached the human. Because a two-file single-lens candidate fails identically, the
+cause is the provider's reviewer budget in this environment and not this change's
+scope — so the remedy the failure names ("split it into smaller reviewable
+commits") cannot work here, and further attempts would be ceremony.
+What stands in the review's place: the independent `gentle-ai-verify` run on the
+security unit (L8, two findings found and closed), two mutation checks (dropping
+the dial control; widening the production rule), the full suites (16 Go packages,
+31 web suites / 192 tests), and the real-process proofs recorded above.
+If a native review is wanted later, the budget has to be fixed first; nothing in
+this repository can raise it.
