@@ -3,7 +3,8 @@
 HTTP backend for the study system. Go 1.25, standard library only, no framework,
 no ORM, and no cgo (SQLite runs through `modernc.org/sqlite`, a pure-Go driver).
 
-It serves the Obsidian plugin in `apps/obsidian-plugin`.
+It serves the web app in `apps/web`, built into `internal/server/spa/dist` and
+embedded in the binary, together with the API.
 
 ## Layout
 
@@ -471,8 +472,8 @@ numbering; the figures paper yields none, because its text names one heading.
 
 `GET /api/rag/search` is the HTTP surface of the same search the CLI runs, and it
 adds no retrieval behaviour: it wraps `app.SearchUseCase`, so a search answers the
-same ranking the command prints. The intended consumer is the Obsidian plugin;
-there is no UI. The route is registered by `rag/http`, and the composition root
+same ranking the command prints. The web app does not call it yet; there is no
+search UI. The route is registered by `rag/http`, and the composition root
 mounts it under `/api/rag/` with `httpx.CORS` as the outermost wrapper.
 
 | Parameter | Required | Rule |
@@ -511,7 +512,8 @@ mounts it under `/api/rag/` with `httpx.CORS` as the outermost wrapper.
 The pipeline runs in the background in the same process (S2): the upload returns
 immediately and the client polls the status. Processing is ingestion, the lexical
 index, and the embeddings, so an uploaded book is hybrid-searchable when it
-completes (S3). The intended consumer is the Obsidian plugin; there is no UI.
+completes (S3). The web app's capture form is the consumer: it posts a file,
+pasted text or a URL and polls the status.
 
 ### Upload
 
