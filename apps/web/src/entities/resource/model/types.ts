@@ -29,3 +29,16 @@ export interface Resource {
   topicTitle: string
   createdAt: string
 }
+
+/** The wire body of `POST /api/sync/resource`: a material linked to a topic. */
+export interface SyncResourceRequest {
+  topic_name: string
+  resource_title: string
+  type: ResourceType
+  source_uri: string
+}
+
+/** The wire answer of `POST /api/sync/resource`. */
+export interface SyncResourceResponse {
+  resource_id: string
+}

@@ -13,13 +13,17 @@ describe("sourceTargetOf", () => {
     })
   })
 
-  it("treats everything else as a vault path or an obsidian URI", () => {
+  it("treats a corpus document or a legacy vault path as a corpus source", () => {
+    expect(sourceTargetOf("rag://documents/doc-1")).toEqual({
+      kind: "corpus",
+      uri: "rag://documents/doc-1",
+    })
     expect(sourceTargetOf("obsidian://ddd.md")).toEqual({
-      kind: "vault",
+      kind: "corpus",
       uri: "obsidian://ddd.md",
     })
     expect(sourceTargetOf("DDD/Clean Architecture.md")).toEqual({
-      kind: "vault",
+      kind: "corpus",
       uri: "DDD/Clean Architecture.md",
     })
   })
@@ -31,7 +35,7 @@ describe("sourceTargetOf", () => {
 
   it("trims the source it opens", () => {
     expect(sourceTargetOf("  DDD/A.md  ")).toEqual({
-      kind: "vault",
+      kind: "corpus",
       uri: "DDD/A.md",
     })
   })

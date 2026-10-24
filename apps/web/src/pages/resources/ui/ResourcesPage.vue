@@ -28,6 +28,10 @@
           {{ chip.label }}
         </button>
       </div>
+      <!-- The one write the launcher offers: every other action opens a resource. -->
+      <button type="button" class="resources__capture" @click="openCapture($event)">
+        Agregar material
+      </button>
     </div>
 
     <!-- At most one "continue" entry (§6): two would be a list. No progress
@@ -87,6 +91,8 @@
           <button
             type="button"
             class="resource-card__action"
+            :disabled="!isOpenable(resource)"
+            :title="isOpenable(resource) ? undefined : CORPUS_ONLY_HINT"
             @click="openResource(resource, $event)"
           >
             {{ resource.primaryActionLabel }}
@@ -111,6 +117,15 @@
       :initial-index="reviewInitialIndex"
       @close="closeReview"
     />
+
+    <!-- The capture form owns its fields and reports `saved`; the store it uses
+         owns the requests and has already reloaded the list by then, so closing
+         is all that is left. -->
+    <CaptureMaterialForm
+      v-if="captureOpen"
+      @saved="closeCapture"
+      @cancel="closeCapture"
+    />
   </div>
 </template>
 
@@ -119,8 +134,10 @@ import { computed, nextTick, onMounted, ref } from "vue"
 import { storeToRefs } from "pinia"
 import { useRouter } from "vue-router"
 import { useResourcesStore } from "@/entities/resource"
+import { CaptureMaterialForm } from "@/features/capture-material"
 import { ReviewModal } from "@/widgets/review-modal"
 import type { ReviewCard } from "@/widgets/review-modal"
+import { useCapturePanel } from "../model/capturePanel"
 import { fixtureCardsFor } from "../model/cardFixtures"
 import { deckRouteFor } from "../model/deckRoute"
 import { filterResources } from "../model/filter"
@@ -253,6 +270,19 @@ async function closeReview() {
   opener?.focus()
 }
 
+// ── Capture panel ────────────────────────────────────────────────────────────
+
+const {
+  isOpen: captureOpen,
+  open: showCapture,
+  close: closeCapture,
+} = useCapturePanel()
+
+function openCapture(event: MouseEvent) {
+  const opener = event.currentTarget
+  showCapture(opener instanceof HTMLElement ? opener : null)
+}
+
 /** `Seguir` resumes where the continue entry left off (`done` cards seen). */
 function openContinue(event: MouseEvent) {
   const current = continueResource.value
@@ -267,12 +297,33 @@ function openContinue(event: MouseEvent) {
 }
 
 /**
+ * Disabled copy for a material the browser cannot open.
+ *
+ * It says where the material is and how to reach it, because the alternative —
+ * a button that silently does nothing — reads as a bug.
+ */
+const CORPUS_ONLY_HINT = "Vive en el corpus: buscalo por su título."
+
+/**
+ * Whether the card's action has somewhere to go.
+ *
+ * A material captured here lives in the corpus (`rag://documents/<id>`), and a
+ * legacy row may still hold a vault path or an `obsidian://` URI: neither is an
+ * address a browser can open, so the action is rendered disabled with the reason
+ * instead of doing nothing when clicked.
+ */
+function isOpenable(resource: Resource): boolean {
+  if (resource.kind !== "material") return true
+
+  return sourceTargetOf(resource.sourceUri)?.kind === "external"
+}
+
+/**
  * Open a material where it lives: an external URL in a new tab.
  *
- * A stored `source_uri` that is not a URL came from the Obsidian vault, which
- * this app cannot open. It is left inert until the capture slice gives materials
- * a real target inside the corpus; inventing a fallback here would send the
- * reader somewhere the material is not.
+ * A corpus material has no address of its own — the corpus document is the
+ * material — so it is searched, not opened; `isOpenable` keeps its button
+ * disabled and this guard keeps a forced click inert.
  */
 function openSource(uri: string) {
   const target = sourceTargetOf(uri)
@@ -376,6 +427,24 @@ function openResource(resource: Resource, event: MouseEvent) {
 .resources__chip-glyph {
   font-size: 0.9rem;
   line-height: 1;
+}
+
+.resources__capture {
+  min-height: 44px;
+  padding: 0.375rem 0.875rem;
+  border: 1px solid var(--text-accent);
+  border-radius: 6px;
+  background: var(--text-accent);
+  color: var(--background-primary);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: opacity 0.15s ease;
+}
+
+.resources__capture:hover {
+  opacity: 0.85;
 }
 
 .resources__section-title {
@@ -516,6 +585,14 @@ function openResource(resource: Resource, event: MouseEvent) {
 
 .resource-card__action:hover {
   opacity: 0.85;
+}
+
+.resource-card__action:disabled {
+  opacity: 0.5;
+  border-color: var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  cursor: not-allowed;
 }
 
 .resources__empty {

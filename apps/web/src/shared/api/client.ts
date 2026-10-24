@@ -56,21 +56,39 @@ export async function request<T>(
   path: string,
   options?: RequestInit,
 ): Promise<T> {
-  let response: Response
+  const response = await send(path, {
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+    ...options,
+  })
 
+  return parseJsonResponse<T>(response)
+}
+
+/**
+ * POST a `FormData` body and read the JSON answer.
+ *
+ * It exists next to `request` because `request` always declares
+ * `Content-Type: application/json`. A multipart body has to carry the boundary
+ * the browser generated for it, and a hand-written header would announce a
+ * boundary the body does not contain — the server would then fail to parse a
+ * request that was correct. So this sends the form with no content type at all.
+ */
+export async function uploadForm<T>(path: string, form: FormData): Promise<T> {
+  const response = await send(path, { method: "POST", body: form })
+
+  return parseJsonResponse<T>(response)
+}
+
+/** One round trip, with a dropped connection reported as such. */
+async function send(path: string, init: RequestInit): Promise<Response> {
   try {
-    response = await fetch(`${getApiBase()}${path}`, {
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-      },
-      ...options,
-    })
+    return await fetch(`${getApiBase()}${path}`, init)
   } catch {
     throw new NetworkError()
   }
-
-  return parseJsonResponse<T>(response)
 }
 
 /**

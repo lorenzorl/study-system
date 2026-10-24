@@ -53,7 +53,46 @@ function material(overrides: Partial<Resource> = {}): Resource {
   }
 }
 
+/** The card's primary action element, whatever state it is in. */
+function actionButton(html: string): string {
+  const match = html.match(/<button[^>]*resource-card__action[^>]*>/)
+  expect(match).not.toBeNull()
+
+  return match?.[0] ?? ""
+}
+
 describe("ResourcesPage render", () => {
+  it("offers the capture action in the filter row, with no panel until it opens", async () => {
+    const html = await renderPage(() => {})
+
+    expect(html).toContain("Agregar material")
+    // The capture form is an overlay: absent until the action opens it.
+    expect(html).not.toContain('role="dialog"')
+  })
+
+  it("disables the action for a material that lives in the corpus", async () => {
+    const html = await renderPage((store) => {
+      store.resources = [material({ sourceUri: "rag://documents/doc-1" })]
+    })
+
+    const action = actionButton(html)
+
+    expect(action).toContain("disabled")
+    expect(action).toContain("Vive en el corpus: buscalo por su título.")
+    expect(html).toContain("Abrir")
+  })
+
+  it("keeps the action enabled for a material that is a page on the web", async () => {
+    const html = await renderPage((store) => {
+      store.resources = [material({ sourceUri: "https://example.com/paper" })]
+    })
+
+    const action = actionButton(html)
+
+    expect(action).not.toContain("disabled")
+    expect(action).not.toContain("title=")
+  })
+
   it("renders a stored resource as a material card with its type and age", async () => {
     const html = await renderPage((store) => {
       store.resources = [material()]
