@@ -143,3 +143,11 @@ the dial control; widening the production rule), the full suites (16 Go packages
 31 web suites / 192 tests), and the real-process proofs recorded above.
 If a native review is wanted later, the budget has to be fixed first; nothing in
 this repository can raise it.
+
+L11 — A second target was offered after the L10 record was committed
+(`sha256:5ee10e1a…`). `inspect` confirmed it is the same candidate scope: the same
+`paths_digest` (`sha256:654548c1…`, 280 paths) and the same `base-ref`, differing
+only in the snapshot identity because the docs commit changed. No START was issued
+for it: the ceiling was already proven independent of candidate size by probe 4 in
+L10 (two files, one lens, same refusal), and this candidate is strictly larger than
+that one. The disposition stands — unreviewed, cause recorded, nothing to repair.
