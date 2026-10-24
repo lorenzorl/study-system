@@ -378,7 +378,11 @@ func newSearchRouterWithDocuments(search httppkg.SearchUseCase, documents httppk
 	return httppkg.NewRouter(search,
 		httppkg.NewUploadDocumentHandler(nil, nil, nil, false),
 		httppkg.NewDocumentStatusHandler(nil),
-		httppkg.NewDocumentsHandler(documents))
+		httppkg.NewDocumentsHandler(documents),
+		// The creation routes are registered but not exercised here: these tests are
+		// about retrieval.
+		newTextHandler(&fakeIngestTextUseCase{}),
+		newURLHandler(&fakeIngestTextUseCase{}))
 }
 
 func TestRouter_RegistersSearchRoute(t *testing.T) {

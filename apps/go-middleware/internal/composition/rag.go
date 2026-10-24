@@ -190,6 +190,34 @@ func (r *RAG) ListDocuments() *ragapp.ListDocumentsUseCase {
 	return ragapp.NewListDocumentsUseCase(r.documents, r.pages, r.chunks)
 }
 
+// TextIngest builds the pasted-text path: the same stores and the same stages the
+// uploaded path runs, without the pipeline that only exists for bytes needing a
+// model to be read.
+//
+// The embedding stage is optional here, and its absence is not an error: a pasted
+// text is already text, so the corpus can accept it and answer lexical searches
+// with no credential at all. That is the one place this wiring differs from
+// Process, which refuses without a client because an unreadable PDF would
+// otherwise be queued and never finish.
+func (r *RAG) TextIngest(
+	clients Clients, embeddingModel string, store *storage.Store,
+) (*ragapp.IngestTextUseCase, error) {
+	useCase := ragapp.NewIngestTextUseCase(
+		r.documents, r.jobs, r.pages, store, r.Index(),
+	).WithStructure(r.Structure())
+
+	if clients.Embedding == nil {
+		return useCase, nil
+	}
+
+	embed, err := r.Embed(clients, embeddingModel)
+	if err != nil {
+		return nil, err
+	}
+
+	return useCase.WithEmbed(embed), nil
+}
+
 // DocumentRepo returns the document repository, which the upload endpoint needs
 // directly.
 //

@@ -1,0 +1,111 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    name: Go middleware — vet and tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/go-middleware
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/go-middleware/go.mod
+          cache-dependency-path: apps/go-middleware/go.sum
+
+      # Locally: cd apps/go-middleware, then `go vet ./...`.
+      - name: Vet the Go packages
+        run: go vet ./...
+
+      # Locally: cd apps/go-middleware, then `go test ./...`.
+      - name: Run the Go tests
+        run: go test ./...
+
+  web:
+    name: Web app — install, tests, build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # pnpm reads its version from `packageManager` in apps/web/package.json,
+      # so there is no second place to bump it.
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: apps/web/package.json
+
+      # pnpm 11 requires node >= 22.13; Node 20 cannot run it.
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+
+      # Locally: cd apps/web, then `pnpm install --frozen-lockfile`.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Locally: cd apps/web, then `pnpm test`.
+      - name: Run the web tests
+        run: pnpm test
+
+      # Locally: cd apps/web, then `pnpm build`.
+      - name: Build the web app
+        run: pnpm build
+
+  embedded-app:
+    name: Embedded app — committed build is current
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: apps/web/package.json
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+
+      # The built app is committed because `go build` embeds it. Rebuilding it
+      # here and comparing against the commit is what keeps it from going stale.
+      # Locally: `apps/go-middleware/scripts/sync-web.sh`.
+      - name: Sync the embedded app
+        run: apps/go-middleware/scripts/sync-web.sh
+
+      # Locally: run the sync script, then commit
+      # apps/go-middleware/internal/server/spa/dist.
+      - name: Fail when the embedded app is stale
+        run: |
+          target=apps/go-middleware/internal/server/spa/dist
+          status="$(git status --porcelain "$target")"
+          if [ -n "$status" ]; then
+            echo "::error title=Embedded app is stale::Run" \
+              "apps/go-middleware/scripts/sync-web.sh locally, then" \
+              "commit apps/go-middleware/internal/server/spa/dist."
+            echo "$status"
+            exit 1
+          fi

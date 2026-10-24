@@ -57,6 +57,20 @@ type UploadDocumentRepository interface {
 	Create(ctx context.Context, document *domain.Document) error
 }
 
+// IngestTextUseCase turns a pasted text into a searchable corpus document.
+//
+// It is a use case and not a store: everything the endpoint decides beyond the
+// request's own shape — identity, the single page, the index and the vectors —
+// belongs to the application layer, where the PDF path's pipeline also lives. The
+// endpoint contributes only what a request can know: the body ceiling, the JSON,
+// and the title's length.
+type IngestTextUseCase interface {
+	// Execute stores the text, registers it, and runs the searchable stages. A
+	// text the corpus already holds is apperror.ErrConflict; a blank title or
+	// text is apperror.ErrInvalidInput.
+	Execute(ctx context.Context, request app.IngestTextRequest) (app.IngestTextReport, error)
+}
+
 // DocumentProcessor queues a registered document for background processing.
 //
 // Submit must not block: the upload request returns as soon as the document is

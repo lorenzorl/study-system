@@ -1,9 +1,0 @@
-{
-  "id": "obsidian-flashcard-plugin",
-  "name": "Study Dashboard",
-  "version": "3.2.0",
-  "minAppVersion": "1.5.0",
-  "description": "Study dashboard with domain exploration, flashcards, Feynman technique, and command center.",
-  "author": "",
-  "isDesktopOnly": false
-}
