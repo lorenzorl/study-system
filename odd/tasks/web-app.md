@@ -33,9 +33,9 @@ text path and a URL path; today `POST /api/rag/documents` accepts PDF only
 - T2 — Serve the built SPA from the Go binary at `/` with an SPA fallback (S3) — route: inline — commit: `b7ae10d`
 - T3 — Text ingest: `POST /api/rag/documents/text` stores pasted markdown as a document with its chunks (S4) — route: gentle-ai-worker (stalled on its last turn; the parent completed the wiring and one test assertion) — commit: `38de868`
 - T4 — URL ingest: `POST /api/rag/documents/url` fetches http(s) only, refuses loopback/private targets, then ingests (S4) — route: gentle-ai-worker + independent `gentle-ai-verify` (both findings closed by the parent) — commit: `5be5c1d`
-- T5 — Capture UI in the launcher: upload a file, paste text, paste a URL, wired to the endpoints (S4) — route: inline — commit: —
-- T6 — Replace Obsidian's "sync active note" with a paste-markdown flow on the topics page (S1, S2) — route: inline — commit: —
-- T7 — Delete `apps/obsidian-plugin` and update `README`/`ARCHITECTURE.md`/`PRESENTATION-UI.md` (S2) — route: inline — commit: —
+- T5 — Capture UI in the launcher: upload a file, paste text, paste a URL, wired to the endpoints (S4) — route: gentle-ai-worker, re-run after it found a real spec defect (an empty `source_uri` cannot be registered; the parent chose `rag://documents/<id>`) — commit: `58a6fa9`
+- T6 — Replace Obsidian's "sync active note" with a paste-markdown flow on the topics page (S1, S2) — route: gentle-ai-worker — commit: `2461c81`
+- T7 — Delete `apps/obsidian-plugin` and update `README`/`ARCHITECTURE.md`/`PRESENTATION-UI.md` (S2) — route: parent (deletion) + gentle-ai-worker (docs, README, CI) — commit: `cd0fcad`
 
 ## Log
 
@@ -111,8 +111,7 @@ public address), and the response header block is capped. The 25-second deadline
 test was replaced by a 50ms one through an injected timeout, so the suite runs in
 2.4s instead of 25s.
 
-L9 — Accepted limitations of T4, named so they are not silent:
-- No port policy: the server will fetch an http URL on any port of a public
+L9 — Accepted limitations of T4, named so they are not silent:- No port policy: the server will fetch an http URL on any port of a public
   address, so it can probe a public Redis or Memcached. Refusing the ports would
   need the rule to see the port, not just the address, and the spec named address
   classes only. A candidate follow-up, not a gap in the loopback guarantee.
