@@ -1,5 +1,6 @@
 import { defineConfig, type Plugin } from "vite"
 import vue from "@vitejs/plugin-vue"
+import tailwindcss from "@tailwindcss/vite"
 import { readFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import path from "node:path"
@@ -41,7 +42,11 @@ function revealStylesheetAsText(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [revealStylesheetAsText(), vue()],
+  // `tailwindcss()` compiles `src/app/styles.css` (the token bridge) and the
+  // utilities the `shared/ui` primitives use. It is a Vite plugin, not a
+  // PostCSS step: there is no `postcss.config.js` and no `tailwind.config.js`,
+  // because in v4 the config *is* the CSS file.
+  plugins: [revealStylesheetAsText(), vue(), tailwindcss()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "src"),
