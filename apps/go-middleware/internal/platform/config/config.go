@@ -59,6 +59,38 @@ const (
 	// EnvOpenRouterBaseURL overrides the API root. It is the only way to point a
 	// run at a proxy, a gateway, or a test double.
 	EnvOpenRouterBaseURL = "STUDY_OPENROUTER_BASE_URL"
+
+	// The replica variables name an S3-compatible destination the backup command
+	// writes a durable copy of data/ to. All six are optional together and none of
+	// them is required to boot: the server and every other command run whether or
+	// not a bucket is configured, and the two commands that need one report what is
+	// missing when they run. Validating the group at Load would turn a half-typed
+	// bucket into a server that refuses to start for a credential it never uses,
+	// which is the same mistake EnvOpenRouterAPIKey already avoids.
+
+	// EnvR2AccountID names the Cloudflare account that owns the bucket. The S3
+	// endpoint is derived from it unless EnvR2Endpoint overrides it.
+	EnvR2AccountID = "STUDY_R2_ACCOUNT_ID"
+
+	// EnvR2Bucket names the destination bucket.
+	EnvR2Bucket = "STUDY_R2_BUCKET"
+
+	// EnvR2AccessKeyID is the access key identifier. It is an identifier, not a
+	// credential, so it is safe to print; the secret beside it is not.
+	EnvR2AccessKeyID = "STUDY_R2_ACCESS_KEY_ID"
+
+	// EnvR2SecretAccessKey is the credential half of the key pair. It must never
+	// reach a log line, an error message, or a committed file, which is why
+	// ReplicaSettings has a String method that omits it.
+	EnvR2SecretAccessKey = "STUDY_R2_SECRET_ACCESS_KEY"
+
+	// EnvR2Endpoint overrides the S3 endpoint. It is the only way to point a run at
+	// a local S3 double or a different S3-compatible provider.
+	EnvR2Endpoint = "STUDY_R2_ENDPOINT"
+
+	// EnvR2Prefix namespaces every key the replica writes, so one bucket can hold
+	// more than one repository's state.
+	EnvR2Prefix = "STUDY_R2_PREFIX"
 )
 
 // DotEnvFile is the file Load reads before falling back to the process
@@ -85,6 +117,11 @@ const (
 
 	// DefaultOpenRouterBaseURL is the public OpenRouter API root.
 	DefaultOpenRouterBaseURL = "https://openrouter.ai/api/v1"
+
+	// DefaultR2Prefix namespaces the replica's keys inside the bucket. It exists so
+	// a bucket shared with anything else can hold this repository's state without
+	// its keys sitting at the root.
+	DefaultR2Prefix = "study-system"
 )
 
 // DefaultDatabaseDSN is the database file a run uses when nothing overrides it.
@@ -159,6 +196,105 @@ type Config struct {
 	// host, both checked at load time so a typo aborts the run instead of
 	// failing at page 200.
 	OpenRouterBaseURL string
+
+	// Replica is the S3-compatible destination the backup command writes to. It is
+	// carried fully resolved but unvalidated: Load never rejects it, so a server
+	// boots with no bucket and with a half-typed one alike.
+	Replica ReplicaSettings
+}
+
+// ReplicaSettings is the destination of a durable copy of data/.
+//
+// The zero value means "no replica configured", which is a valid configuration
+// for everything except the backup and restore commands. Validate is therefore
+// not part of Load: it is the command's job to refuse, and its message names the
+// variable the operator has to set.
+type ReplicaSettings struct {
+	// AccountID owns the bucket. It derives the endpoint.
+	AccountID string
+
+	// Bucket is where objects are written.
+	Bucket string
+
+	// AccessKeyID and SecretAccessKey are the key pair used to sign requests.
+	AccessKeyID     string
+	SecretAccessKey string
+
+	// Endpoint overrides the derived endpoint, for an S3 double or another provider.
+	Endpoint string
+
+	// Prefix namespaces every key written under the bucket.
+	Prefix string
+}
+
+// IsZero reports whether no destination is configured at all.
+//
+// It deliberately ignores Prefix: the prefix has a default, so including it would
+// make "nothing configured" indistinguishable from "configured without a prefix".
+func (r ReplicaSettings) IsZero() bool {
+	return r.AccountID == "" && r.Bucket == "" && r.AccessKeyID == "" && r.SecretAccessKey == ""
+}
+
+// EffectiveEndpoint returns the endpoint a client should talk to: the override
+// when one is set, otherwise the Cloudflare host derived from the account id.
+// It returns an empty string only when neither is available, which Validate has
+// already reported as a missing variable.
+func (r ReplicaSettings) EffectiveEndpoint() string {
+	if r.Endpoint != "" {
+		return r.Endpoint
+	}
+	if r.AccountID == "" {
+		return ""
+	}
+	return "https://" + r.AccountID + ".r2.cloudflarestorage.com"
+}
+
+// Validate reports every missing variable and every unusable value at once, so
+// one round trip through the operator's .env fixes the whole group instead of
+// revealing one missing name per attempt.
+func (r ReplicaSettings) Validate() error {
+	missing := make([]string, 0, 4)
+	for _, field := range []struct {
+		name  string
+		value string
+	}{
+		{EnvR2AccountID, r.AccountID},
+		{EnvR2Bucket, r.Bucket},
+		{EnvR2AccessKeyID, r.AccessKeyID},
+		{EnvR2SecretAccessKey, r.SecretAccessKey},
+	} {
+		if field.value == "" {
+			missing = append(missing, field.name)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("replica is not configured: set %s", strings.Join(missing, ", "))
+	}
+
+	if r.Endpoint != "" {
+		parsed, err := url.Parse(r.Endpoint)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+			return fmt.Errorf("%s: %q must be an http or https URL with a host", EnvR2Endpoint, r.Endpoint)
+		}
+	}
+
+	return nil
+}
+
+// String renders the settings with the credential replaced by its presence.
+//
+// This method is the reason a secret cannot escape through a log line: without it
+// fmt prints every field of the nested struct, so one
+// log.Printf("%+v", cfg) at startup would write the bucket key to disk. The
+// identifier is printed, because it is what makes a signature mismatch
+// diagnosable; the secret beside it never is.
+func (r ReplicaSettings) String() string {
+	secret := "unset"
+	if r.SecretAccessKey != "" {
+		secret = "set"
+	}
+	return fmt.Sprintf("ReplicaSettings{bucket: %q, prefix: %q, endpoint: %q, access key id: %q, secret: %s}",
+		r.Bucket, r.Prefix, r.EffectiveEndpoint(), r.AccessKeyID, secret)
 }
 
 // Options selects where a run reads its configuration from.
@@ -341,6 +477,17 @@ func load(options Options, lookup EnvLookup) (*Config, error) {
 		return nil, err
 	}
 
+	// The replica group is read, never validated: see the EnvR2* comment for why a
+	// half-configured bucket must not stop the process.
+	replica := ReplicaSettings{
+		AccountID:       strings.TrimSpace(resolve(EnvR2AccountID)),
+		Bucket:          strings.TrimSpace(resolve(EnvR2Bucket)),
+		AccessKeyID:     strings.TrimSpace(resolve(EnvR2AccessKeyID)),
+		SecretAccessKey: strings.TrimSpace(resolve(EnvR2SecretAccessKey)),
+		Endpoint:        strings.TrimRight(strings.TrimSpace(resolve(EnvR2Endpoint)), "/"),
+		Prefix:          normalizePrefix(resolve(EnvR2Prefix)),
+	}
+
 	return &Config{
 		Root:               root,
 		Port:               port,
@@ -352,7 +499,20 @@ func load(options Options, lookup EnvLookup) (*Config, error) {
 		LLMModel:           model,
 		EmbeddingModel:     embeddingModel,
 		OpenRouterBaseURL:  baseURL,
+		Replica:            replica,
 	}, nil
+}
+
+// normalizePrefix reduces a key prefix to a form a key join can use directly:
+// no surrounding whitespace, no leading or trailing separator. An empty value
+// takes DefaultR2Prefix, because "blank falls back to the default" is the rule
+// every other optional variable in this file already follows.
+func normalizePrefix(raw string) string {
+	trimmed := strings.Trim(strings.TrimSpace(raw), "/")
+	if trimmed == "" {
+		return DefaultR2Prefix
+	}
+	return trimmed
 }
 
 // ParseOpenRouterBaseURL validates the API root. An empty string yields
