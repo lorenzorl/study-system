@@ -104,15 +104,25 @@ function unitOf(file: string): string | null {
   return `${layer}/${second}`
 }
 
-function scan(files: string[]): Violation[] {
+interface ScannedFile {
+  file: string
+  specifiers: string[]
+}
+
+/**
+ * The rule engine. It takes specifiers, not source text: a fixture that spells
+ * out an import statement inside a string literal is data, and reading it back
+ * as an import of the file that holds it is how a guard starts lying about
+ * itself — including when the statement appears in a comment.
+ */
+function scanSpecifiers(entries: ScannedFile[]): Violation[] {
   const violations: Violation[] = []
 
-  for (const file of files) {
+  for (const { file, specifiers } of entries) {
     const ownUnit = unitOf(file)
     const [ownLayer] = file.split("/") as [Layer | undefined]
-    const source = readFileSync(path.join(SRC, file), "utf8")
 
-    for (const specifier of importsOf(source)) {
+    for (const specifier of specifiers) {
       if (specifier === "obsidian") {
         violations.push({ file, specifier, rule: "obsidian-boundary" })
         continue
@@ -139,6 +149,21 @@ function scan(files: string[]): Violation[] {
         }
 
         if (targetLayer === ownLayer) {
+          // `shared` has no slices (§2): its units are segments, and one segment
+          // reaches another by its public path (`@/shared/lib/utils`), which is
+          // exactly the shape the downward branch already accepts. The
+          // same-layer rule is about *slices* — a sibling slice of `entities`,
+          // `features`, `widgets` or `pages` — and applying it to `shared` would
+          // forbid a segment from using another segment at all, leaving every
+          // `shared/ui` primitive unable to import `cn`. Only the shallow
+          // `@/shared` form stays rejected, because it names no segment.
+          if (ownLayer === "shared") {
+            if (parts.length < 2) {
+              violations.push({ file, specifier, rule: "public-api" })
+            }
+            continue
+          }
+
           const targetUnit =
             targetLayer === "app" ? "app" : `${targetLayer}/${targetSliceName ?? ""}`
           violations.push({
@@ -187,6 +212,15 @@ function scan(files: string[]): Violation[] {
   }
 
   return violations
+}
+
+function scan(files: string[]): Violation[] {
+  return scanSpecifiers(
+    files.map((file) => ({
+      file,
+      specifiers: importsOf(readFileSync(path.join(SRC, file), "utf8")),
+    })),
+  )
 }
 
 const FILES = collectFiles(SRC)
@@ -239,5 +273,74 @@ describe("FSD boundaries", () => {
 
   it("keeps files outside the layers out of the layer graph", () => {
     expect(report("unlayered-module")).toEqual([])
+  })
+})
+
+/**
+ * The suite above proves the real tree is clean. That is only half a guard: a
+ * rule engine that silently stopped matching would report no violations and
+ * look perfect. These cases hand `scanSpecifiers` one synthetic file each and
+ * assert the rule still fires — and, for `shared`, that it fires in exactly one
+ * direction.
+ *
+ * They pass bare specifiers, not source text: a fixture written as a whole
+ * import statement would be read back by this file's own scan as a real import
+ * of `architecture.test.ts`, which sits outside the layers and may import none.
+ */
+function violationsIn(entries: Array<[file: string, specifier: string]>): string[] {
+  return scanSpecifiers(entries.map(([file, specifier]) => ({ file, specifiers: [specifier] }))).map(
+    (violation) => `${violation.rule}: ${violation.specifier}`,
+  )
+}
+
+describe("the boundary guard still rejects what it must", () => {
+  it("an upward import", () => {
+    expect(violationsIn([["pages/dashboard/ui/Page.vue", "@/app/ui/App.vue"]])).toEqual([
+      "layer-direction: @/app/ui/App.vue",
+    ])
+  })
+
+  it("a sibling slice of the same layer", () => {
+    expect(violationsIn([["entities/topic/model/types.ts", "@/entities/concept"]])).toEqual([
+      "same-layer-sibling: @/entities/concept",
+    ])
+  })
+
+  it("a deep import into another slice's segment", () => {
+    expect(
+      violationsIn([
+        ["pages/topic/ui/TopicPage.vue", "@/features/select-topic/model/useTopicSelection"],
+      ]),
+    ).toEqual(["public-api: @/features/select-topic/model/useTopicSelection"])
+  })
+
+  it("a relative import that leaves the file's own unit", () => {
+    expect(
+      violationsIn([["features/create-topic/model/a.ts", "../../create-concept/model/b"]]),
+    ).toEqual(["relative-escape: ../../create-concept/model/b"])
+  })
+
+  it("the obsidian package", () => {
+    expect(violationsIn([["entities/topic/model/a.ts", "obsidian"]])).toEqual([
+      "obsidian-boundary: obsidian",
+    ])
+  })
+
+  it("a file outside the layers importing into them", () => {
+    expect(violationsIn([["shims-vue.d.ts", "@/shared/lib/guards"]])).toEqual([
+      "unlayered-module: @/shared/lib/guards",
+    ])
+  })
+})
+
+describe("shared has segments, not slices", () => {
+  it("lets one segment reach another by its public path", () => {
+    expect(violationsIn([["shared/ui/button/Button.vue", "@/shared/lib/utils"]])).toEqual([])
+  })
+
+  it("still rejects the shallow `@/shared` form, which names no segment", () => {
+    expect(violationsIn([["shared/ui/button/Button.vue", "@/shared"]])).toEqual([
+      "public-api: @/shared",
+    ])
   })
 })
