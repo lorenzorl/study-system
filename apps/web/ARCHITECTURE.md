@@ -28,7 +28,7 @@ FSD layers used here (there is **no `processes` layer** — it is deprecated and
 | `widgets` | Self-contained compositional UI blocks used by pages. | No |
 | `features` | User interactions that bring value (create, sync, submit, select). | No |
 | `entities` | Domain models, their stores, api segments and cards. | No |
-| `shared` | Reusable, domain-free infrastructure (`api` client, `lib`, `config`). | No |
+| `shared` | Reusable, domain-free infrastructure (`api` client, `lib`, `config`) and the `ui` primitives. | No |
 
 **The dependency rule** — imports may only point downward:
 
@@ -50,6 +50,50 @@ one boundary the app still needs.
 - **Segments** (internal folders of a slice): `ui/` (components), `model/` (state, stores, types, validation), `api/` (server calls), `lib/` (pure helpers), `config/` (constants/configuration).
 - **Import rule**: a slice may only be imported through its `index.ts`. Deep imports into a slice's segment (`entities/topic/model/types`) are forbidden.
 - **Tests are colocated** with the slice they test (`entities/review/model/useReviewStore.test.ts`), except ambient/infra tests which live next to the file under test.
+- **`shared` has segments, not slices.** Its unit is the segment itself
+  (`shared/api`, `shared/lib`, `shared/config`, `shared/ui`), so one segment may
+  reach another by its public path (`@/shared/lib/utils`) — the same shape every
+  other layer uses to reach a lower one. The same-layer-sibling rule is about
+  *slices* and does not apply here (§10).
+
+### 3.1 Styling: the token bridge and `shared/ui`
+
+`shared/ui/` holds the shadcn-vue primitives (`button`, `input`, `label`, `card`,
+`dialog`). They are domain-free infrastructure, importable by any layer, and each
+is reached by its folder: `@/shared/ui/button`. Nothing else in the app renders
+them yet — the migration of existing pages is a separate, later decision.
+
+**`index.html` still owns the palette.** Its `:root` block declares
+`--text-normal`, `--background-primary`, `--interactive-accent`, … and remains
+the only place a colour value is written. shadcn's tokens (`--background`,
+`--foreground`, `--primary`, `--ring`, …) are declared in `src/app/styles.css` as
+**references** onto those variables, never as new values, so a primitive using
+`bg-background` and a page using `var(--background-primary)` cannot disagree, and
+the `prefers-color-scheme` block in `index.html` keeps serving both without a
+second source of truth.
+
+`src/app/styles.css` is the Tailwind v4 entry **and** the config: there is no
+`tailwind.config.js` and no `postcss.config.js`. It imports
+`tailwindcss/theme.css` and `tailwindcss/utilities.css` but **not
+`tailwindcss` itself**, because the plugin's own entry also pulls in preflight.
+Preflight would flatten `h1`-`h6` to `font-size: inherit` and strip list markers,
+re-styling the 24 pre-existing components whose `<style>` blocks never re-declare
+those; `index.html` already owns the reset. Verified on the built bundle: no
+universal-selector rule is emitted.
+
+To add a primitive:
+
+```bash
+pnpm dlx shadcn-vue@2.8.2 add <name>   # components.json sends it to src/shared/ui
+```
+
+**Defect to guard against:** the generator writes `import { cn } from "cn"` — the
+unrelated `cn` package on npm, not `aliases.utils` — and adds it as a dependency.
+After every `add`, rewrite the import and never `pnpm add cn`:
+
+```bash
+grep -rl 'from "cn"' src/shared/ui | xargs sed -i '' 's|from "cn"|from "@/shared/lib/utils"|g'
+```
 
 ## 4. The platform boundary
 
@@ -376,6 +420,24 @@ addressed by segment as `@/shared/<segment>[/<file>]`); a relative import that
 leaves the file's own slice; an `obsidian` import anywhere; and any file outside
 the layers that imports into them. A seventh case asserts the walk
 actually found the expected files, so the guard cannot pass vacuously.
+
+**Revised (2026-10-27): `shared` has segments, not slices.** The same-layer rule
+fired before the `shared` exemption could be reached, so the first real
+intra-`shared` import (`shared/ui/*` needing `cn` from `shared/lib/utils`)
+failed as `same-layer-sibling` — and there was no legal workaround, because a
+relative `../../lib/utils` is a `relative-escape`. The guard now exempts `shared`
+from the same-layer rule and keeps only the shape check
+(`@/shared/<segment>[/<file>]`; bare `@/shared` still fails). Two structural
+changes came with it:
+
+- The rule engine was split from import extraction (`scanSpecifiers` takes
+  specifiers). Before, the guard read its own file and mistook a fixture — and
+  even a comment — that contained a full import statement for a real import of
+  `architecture.test.ts`, which sits outside the layers and may import none.
+- Eight cases were added that feed synthetic specifiers and assert each rule
+  still fires, in both directions. The suite previously asserted only that the
+  real tree was clean, which is also what a guard that silently stopped matching
+  would report. The file is now 15 tests: 7 on the real tree, 8 on the rules.
 
 ## 11. Migration phases (historical)
 
