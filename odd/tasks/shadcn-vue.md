@@ -117,3 +117,28 @@ is restyled.
   attention:** `1347961` relaxes one guard rule, and a weakened guard is invisible
   until it matters — it is pinned by the 8 new rule-level cases, but it is the
   slice worth reading closely.
+- **L16** (blocker, native review): the user then asked for a review, which makes
+  one due regardless of `reviewDue`. It could not be started, for a reason outside
+  this feature:
+  - `inspect` reported the workspace projection as
+    `paths: [apps/go-middleware/internal/platform/config/config.go]`, i.e. **not
+    this candidate**. A second Pi session
+    (`subagent-chat-01a17ebd-ed77-741a`, same cwd, "thinking") is implementing R2
+    durability in the *same worktree*: `config.go` (+160 lines),
+    `replica_test.go` and `odd/tasks/r2-durability.md`, written 15:14-15:15, all
+    uncommitted. The five commits here are committed, so the projection — which
+    binds uncommitted workspace changes — cannot see them.
+  - `START` with `baseRef 9b4373a6…` + `committedOnly: true` returned
+    `native-start-retained-selection-candidate-mismatch` with
+    `mutation_performed: false`: no lineage, no authority burned.
+  - A fresh `inspect` re-offered only the same workspace candidate and the same
+    untracked selection (the peer's two files). No committed-range route exists
+    while that work is dirty in the tree. Not retried: retrying would be guessing
+    at a route the provider did not offer.
+  - **Resolution needs the peer to commit, stash or move to its own worktree**, or
+    a review run from an isolated worktree of this branch. Neither is a decision
+    this feature can take on its own.
+  - The merge did not wait on this: `master` was fast-forwarded to the branch ref
+    (a ref update — `HEAD`, the index and the peer's files were never touched),
+    and `pnpm install --frozen-lockfile`, the suite, typecheck and build were the
+    gate instead.
