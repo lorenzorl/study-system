@@ -113,9 +113,14 @@ run artifacts (`playwright-report/`, `test-results/`) are not. The path template
 carries `{platform}`, because font rasterisation differs between macOS and Linux
 and a baseline from one would fail on the other for reasons unrelated to the code.
 The Linux set has to be generated once on Linux and committed — run the suite in
-the CI container with `--update-snapshots` and commit what it produces. Until that
-one-time step, the pixel comparison runs locally and CI reports missing snapshots
-instead of a regression.
+the CI container with `--update-snapshots` and commit what it produces.
+
+Until that one-time step, **CI runs the smoke with `--ignore-snapshots`**. It still
+proves every route renders with no console error; it does not compare pixels it has
+no baseline for. The first version of this wired the plain command into CI, which
+turned the web job from green to deterministically red on every run: a gate that
+always fails gates nothing. A native review caught it (`R3-ci-missing-linux-baselines`)
+after it had passed 200 unit tests and ten green local screenshots.
 
 Accepting a visual change is deliberate: `pnpm exec playwright test
 --update-snapshots`, then read the PNG diff. A baseline updated without looking is
