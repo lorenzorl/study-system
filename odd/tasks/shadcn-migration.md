@@ -328,3 +328,20 @@ before it), so the Writer rule's "2+ independent units" condition does not hold.
   the button. 21 files consume `@shared/ui/*`.
   Verified: 263/263 unit (231 + 32, FSD guard included), 13/13 e2e at ratio 0
   (12 captures + 1 behavioural case), typecheck 0.
+- **L21** (user decisions, both asked as closed questions with the cost of each
+  option stated): (a) D1 lands **before** the single push — "Antes del push: cargar
+  el store en las 3 páginas", because four of the eight route baselines photograph a
+  failure and half the net proves nothing until they don't; (b) the delivery's review
+  strategy is **per unit with the gap documented** — "Por unidad, con el hueco
+  documentado". Concretely: the native engine measures the accumulated candidate at
+  377 paths / 31.581 lines against `origin/master` and says `reviewDue: true` (tier
+  high), but that scope is 4.7× the one that already ended in
+  `lens_context_budget_exceeded`, so it cannot be reviewed as one lineage. What was
+  reviewed instead, per work unit with an explicit `baseRef` + `committedOnly`: the CI
+  gate slice (approved, authority burned, three advisories in L15); and `assess` was
+  consulted on every later unit (T4b 12 paths/602 lines, T5 4/313, T6 14/523, T7
+  21/660, T8 31/1182 — all `reviewDue: false`, medium). The gap, stated plainly for
+  the PR body and for whoever reads this later: **no review has looked at the seams
+  between units, and none has looked at the branch as a whole.** The guarantees that
+  do hold are the per-unit assessments, the 263-case unit suite (FSD guard included),
+  the 13-case e2e net at pixel ratio 0, and typecheck.
