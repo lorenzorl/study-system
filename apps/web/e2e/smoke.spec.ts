@@ -171,6 +171,34 @@ test.describe("interactive states", () => {
     })
   })
 
+  // Behaviour, not pixels, and the reason it is here: a template ref on a shared/ui
+  // component is the component instance, not an element, so `SyncNoteTrigger` reads
+  // `$el` to put focus back on the control the reader pressed. Nothing else in the
+  // repo can see whether `$el` is that node — the unit suite runs without a DOM, and
+  // the capture above never closes the panel — so this assertion is the only thing
+  // that can tell.
+  test("returns focus to the trigger when the sync-note panel closes", async ({ page }) => {
+    await page.goto("/topics")
+
+    const trigger = page.getByRole("button", { name: "Sincronizar nota" })
+    const panel = page.getByRole("dialog", { name: "Sincronizar nota" })
+
+    await trigger.focus()
+    await trigger.click()
+    await expect(panel).toBeVisible()
+
+    await page.keyboard.press("Escape")
+    await expect(panel).toBeHidden()
+
+    // Polled rather than read once: the trigger hands focus back after
+    // `await nextTick()`, which is a tick this test does not get to schedule.
+    await expect
+      .poll(() => trigger.evaluate((el) => el === document.activeElement))
+      .toBe(true)
+
+    expect(CONSOLE_ERRORS).toEqual([])
+  })
+
   // The new-concept form only exists while the "+" toggle is on, so the topic
   // route capture above proves nothing about it: a green `topic.png` would also be
   // green if the form never mounted. This capture is the one that fails when the
