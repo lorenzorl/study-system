@@ -68,6 +68,32 @@ function actionButton(html: string): string {
   return match?.[0] ?? ""
 }
 
+/**
+ * Whether an opening tag carries the `disabled` attribute.
+ *
+ * `toContain("disabled")` matched the primitives' own `disabled:` utility classes,
+ * so an *enabled* button read as disabled (`shadcn-migration.md` L16). The
+ * assertion has to be on the attribute, not on a substring of the class list.
+ */
+const DISABLED_ATTRIBUTE = /(?:^|\s)disabled(?=[\s>=/])/
+
+/**
+ * The filter chips, found by the state attribute that is their contract.
+ *
+ * T3 moved this suite off BEM classes and onto `aria-pressed`; anchoring on the
+ * attribute keeps the assertions meaningful once the markup is a primitive.
+ */
+function chipButtons(html: string): string[] {
+  return [...html.matchAll(/<button[^>]*aria-pressed="[^"]*"[^>]*>/g)].map(
+    (match) => match[0],
+  )
+}
+
+/** SSR wraps interpolated text in fragment markers; the assertions want the text. */
+function withoutComments(html: string): string {
+  return html.replace(/<!--[\s\S]*?-->/g, "")
+}
+
 describe("ResourcesPage render", () => {
   it("offers the capture action in the filter row, with no panel until it opens", async () => {
     const html = await renderPage(() => {})
@@ -84,7 +110,7 @@ describe("ResourcesPage render", () => {
 
     const action = actionButton(html)
 
-    expect(action).toContain("disabled")
+    expect(action).toMatch(DISABLED_ATTRIBUTE)
     expect(action).toContain("Vive en el corpus: buscalo por su título.")
     expect(html).toContain("Abrir")
   })
@@ -96,7 +122,7 @@ describe("ResourcesPage render", () => {
 
     const action = actionButton(html)
 
-    expect(action).not.toContain("disabled")
+    expect(action).not.toMatch(DISABLED_ATTRIBUTE)
     expect(action).not.toContain("title=")
   })
 
@@ -137,6 +163,31 @@ describe("ResourcesPage render", () => {
     expect(html).toContain("No se pudo conectar al servidor.")
     expect(html).toContain("Reintentar")
     expect(html).not.toContain("Todavía no hay recursos.")
+  })
+
+  // What the migration changed, and the only thing here that could otherwise pass
+  // silently: the chips and the kind label are the primitives now, not elements
+  // with hand-drawn frames. Every other case asserts text, which survives either way.
+  it("renders the filter chips as primitive buttons, one of them pressed", async () => {
+    const html = await renderPage(() => {})
+
+    const chips = chipButtons(html)
+
+    expect(chips).toHaveLength(5)
+    for (const chip of chips) expect(chip).toContain('data-slot="button"')
+    expect(chips.filter((chip) => chip.includes('aria-pressed="true"'))).toHaveLength(1)
+  })
+
+  it("renders the card's kind label as a badge", async () => {
+    const html = withoutComments(
+      await renderPage((store) => {
+        store.resources = [material()]
+      }),
+    )
+
+    const badge = html.match(/<div data-slot="badge"[^>]*>([\s\S]*?)<\/div>/)
+
+    expect(badge?.[1]).toContain("Material")
   })
 
   it("shows the loading state while the first read is in flight", async () => {

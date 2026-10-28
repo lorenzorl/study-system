@@ -9,13 +9,25 @@
         placeholder="Buscar…"
         aria-label="Buscar recursos"
       />
+      <!--
+        The chips are the `shared/ui` button. They keep their pill shape and the
+        palette mapping the CSS had (`secondary` is the grey fill, `outline` the
+        white one), and the state is a variant change plus the accent border and
+        label, which is exactly what `--active` drew before. `min-h-[44px]` is the
+        touch floor this row has always had.
+      -->
       <div class="resources__chips" role="group" aria-label="Filtrar por tipo">
-        <button
+        <Button
           v-for="chip in KIND_CHIPS"
           :key="chip.value"
           type="button"
-          class="resources__chip"
-          :class="{ 'resources__chip--active': kind === chip.value }"
+          :variant="kind === chip.value ? 'outline' : 'secondary'"
+          :class="[
+            'min-h-[44px] gap-1 rounded-full',
+            kind === chip.value
+              ? 'border-primary text-primary'
+              : 'border-border text-muted-foreground',
+          ]"
           :aria-pressed="kind === chip.value"
           @click="kind = chip.value"
         >
@@ -26,12 +38,12 @@
             >{{ chip.glyph }}</span
           >
           {{ chip.label }}
-        </button>
+        </Button>
       </div>
       <!-- The one write the launcher offers: every other action opens a resource. -->
-      <button type="button" class="resources__capture" @click="openCapture($event)">
+      <Button type="button" class="min-h-[44px]" @click="openCapture($event)">
         Agregar material
-      </button>
+      </Button>
     </div>
 
     <!-- At most one "continue" entry (§6): two would be a list. No progress
@@ -49,13 +61,13 @@
         <span class="continue__progress">
           {{ continueResource.done }} / {{ continueResource.total }}
         </span>
-        <button
+        <Button
           type="button"
-          class="continue__action"
+          class="min-h-[44px] min-w-[44px]"
           @click="openContinue($event)"
         >
           {{ continueResource.primaryActionLabel }}
-        </button>
+        </Button>
       </div>
     </section>
 
@@ -65,9 +77,14 @@
 
     <div v-else-if="error" class="resources__state resources__state--error">
       <p class="resources__error">{{ error }}</p>
-      <button type="button" class="resources__retry" @click="retry">
+      <Button
+        type="button"
+        variant="outline"
+        class="min-h-[44px]"
+        @click="retry"
+      >
         Reintentar
-      </button>
+      </Button>
     </div>
 
     <template v-else>
@@ -79,25 +96,36 @@
           :key="resource.id"
           class="resource-card"
         >
-          <span class="resource-card__badge">
+          <!-- The kind chip is a `Badge`: the pill is the primitive's, the mapping
+               stays the palette's (muted label, accent glyph, default border). -->
+          <Badge
+            variant="outline"
+            class="uppercase tracking-[0.04em] text-muted-foreground"
+          >
             <span class="resource-card__glyph" aria-hidden="true">{{
               KIND_GLYPHS[resource.kind]
             }}</span>
             {{ KIND_LABELS[resource.kind] }}
-          </span>
+          </Badge>
           <h3 class="resource-card__title">{{ resource.title }}</h3>
           <p class="resource-card__context">{{ resource.topicTitle }} ›</p>
           <p class="resource-card__status">{{ statusOf(resource) }}</p>
-          <button
+          <!--
+            `disabled:pointer-events-auto` is deliberate: the primitive's own
+            `disabled:pointer-events-none` would swallow the `title`, and that
+            tooltip is the whole reason a corpus-only material renders disabled
+            instead of silently doing nothing.
+          -->
+          <Button
             type="button"
-            class="resource-card__action"
+            class="min-h-[44px] min-w-[44px] self-start disabled:pointer-events-auto disabled:cursor-not-allowed"
             :aria-label="`${resource.primaryActionLabel}: ${resource.title}`"
             :disabled="!isOpenable(resource)"
             :title="isOpenable(resource) ? undefined : CORPUS_ONLY_HINT"
             @click="openResource(resource, $event)"
           >
             {{ resource.primaryActionLabel }}
-          </button>
+          </Button>
         </article>
       </div>
 
@@ -136,6 +164,8 @@ import { storeToRefs } from "pinia"
 import { useRouter } from "vue-router"
 import { useResourcesStore } from "@/entities/resource"
 import { CaptureMaterialForm } from "@/features/capture-material"
+import { Badge } from "@/shared/ui/badge"
+import { Button } from "@/shared/ui/button"
 import { ReviewModal } from "@/widgets/review-modal"
 import type { ReviewCard } from "@/widgets/review-modal"
 import { useCapturePanel } from "../model/capturePanel"
@@ -403,49 +433,14 @@ function openResource(resource: Resource, event: MouseEvent) {
   gap: 0.375rem;
 }
 
-.resources__chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  min-height: 44px;
-  padding: 0.375rem 0.75rem;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 999px;
-  background: var(--background-secondary);
-  color: var(--text-muted);
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 0.85rem;
-  transition: color 0.15s ease, border-color 0.15s ease;
-}
-
-.resources__chip--active {
-  border-color: var(--text-accent);
-  color: var(--text-accent);
-  background: var(--background-primary);
-}
-
+/*
+ * The controls in this page are the `shared/ui` primitives now, so what is left
+ * here is layout, the search field (still hand-rolled: the forms unit did not
+ * claim it) and the two text glyphs the chips and cards render.
+ */
 .resources__chip-glyph {
   font-size: 0.9rem;
   line-height: 1;
-}
-
-.resources__capture {
-  min-height: 44px;
-  padding: 0.375rem 0.875rem;
-  border: 1px solid var(--text-accent);
-  border-radius: 6px;
-  background: var(--text-accent);
-  color: var(--background-primary);
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 0.85rem;
-  font-weight: 600;
-  transition: opacity 0.15s ease;
-}
-
-.resources__capture:hover {
-  opacity: 0.85;
 }
 
 .resources__section-title {
@@ -491,25 +486,6 @@ function openResource(resource: Resource, event: MouseEvent) {
   font-variant-numeric: tabular-nums;
 }
 
-.continue__action {
-  min-height: 44px;
-  min-width: 44px;
-  padding: 0.375rem 0.875rem;
-  border: 1px solid var(--text-accent);
-  border-radius: 6px;
-  background: var(--text-accent);
-  color: var(--background-primary);
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 0.85rem;
-  font-weight: 600;
-  transition: opacity 0.15s ease;
-}
-
-.continue__action:hover {
-  opacity: 0.85;
-}
-
 .resources__count {
   margin: 0;
   font-size: 0.85rem;
@@ -530,17 +506,6 @@ function openResource(resource: Resource, event: MouseEvent) {
   border: 1px solid var(--background-modifier-border);
   border-radius: 8px;
   background: var(--background-primary);
-}
-
-.resource-card__badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  font-size: 0.7rem;
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 
 .resource-card__glyph {
@@ -568,34 +533,6 @@ function openResource(resource: Resource, event: MouseEvent) {
   color: var(--text-accent);
 }
 
-.resource-card__action {
-  align-self: flex-start;
-  min-height: 44px;
-  min-width: 44px;
-  padding: 0.375rem 0.875rem;
-  border: 1px solid var(--text-accent);
-  border-radius: 6px;
-  background: var(--text-accent);
-  color: var(--background-primary);
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 0.85rem;
-  font-weight: 600;
-  transition: opacity 0.15s ease;
-}
-
-.resource-card__action:hover {
-  opacity: 0.85;
-}
-
-.resource-card__action:disabled {
-  opacity: 0.5;
-  border-color: var(--background-modifier-border);
-  background: var(--background-secondary);
-  color: var(--text-muted);
-  cursor: not-allowed;
-}
-
 .resources__empty {
   margin: 0;
   padding: 1.5rem 0.5rem;
@@ -619,22 +556,6 @@ function openResource(resource: Resource, event: MouseEvent) {
 
 .resources__error {
   margin: 0;
-}
-
-.resources__retry {
-  min-height: 44px;
-  padding: 0.375rem 0.875rem;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
-  background: var(--background-secondary);
-  color: var(--text-normal);
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 0.85rem;
-}
-
-.resources__retry:hover {
-  background: var(--background-modifier-hover);
 }
 
 .resources__spinner {

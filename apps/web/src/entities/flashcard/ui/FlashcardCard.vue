@@ -1,7 +1,13 @@
 <template>
-  <button
-    class="flashcard-card"
-    :class="{ 'flashcard-card--flipped': isFlipped }"
+  <!--
+    The card is the control: the whole surface flips it, so the frame stays the
+    card's own — a 180px box with the two faces absolutely positioned inside it —
+    and the primitive adds the button behaviour. `review-modal` reaches the card's
+    own `<button>` to focus it, so the root stays a button and not a wrapper
+    around one.
+  -->
+  <Button
+    :class="['flashcard-card', { 'flashcard-card--flipped': isFlipped }]"
     @click="toggle"
     :aria-label="isFlipped ? 'Mostrar pregunta' : 'Mostrar respuesta'"
   >
@@ -15,11 +21,12 @@
         <span class="flashcard-card__hint">Tocá para ocultar</span>
       </div>
     </div>
-  </button>
+  </Button>
 </template>
 
 <script setup lang="ts">
 import { ref, watch } from "vue";
+import { Button } from "@/shared/ui/button";
 
 const props = defineProps<{
   card: { id: string; question: string; answer: string };
@@ -46,6 +53,7 @@ watch(
 </script>
 
 <style scoped>
+/* The frame: the flip box. Its metrics are the card's, not the primitive's. */
 .flashcard-card {
   width: 100%;
   min-height: 180px;
