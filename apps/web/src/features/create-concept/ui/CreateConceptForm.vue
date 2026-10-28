@@ -1,35 +1,38 @@
 <template>
   <form class="topic-view__new-form" @submit.prevent="submit">
-    <input
+    <Input
       v-model="title"
       type="text"
-      class="topic-view__new-input"
-      placeholder="Título del concepto (ej. Aggregates, Value Objects)"
+      placeholder="Título del concepto (ej. Agregados, Value Objects)"
       :disabled="submitting"
+      class="min-h-[44px]"
     />
     <div class="topic-view__new-actions">
-      <button
+      <Button
         type="submit"
-        class="topic-view__new-submit"
+        class="min-h-[44px]"
         :disabled="submitting || !title.trim()"
       >
         <span v-if="submitting" class="spinner"></span>
         <span v-else>Guardar</span>
-      </button>
-      <button
+      </Button>
+      <Button
         type="button"
-        class="topic-view__new-cancel"
+        variant="outline"
+        class="min-h-[44px]"
         :disabled="submitting"
         @click="emit('cancel')"
       >
         Cancelar
-      </button>
+      </Button>
     </div>
   </form>
 </template>
 
 <script setup lang="ts">
 import { computed } from "vue"
+import { Button } from "@/shared/ui/button"
+import { Input } from "@/shared/ui/input"
 
 const props = defineProps<{
   modelValue: string
@@ -53,6 +56,13 @@ function submit() {
 </script>
 
 <style scoped>
+/*
+ * The field and the two buttons are `shared/ui` primitives now: their border,
+ * radius, background, focus ring and disabled state come from the design tokens,
+ * not from this file. What stays here is what the primitives do not own — the
+ * panel's own layout and the spinner. The 44px floor stays too: it is the touch
+ * target this form has always had, and a migration does not shrink one.
+ */
 .topic-view__new-form {
   display: flex;
   flex-direction: column;
@@ -64,75 +74,9 @@ function submit() {
   margin-bottom: 0.25rem;
 }
 
-.topic-view__new-input {
-  min-height: 44px;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
-  background: var(--background-primary);
-  color: var(--text-normal);
-  font-size: 0.85rem;
-  font-family: inherit;
-}
-
-.topic-view__new-input:focus {
-  outline: none;
-  border-color: var(--interactive-accent);
-}
-
-.topic-view__new-input:disabled {
-  opacity: 0.5;
-}
-
 .topic-view__new-actions {
   display: flex;
   gap: 0.5rem;
-}
-
-.topic-view__new-submit {
-  min-height: 44px;
-  padding: 0.5rem 1rem;
-  border: none;
-  border-radius: 6px;
-  background: var(--interactive-accent);
-  color: var(--text-on-accent, #fff);
-  cursor: pointer;
-  font-size: 0.85rem;
-  font-weight: 500;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  transition: opacity 0.15s ease;
-}
-
-.topic-view__new-submit:hover:not(:disabled) {
-  opacity: 0.9;
-}
-
-.topic-view__new-submit:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.topic-view__new-cancel {
-  min-height: 44px;
-  padding: 0.5rem 1rem;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
-  background: var(--background-secondary);
-  color: var(--text-normal);
-  cursor: pointer;
-  font-size: 0.85rem;
-  transition: background-color 0.15s ease;
-}
-
-.topic-view__new-cancel:hover:not(:disabled) {
-  background: var(--background-modifier-hover);
-}
-
-.topic-view__new-cancel:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .spinner {

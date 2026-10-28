@@ -1,5 +1,6 @@
 <template>
-  <!-- Overlay: the same shape as the review modal, so closing behaves the same. -->
+  <!-- Overlay: the same shape as the review modal, so closing behaves the same.
+       The overlay itself is still hand-rolled: the `dialog` primitive's turn is T5. -->
   <div class="capture">
     <div
       ref="dialogEl"
@@ -14,6 +15,10 @@
       </header>
 
       <form class="capture__form" @submit.prevent="submit">
+        <!-- The source selector keeps its own markup: it is a segmented control
+             bound to `aria-pressed`, not a form control, and T3 pinned that
+             contract deliberately. Moving it onto the `tabs` primitive is its own
+             unit; a migration does not quietly change what a reader hears. -->
         <div class="capture__tabs" role="group" aria-label="Origen">
           <button
             v-for="source in SOURCES"
@@ -29,98 +34,106 @@
           </button>
         </div>
 
-        <label class="capture__field">
-          <span class="capture__label">Tema</span>
-          <input
-            ref="topicEl"
+        <div class="capture__field">
+          <Label class="capture__label" for="capture-topic">Tema</Label>
+          <Input
+            id="capture-topic"
             v-model="topicName"
-            class="capture__input"
             type="text"
             placeholder="Tema (ej. DDD, Matemáticas)"
             :disabled="loading"
+            class="min-h-[44px]"
           />
-        </label>
+        </div>
 
         <!-- One source at a time: the mode decides which two or three fields show. -->
         <template v-if="mode === 'file'">
-          <label class="capture__field">
-            <span class="capture__label">Archivo PDF</span>
-            <input
-              class="capture__input"
+          <div class="capture__field">
+            <Label class="capture__label" for="capture-file">Archivo PDF</Label>
+            <Input
+              id="capture-file"
               type="file"
               accept="application/pdf"
               :disabled="loading"
+              class="min-h-[44px]"
               @change="onFileChange"
             />
-          </label>
+          </div>
         </template>
 
         <template v-else-if="mode === 'text'">
-          <label class="capture__field">
-            <span class="capture__label">Título</span>
-            <input
+          <div class="capture__field">
+            <Label class="capture__label" for="capture-text-title">Título</Label>
+            <Input
+              id="capture-text-title"
               v-model="title"
-              class="capture__input"
               type="text"
               placeholder="Título del material"
               :disabled="loading"
+              class="min-h-[44px]"
             />
-          </label>
-          <label class="capture__field">
-            <span class="capture__label">Texto</span>
-            <textarea
+          </div>
+          <div class="capture__field">
+            <Label class="capture__label" for="capture-text-body">Texto</Label>
+            <Textarea
+              id="capture-text-body"
               v-model="text"
-              class="capture__input capture__textarea"
+              class="capture__textarea"
               rows="8"
               placeholder="Pegá el texto o el markdown acá"
               :disabled="loading"
-            ></textarea>
-          </label>
+            />
+          </div>
         </template>
 
         <template v-else>
-          <label class="capture__field">
-            <span class="capture__label">Título (opcional)</span>
-            <input
+          <div class="capture__field">
+            <Label class="capture__label" for="capture-url-title">
+              Título (opcional)
+            </Label>
+            <Input
+              id="capture-url-title"
               v-model="title"
-              class="capture__input"
               type="text"
               placeholder="Se usa el nombre del enlace si lo dejás vacío"
               :disabled="loading"
+              class="min-h-[44px]"
             />
-          </label>
-          <label class="capture__field">
-            <span class="capture__label">URL</span>
-            <input
+          </div>
+          <div class="capture__field">
+            <Label class="capture__label" for="capture-url-address">URL</Label>
+            <Input
+              id="capture-url-address"
               v-model="url"
-              class="capture__input"
               type="url"
               placeholder="https://…"
               :disabled="loading"
+              class="min-h-[44px]"
             />
-          </label>
+          </div>
         </template>
 
         <!-- The server's own message: it names the cause, so it is shown as-is. -->
         <p v-if="error" class="capture__error" role="alert">{{ error }}</p>
 
         <div class="capture__actions">
-          <button
+          <Button
             type="submit"
-            class="capture__submit"
+            class="min-h-[44px]"
             :disabled="loading || !canSubmit"
           >
             <span v-if="loading" class="capture__spinner" aria-hidden="true"></span>
             <span v-else>Agregar</span>
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            class="capture__cancel"
+            variant="outline"
+            class="min-h-[44px]"
             :disabled="loading"
             @click="cancel"
           >
             Cancelar
-          </button>
+          </Button>
         </div>
       </form>
     </div>
@@ -130,6 +143,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue"
 import { storeToRefs } from "pinia"
+import { Button } from "@/shared/ui/button"
+import { Input } from "@/shared/ui/input"
+import { Label } from "@/shared/ui/label"
+import { Textarea } from "@/shared/ui/textarea"
 import { useCaptureMaterial } from "../model/useCaptureMaterial"
 import type { CaptureMode, CaptureSource } from "../model/useCaptureMaterial"
 
@@ -155,7 +172,6 @@ const text = ref("")
 const url = ref("")
 const file = ref<File | null>(null)
 const dialogEl = ref<HTMLElement | null>(null)
-const topicEl = ref<HTMLInputElement | null>(null)
 
 const canSubmit = computed(() => {
   if (topicName.value.trim() === "") return false
@@ -231,8 +247,13 @@ function onKeydown(event: KeyboardEvent) {
 
 onMounted(() => {
   window.addEventListener("keydown", onKeydown)
+
   // The first field is where a capture starts, so the panel opens ready to type.
-  ;(topicEl.value ?? dialogEl.value)?.focus()
+  // It is found through the DOM, not through a component ref: `Input` is a
+  // component now, and reaching into its internals for `$el` would couple this
+  // file to the primitive's shape.
+  const firstField = dialogEl.value?.querySelector<HTMLInputElement>("input")
+  ;(firstField ?? dialogEl.value)?.focus()
 })
 
 onBeforeUnmount(() => {
@@ -241,6 +262,12 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+/*
+ * The five fields and the two actions are `shared/ui` primitives now. What stays
+ * here is the overlay, the panel's frame, the segmented source selector (its own
+ * unit, see the comment in the template), the label rhythm, the refusal, the
+ * spinner and the 8rem floor the textarea has always had.
+ */
 .capture {
   position: fixed;
   inset: 0;
@@ -326,32 +353,14 @@ onBeforeUnmount(() => {
   gap: 0.25rem;
 }
 
+/* Unlayered on purpose: the panel's own type scale wins over the primitive's
+   utility classes, which live in a layer (`src/app/styles.css`). */
 .capture__label {
   font-size: 0.75rem;
   font-weight: 600;
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
-}
-
-.capture__input {
-  min-height: 44px;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
-  background: var(--background-primary);
-  color: var(--text-normal);
-  font-family: inherit;
-  font-size: 0.9rem;
-}
-
-.capture__input:focus {
-  outline: none;
-  border-color: var(--text-accent);
-}
-
-.capture__input:disabled {
-  opacity: 0.5;
 }
 
 .capture__textarea {
@@ -372,53 +381,6 @@ onBeforeUnmount(() => {
 .capture__actions {
   display: flex;
   gap: 0.5rem;
-}
-
-.capture__submit {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  padding: 0.5rem 1rem;
-  border: 1px solid var(--text-accent);
-  border-radius: 6px;
-  background: var(--text-accent);
-  color: var(--background-primary);
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 0.85rem;
-  font-weight: 600;
-  transition: opacity 0.15s ease;
-}
-
-.capture__submit:hover:not(:disabled) {
-  opacity: 0.85;
-}
-
-.capture__submit:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.capture__cancel {
-  min-height: 44px;
-  padding: 0.5rem 1rem;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
-  background: var(--background-secondary);
-  color: var(--text-normal);
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 0.85rem;
-  transition: background-color 0.15s ease;
-}
-
-.capture__cancel:hover:not(:disabled) {
-  background: var(--background-modifier-hover);
-}
-
-.capture__cancel:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .capture__spinner {

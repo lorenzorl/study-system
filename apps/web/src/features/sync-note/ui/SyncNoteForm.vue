@@ -1,6 +1,7 @@
 <template>
   <!-- Overlay: the same contract as the capture panel — one overlay at a time,
-       Escape closes it, and the first field is ready to type. -->
+       Escape closes it, and the first field is ready to type. The overlay itself
+       is still hand-rolled: the `dialog` primitive's turn is T5. -->
   <div v-if="panelOpen" class="sync-note">
     <div
       ref="dialogEl"
@@ -15,65 +16,68 @@
       </header>
 
       <form class="sync-note__form" @submit.prevent="submit">
-        <label class="sync-note__field">
-          <span class="sync-note__label">Tema</span>
-          <input
-            ref="topicEl"
+        <div class="sync-note__field">
+          <Label class="sync-note__label" for="sync-note-topic">Tema</Label>
+          <Input
+            id="sync-note-topic"
             v-model="topicName"
-            class="sync-note__input"
             type="text"
             placeholder="Tema (ej. DDD, Matemáticas)"
             :disabled="loading"
+            class="min-h-[44px]"
           />
-        </label>
+        </div>
 
-        <label class="sync-note__field">
-          <span class="sync-note__label">Concepto</span>
-          <input
+        <div class="sync-note__field">
+          <Label class="sync-note__label" for="sync-note-concept">Concepto</Label>
+          <Input
+            id="sync-note-concept"
             v-model="conceptTitle"
-            class="sync-note__input"
             type="text"
             placeholder="Concepto (ej. Agregados)"
             :disabled="loading"
+            class="min-h-[44px]"
           />
-        </label>
+        </div>
 
-        <label class="sync-note__field">
-          <span class="sync-note__label">Markdown</span>
+        <div class="sync-note__field">
+          <Label class="sync-note__label" for="sync-note-markdown">Markdown</Label>
           <!-- The format is taught here, not only in the refusal: a note without
                a `::` pair is the one input the flow rejects outright. -->
           <span class="sync-note__format">
             Una tarjeta por línea, con el formato pregunta::respuesta
           </span>
-          <textarea
+          <Textarea
+            id="sync-note-markdown"
             v-model="markdown"
-            class="sync-note__input sync-note__textarea"
+            class="sync-note__textarea"
             rows="10"
             placeholder="¿Qué es un agregado?::Un conjunto consistente de cambios."
             :disabled="loading"
-          ></textarea>
-        </label>
+          />
+        </div>
 
         <!-- The store's own message: it names the cause, so it is shown as-is. -->
         <p v-if="error" class="sync-note__error" role="alert">{{ error }}</p>
 
         <div class="sync-note__actions">
-          <button
+          <Button
             type="submit"
-            class="sync-note__submit"
+            class="min-h-[44px]"
             :disabled="loading || !canSubmit"
           >
             <span v-if="loading" class="sync-note__spinner" aria-hidden="true"></span>
             <span v-else>Sincronizar</span>
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            class="sync-note__cancel"
+            variant="outline"
+            class="min-h-[44px]"
             :disabled="loading"
             @click="cancel"
           >
             Cancelar
-          </button>
+          </Button>
         </div>
       </form>
     </div>
@@ -82,6 +86,10 @@
 
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
+import { Button } from "@/shared/ui/button"
+import { Input } from "@/shared/ui/input"
+import { Label } from "@/shared/ui/label"
+import { Textarea } from "@/shared/ui/textarea"
 import { useNoteForm } from "../model/useNoteForm"
 import type { SyncNoteResult } from "../model/useSyncNote"
 
@@ -105,7 +113,6 @@ const {
 } = useNoteForm()
 
 const dialogEl = ref<HTMLElement | null>(null)
-const topicEl = ref<HTMLInputElement | null>(null)
 
 async function submit() {
   const result = await runSync()
@@ -132,11 +139,16 @@ function onKeydown(event: KeyboardEvent) {
   cancel()
 }
 
-// The first field is where a paste starts, so the panel opens ready to type.
+// The first field is where a paste starts, so the panel opens ready to type. It
+// is found through the DOM, not through a component ref: `Input` is a component
+// now, and reaching into its internals for `$el` would couple this file to the
+// primitive's shape.
 watch(panelOpen, async (isOpen) => {
   if (!isOpen) return
   await nextTick()
-  ;(topicEl.value ?? dialogEl.value)?.focus()
+
+  const firstField = dialogEl.value?.querySelector<HTMLInputElement>("input")
+  ;(firstField ?? dialogEl.value)?.focus()
 })
 
 onMounted(() => {
@@ -149,6 +161,11 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+/*
+ * The three fields and the two buttons are `shared/ui` primitives now; this file
+ * keeps the overlay, the panel's layout, the label rhythm the panel has always
+ * had, the format hint, the refusal and the spinner.
+ */
 .sync-note {
   position: fixed;
   inset: 0;
@@ -206,6 +223,8 @@ onBeforeUnmount(() => {
   gap: 0.25rem;
 }
 
+/* Unlayered on purpose: the panel's own type scale wins over the primitive's
+   utility classes, which live in a layer (`src/app/styles.css`). */
 .sync-note__label {
   font-size: 0.8rem;
   font-weight: 500;
@@ -215,17 +234,6 @@ onBeforeUnmount(() => {
 .sync-note__format {
   font-size: 0.75rem;
   color: var(--text-faint, var(--text-muted));
-}
-
-.sync-note__input {
-  min-height: 44px;
-  padding: 0.5rem;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
-  background: var(--background-secondary);
-  color: var(--text-normal);
-  font-family: inherit;
-  font-size: 0.85rem;
 }
 
 .sync-note__textarea {
@@ -245,32 +253,6 @@ onBeforeUnmount(() => {
 .sync-note__actions {
   display: flex;
   gap: 0.5rem;
-}
-
-.sync-note__submit,
-.sync-note__cancel {
-  min-height: 44px;
-  padding: 0.5rem 1rem;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 0.85rem;
-}
-
-.sync-note__submit {
-  border: 1px solid var(--interactive-accent);
-  background: var(--interactive-accent);
-  color: var(--text-on-accent, #fff);
-}
-
-.sync-note__submit:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.sync-note__cancel {
-  border: 1px solid var(--background-modifier-border);
-  background: var(--background-secondary);
-  color: var(--text-normal);
 }
 
 .sync-note__spinner {

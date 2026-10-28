@@ -36,6 +36,18 @@ function buttonMatching(html: string, pattern: RegExp): string {
   return match?.[0] ?? ""
 }
 
+/**
+ * Whether a rendered tag carries the `disabled` **attribute**.
+ *
+ * A substring check on "disabled" stopped working the moment the buttons became
+ * `shared/ui` primitives: their utility classes are full of `disabled:`
+ * variants, so `toContain("disabled")` matched a class and would report an
+ * enabled button as disabled.
+ */
+function isDisabled(tag: string): boolean {
+  return /(?:^|\s)disabled(?=[\s>=/])/.test(tag)
+}
+
 describe("CaptureMaterialForm render", () => {
   it("offers the three sources and starts on a file upload", async () => {
     const html = await render()
@@ -65,7 +77,7 @@ describe("CaptureMaterialForm render", () => {
   it("keeps the submit disabled while the fields are empty", async () => {
     const html = await render()
 
-    expect(buttonMatching(html, /<button[^>]*type="submit"[^>]*>/)).toContain("disabled")
+    expect(isDisabled(buttonMatching(html, /<button[^>]*type="submit"[^>]*>/))).toBe(true)
   })
 
   it("shows the server's own refusal message", async () => {

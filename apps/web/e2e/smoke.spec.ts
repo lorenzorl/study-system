@@ -155,4 +155,47 @@ test.describe("interactive states", () => {
       maxDiffPixelRatio: 0.01,
     })
   })
+
+  // The new-concept form only exists while the "+" toggle is on, so the topic
+  // route capture above proves nothing about it: a green `topic.png` would also be
+  // green if the form never mounted. This capture is the one that fails when the
+  // migrated Input or Button regresses.
+  //
+  // It cannot start at `/topic/t1` directly: `TopicPage` never loads the topics
+  // store, it only reads `currentTopic` out of it (`onMounted` selects the id), so
+  // a cold visit renders "Tema no encontrado." and the toggle never exists. The
+  // capture therefore walks the path a person walks — `/topics` loads the store,
+  // the topic card pushes the topic route — which is also the only route that
+  // mounts the page at all.
+  test("renders the new-concept form, open", async ({ page }) => {
+    await page.goto("/topics")
+    await page.getByRole("button", { name: /Atención/ }).click()
+    await page.getByRole("button", { name: "Agregar concepto" }).click()
+    await expect(page.getByPlaceholder(/Título del concepto/)).toBeVisible()
+
+    expect(CONSOLE_ERRORS).toEqual([])
+
+    await expect(page).toHaveScreenshot("topic-new-concept-form.png", {
+      fullPage: true,
+      animations: "disabled",
+      maxDiffPixelRatio: 0.01,
+    })
+  })
+
+  // Same reason: the capture panel is an overlay that does not exist until
+  // "Agregar material" is clicked, so the resources route capture above is blind
+  // to every control inside it.
+  test("renders the capture panel, open", async ({ page }) => {
+    await page.goto("/")
+    await page.getByRole("button", { name: "Agregar material" }).click()
+    await expect(page.getByRole("dialog", { name: "Agregar material" })).toBeVisible()
+
+    expect(CONSOLE_ERRORS).toEqual([])
+
+    await expect(page).toHaveScreenshot("resources-capture-panel.png", {
+      fullPage: true,
+      animations: "disabled",
+      maxDiffPixelRatio: 0.01,
+    })
+  })
 })
