@@ -11,20 +11,25 @@
     card the control *is* the frame: `gap: 0` (the primitive opens an 8px hole the
     card never had), `white-space: normal` (the primitive's `nowrap` would stop a
     long `file_path` from wrapping) and `font-weight: normal` (its `font-medium`
-    would embolden the path and the count, which never declared a weight).
+    would embolden the path, which never declared a weight).
+
+    The card count is a `Badge`, the same shape `TopicCard` uses for its concept
+    count: it is a chip, not a control, and the `line-height: 44px` span that used
+    to draw it was doing a touch target's job on a label nobody can touch.
   -->
   <Button class="concept-card" @click="$emit('select', concept.id)">
     <div class="concept-card__content">
       <h3 class="concept-card__title">{{ concept.title }}</h3>
       <p class="concept-card__path">{{ concept.file_path }}</p>
     </div>
-    <span class="concept-card__count">
+    <Badge variant="outline" class="text-muted-foreground">
       {{ flashcardCount }} tarjeta{{ flashcardCount === 1 ? '' : 's' }}
-    </span>
+    </Badge>
   </Button>
 </template>
 
 <script setup lang="ts">
+import { Badge } from "@/shared/ui/badge"
 import { Button } from "@/shared/ui/button"
 import type { ConceptSummary } from "../model/types"
 
@@ -81,13 +86,5 @@ defineEmits<{
   font-size: 0.75rem;
   color: var(--text-muted);
   line-height: 1.3;
-}
-
-.concept-card__count {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  min-width: 44px;
-  text-align: right;
-  line-height: 44px;
 }
 </style>

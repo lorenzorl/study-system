@@ -31,12 +31,17 @@ async function render(flashcardCount: number): Promise<string> {
 }
 
 describe("ConceptCard render", () => {
-  it("renders the title, the path and the card count", async () => {
+  it("renders the title, the path and the card count as a badge", async () => {
     const html = await render(3)
 
     expect(html).toContain("Filtro atencional")
     expect(html).toContain("atencion/filtro.md")
-    expect(html).toContain("3 tarjetas")
+
+    // The count is a chip, not body text: it renders through the badge primitive,
+    // the same one `TopicCard` uses, so the two cards present it the same way.
+    const badge = html.match(/<div data-slot="badge"[^>]*>([\s\S]*?)<\/div>/)
+
+    expect(badge?.[1]).toContain("3 tarjetas")
   })
 
   it("keeps the count singular for a single card", async () => {
