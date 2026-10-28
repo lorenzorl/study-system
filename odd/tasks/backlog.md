@@ -199,6 +199,15 @@ Two consequences, the second worse than the first:
 selection effect), regenerate `topic-darwin.png`, and once a cold visit mounts the
 page collapse the new-concept capture's navigation back to a direct `/topic/t1`.
 
+**Broadened by T8:** it is not only `TopicPage`. `ConceptPage` and `FeynmanPage`
+also never call `loadTopics()` (only their `retry` handler does), so a cold
+`/topic/:t/concept/:c` or `/topic/:t/concept/:c/feynman` renders "Concepto no
+encontrado." too. With D2's `/study/review`, **four of the eight route baselines
+photograph a failure** — `topic`, `concept`, `feynman`, `review` — so the net covers
+four real pages out of eight, and the concept action rows and the Feynman submit have
+no pixel coverage at all. Fixing this is the same one change per page (load the store
+when it is empty), then four baselines regenerated against real content.
+
 ### D2 — The review modal has no reachable route, so the flashcards flow cannot be used
 
 `ReviewModal` is mounted only by `ResourcesPage`, and neither of its two entry

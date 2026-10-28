@@ -43,7 +43,7 @@ before it), so the Writer rule's "2+ independent units" condition does not hold.
 | T5 | S1 | `widgets/review-modal` → `dialog` (reka-ui focus trap, Escape, restore focus) | 1afd42d |
 | T6 | S1 | `pages/flashcard-session` (15 buttons, 241 style lines): 11 migrated, grade row left hand-rolled | e8be1cf |
 | T7 | S1 | Entity cards (4 files) + `pages/resources` (badges): 9 buttons, 2 badges, then the chip consistency + prop-leak fixes | 7e7edcb, 6349ec0 |
-| T8 | S1 | App shell, dashboard, lists | |
+| T8 | S1 | App shell, dashboard, lists: 17 buttons in 9 files | 3dd2761, 94fae7f |
 | T9 | S2 | Close: push once, after the migration is verified | |
 
 ## Log
@@ -293,3 +293,38 @@ before it), so the Writer rule's "2+ independent units" condition does not hold.
      buttons take their text colour from it. Backlog D4.
   Verified: 231/231 unit, typecheck 0, 12/12 e2e at ratio 0 (six baselines regenerated
   across the unit and its follow-up, each one read first).
+- **L20** (T8 done — the migration's last unit; and D1 was half the net): 17
+  hand-rolled buttons across nine files are `Button` now, `variant` chosen by role and
+  the 44px floor kept everywhere it existed. Style blocks shrank: shell 79 → 59, topic
+  114 → 75, due-cards 96 → 61, dashboard 92 → 56, feynman 110 → 86, sync trigger
+  19 → 0. 32 cases were added (6 new files, 3 extended), the "renders through the
+  shared/ui button" invariant red before the migration and green after; ten baselines
+  were regenerated one `-g` run at a time, each diff read and attributed to a specific
+  control — including the two that changed shape rather than paint (the dashboard's
+  "+" and "Salir" are 44×44 outline controls now).
+  Two card-shaped controls (the daily-review card, the two concept action rows) keep
+  their own frame with the box restated, because the primitive's
+  `h-9`/`justify-center`/`font-medium`/`nowrap` would reshape content that is not a
+  button's content. Same trade as the entity cards: those three are now frozen outside
+  their files.
+  T8's own risk, closed by observation instead of argument: `SyncNoteTrigger` hands
+  focus back through `$el`, which cannot fail loudly. One behavioural e2e case now
+  opens the panel from `/topics`, presses Escape and asserts `document.activeElement`
+  is the trigger again (`94fae7f`). It passes, so `$el` is the rendered `<button>`.
+  Scope honest: that pins the Escape path; the same call also runs after a successful
+  sync, which is the same code but not the same case.
+  **D1 was half the net.** `ConceptPage` and `FeynmanPage` also never call
+  `loadTopics()` (only their `retry` does), so a cold visit renders "Concepto no
+  encontrado." — which means four of the eight route baselines (`topic`, `concept`,
+  `feynman`, `review`) are captures of a failure. Consequences: the net covers four
+  real pages, not eight; the concept action rows and the Feynman submit have no pixel
+  coverage at all; and this unit's deltas on those pages were only the shell's back
+  button, since the pages themselves were showing an error. `backlog.md` D1 now says
+  so.
+  Closing inventory: of the original 53 `<button>` lines, **10 remain** in product
+  code, none of them ordinary debt — 8 are the two grade rows blocked by D3 (their
+  colours are literals), 1 is the capture panel's segmented source selector (T3
+  pinned its `aria-pressed` contract), and 1 is `FlashcardCard`, where the card *is*
+  the button. 21 files consume `@shared/ui/*`.
+  Verified: 263/263 unit (231 + 32, FSD guard included), 13/13 e2e at ratio 0
+  (12 captures + 1 behavioural case), typecheck 0.
