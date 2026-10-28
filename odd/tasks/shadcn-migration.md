@@ -148,3 +148,18 @@ before it), so the Writer rule's "2+ independent units" condition does not hold.
   Also corrected in the same commit: T4a's real hash is `f48fb68`, not `7fececf`. The
   correction cycle's `git reset --soft HEAD~1` rewrote it, so the table had been
   pointing at a dangling commit that only `git cat-file` could still resolve.
+- **L15** (review, T1b): `review-74d04c2f3f68fe5f`, scoped to `5cc59d9..HEAD` with an
+  explicit `baseRef` + `committedOnly`. `inspect` again offered `--base-ref=d70d9a2`
+  (origin/master), which would have absorbed the whole unpublished mainline; passing
+  the slice base overrode it. Tier **high** by `shell_source`, 91 lines, correction
+  budget 46, lenses readability + reliability. Both reviewers ran and submitted on the
+  first attempt — no admission refusal, no relay failure — and the review is
+  **approved**, authority burned. Three advisory findings, all `informational`, none
+  opened a correction:
+  - `R2-001` (readability, `ci.yml:87-89`). The id is not descriptive and the envelope
+    carries no prose, so nothing is claimed about its content here.
+  - `R3-ci-render-smoke-removed` (reliability, `ci.yml:74-89`): the removal also took
+    out what CI *did* still check — every route renders with no console error. That is
+    a separate loss from the pixel comparison, and the follow-up, if we want it back,
+    is a screenshot-free render step, not the visual one.
+  - `R3-restore-command-naming` (reliability, `ci.yml:87-89`): SUGGESTION, naming.
