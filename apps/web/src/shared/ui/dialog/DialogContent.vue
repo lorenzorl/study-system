@@ -21,7 +21,11 @@ const props = withDefaults(defineProps<DialogContentProps & { class?: HTMLAttrib
 })
 const emits = defineEmits<DialogContentEmits>()
 
-const delegatedProps = reactiveOmit(props, "class")
+// `showCloseButton` is this component's own prop, not a reka one: forwarding the
+// whole bag put `showclosebutton="true"` on the DOM, an attribute HTML does not
+// have. `class` and this one are dropped here, everything the reka component
+// declares flows through `useForwardPropsEmits`.
+const delegatedProps = reactiveOmit(props, "class", "showCloseButton")
 
 const forwarded = useForwardPropsEmits(delegatedProps, emits)
 </script>
