@@ -172,6 +172,33 @@ is not a refactor, so it is written down here rather than only in the commit.
 
 ---
 
+## 🔴 Open defects
+
+### D1 — `/topic/:id` cannot be opened cold: the topic page never loads the topics store
+
+`TopicPage.vue`'s `onMounted` only calls `topicSelection.selectTopic(props.topicId)`;
+it never calls `topicsStore.loadTopics()`. `currentTopic` is a lookup in that
+store, so a direct visit — deep link, reload, bookmark — renders
+"Tema no encontrado." The page is reachable only by warming the store first, for
+example `/topics` → topic card.
+
+Found by T4b, which could not click "Agregar concepto" on a cold `/topic/t1`: the
+Playwright failure snapshot showed only the paragraph "Tema no encontrado." and a
+`← Volver` button.
+
+Two consequences, the second worse than the first:
+
+1. Deep links and reloads to a topic are broken.
+2. The committed `topic-darwin.png` route baseline is a capture of that error
+   state, so the visual net's route loop gives false confidence about the topic
+   page: it screenshots a failure and passes. L5 stated the rule ("a page that
+   only renders its error state is not a visual regression test"); it was never
+   verified per route.
+
+**How to close:** load the store in `TopicPage` when it is empty (keeping the
+selection effect), regenerate `topic-darwin.png`, and once a cold visit mounts the
+page collapse the new-concept capture's navigation back to a direct `/topic/t1`.
+
 ## 🟡 Missing policy
 
 ### P1 — Nothing prunes stored artifacts

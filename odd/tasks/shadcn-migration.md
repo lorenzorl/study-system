@@ -39,7 +39,7 @@ before it), so the Writer rule's "2+ independent units" condition does not hold.
 | T2 | S1 | Add the missing primitives (`textarea`, `tabs`, `badge`) via the generator + the `cn` fix | f688a34 |
 | T3 | S4 | Rewrite the 6 BEM assertions against accessibility (`role`/text), before any style moves | 3401a83 |
 | T4a | S1 | Pilot: `create-topic` migrated, plus the CSS layer fix and the interactive-state captures it exposed | f48fb68 |
-| T4b | S1 | Forms → `input`/`label`/`textarea`/`button`: `create-concept`, `sync-note`, `capture-material` | |
+| T4b | S1 | Forms → `input`/`label`/`textarea`/`button`: `create-concept`, `sync-note`, `capture-material` | 02e44b8 |
 | T5 | S1 | `widgets/review-modal` → `dialog` (reka-ui focus trap, Escape, restore focus) | |
 | T6 | S1 | `pages/flashcard-session` (15 buttons, 241 style lines) | |
 | T7 | S1 | Entity cards (4 files) + `pages/resources` (badges) | |
@@ -163,3 +163,30 @@ before it), so the Writer rule's "2+ independent units" condition does not hold.
     a separate loss from the pixel comparison, and the follow-up, if we want it back,
     is a screenshot-free render step, not the visual one.
   - `R3-restore-command-naming` (reliability, `ci.yml:87-89`): SUGGESTION, naming.
+- **L16** (T4b done, three defects surfaced): `create-concept`, `sync-note` and
+  `capture-material` now use `Input`, `Textarea`, `Label` and `Button`; each keeps
+  only what the primitives do not own (panel layout, spinner, refusal, the segmented
+  source selector) and the 44px touch floor as a class. Three findings, all real:
+  1. **The tests were lying after the migration.** `toContain("disabled")` matched the
+     primitives' own `disabled:` utility classes, so an *enabled* button passed as
+     disabled. The three forms now assert the attribute (`/(?:^|\s)disabled(?=[\s>=/])/`).
+     Same class of bug as the BEM assertions: the test was pinned to text that the
+     migration changed.
+  2. **Slot content gains SSR fragment markers** (`<!--[-->Cancelar<!--]-->`), so a
+     regex for `<button ...>Cancelar</button>` stops matching. The assertion strips
+     comments first.
+  3. **`/topic/:id` cannot be opened cold** — `TopicPage` never loads the topics store,
+     so a direct visit renders "Tema no encontrado.". Worse: the committed
+     `topic-darwin.png` route baseline *is* a capture of that error state, so the route
+     loop gives false confidence about that page. Recorded as `backlog.md` D1; the new
+     concept capture enters through `/topics` → card because that is the only route
+     that mounts the page, and it collapses back to a direct visit once D1 closes.
+  `create-concept` had no render test at all, so one was written against the
+  pre-migration code first (5 cases). Two states were invisible to the net (both live
+  behind a click), so each gained a capture; the sync-note dialog baseline was
+  regenerated because the migration moves that panel ~16px, and the new image was
+  read before it was accepted — a baseline updated without looking is a regression
+  captured as the new truth. Verified: 12/12 e2e, 205 unit tests, typecheck exit 0.
+  Not migrated on purpose: the source selector in `capture-material` stays a
+  `role="group"` + `aria-pressed` segmented control, because T3 pinned that contract
+  and moving it onto the `tabs` primitive is its own unit, not a form migration.
