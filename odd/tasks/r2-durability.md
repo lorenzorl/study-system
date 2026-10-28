@@ -54,7 +54,7 @@ server keeps working with no R2 configuration at all.
 | T1 | S8, S12 | inline | this commit |
 | T2 | S7, S9 | worker | `5bf3c83`, `02e8050` |
 | T3 | S6, S10 | worker | `d1a756b` |
-| T4 | S2, S3, S5 | inline | pending |
+| T4 | S2, S3, S5 | worker | `0a61914` |
 | T5 | S3, S10 | inline | pending |
 | T6 | S4, S8 | inline | pending |
 | T7 | S10, all | inline | pending |
@@ -289,3 +289,27 @@ server keeps working with no R2 configuration at all.
   `gofmt` and `vet` clean. One branch is declared untested rather than faked: removing the file
   when `VACUUM` succeeded but validation failed is unreachable with real output and shares the
   helper that mutation M2 proves load-bearing.
+- **L31** (evidence, T4): delegated, committed as `0a61914` — `backup.go` 604 + `backup_test.go`
+  564 = 1168 lines, again above the slice target, and the command's own tests are why. Key layout
+  is `db/study-20060102T150405Z.db` (fixed width, UTC, so lexicographic order is chronological —
+  retention depends on it) plus `artifacts/<id>/payload|meta.json`, all relative to the configured
+  prefix, which the client applies in one place. The snapshot is always PUT and never skipped
+  because its key is fixed to the second; artifacts are skipped via **one List per prefix instead
+  of one Head per file**, so requests do not grow with the artifact count (a test asserts zero Head
+  calls). Retention deletes only keys matching its own shape, so a foreign object under `db/`
+  survives. `-dry-run` deliberate deviation, stated in the command's help: it **does** take the
+  snapshot (outside the repository, removed before returning) because the byte total it prints
+  would otherwise be a guess — a `VACUUM INTO` snapshot is not the size of the live `.db` file. It
+  uploads nothing and writes nothing under `data/`. Declared risks, none hidden: two backups inside
+  the same second address one key and the newer bytes replace the older; retention is best-effort,
+  so a failed listing or delete is reported on stderr without changing the exit code, which means a
+  long-lived bucket can exceed 14 snapshots while every run still reports success; and opening the
+  database read-only still leaves `study.db-shm` plus a zero-byte `study.db-wal` beside it when the
+  server is not running — the same side effect `search` already has, and a tension with the help
+  text's "only reads it" that a reviewer should look at. Parent verification, independent of the
+  report: exactly the three permitted paths changed, the `cli.go` diff is **one added line**, `go.mod`
+  and `go.sum` unchanged, `vet`/`gofmt` clean, the cli tests pass, the full suite exits 0, and the
+  command was exercised live — `backup` with the four variables unset exits 1 naming all four, which
+  is S8 behaving as designed. The writer also ran a differential check of every other command
+  against `b71fe62` and found only the intended usage line plus the two now-known `backup`
+  invocations, byte-identical everywhere else.
