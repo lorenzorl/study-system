@@ -40,7 +40,7 @@ before it), so the Writer rule's "2+ independent units" condition does not hold.
 | T3 | S4 | Rewrite the 6 BEM assertions against accessibility (`role`/text), before any style moves | 3401a83 |
 | T4a | S1 | Pilot: `create-topic` migrated, plus the CSS layer fix and the interactive-state captures it exposed | f48fb68 |
 | T4b | S1 | Forms → `input`/`label`/`textarea`/`button`: `create-concept`, `sync-note`, `capture-material` | 02e44b8 |
-| T5 | S1 | `widgets/review-modal` → `dialog` (reka-ui focus trap, Escape, restore focus) | |
+| T5 | S1 | `widgets/review-modal` → `dialog` (reka-ui focus trap, Escape, restore focus) | 1afd42d |
 | T6 | S1 | `pages/flashcard-session` (15 buttons, 241 style lines) | |
 | T7 | S1 | Entity cards (4 files) + `pages/resources` (badges) | |
 | T8 | S1 | App shell, dashboard, lists | |
@@ -190,3 +190,34 @@ before it), so the Writer rule's "2+ independent units" condition does not hold.
   Not migrated on purpose: the source selector in `capture-material` stays a
   `role="group"` + `aria-pressed` segmented control, because T3 pinned that contract
   and moving it onto the `tabs` primitive is its own unit, not a form migration.
+- **L17** (T5 done, one silent defect and one harness cost): the review modal now
+  renders through `Dialog` + `DialogContent` + `DialogTitle as-child`. The primitive
+  owns the portal, the scrim, the focus trap, Escape and focus restoration; the
+  widget keeps the card, the grades group, the grading shortcuts and the bottom bar,
+  and its frame CSS is unchanged — `DialogContent` carries only the utilities that
+  re-express the old full-screen centering box. Verified in a browser, not by
+  assumption: one `[role="dialog"]`, `aria-labelledby` from the heading, 12 × Tab
+  never leaving the surface, Escape emitting exactly one `close` and returning focus
+  to the opener, key `2` grading and advancing, and the panel geometry
+  (640×326 at x=320 y=237, padding 16/18, 1px #ddd border, 10px radius) identical to
+  the pre-migration measurements.
+  Two things this unit surfaced:
+  1. **The modal has no reachable route.** `ReviewModal` is mounted only by
+     `ResourcesPage`, `continueResource` is hardcoded `null`, and
+     `toMaterialResources` maps every resource to kind `material`, so the
+     `flashcards` branch never runs. And `/study/review` — the `review-darwin.png`
+     baseline — is a capture of "Concepto no encontrado.", i.e. a third error-state
+     baseline. Recorded as `backlog.md` D2. The worker was right to refuse to
+     regenerate that baseline: my brief predicted it would change, and the premise
+     was wrong.
+  2. **The render test mocks the primitive, and that is the honest cost.** reka's
+     portal is mount-gated (`useMounted()`), so `renderToString` emits only the
+     placeholder; without the mock the harness cannot see the panel it exists to
+     pin. The stubs pass their slot through and mark `data-slot`, so reverting to a
+     hand-rolled `role="dialog"` fails the tests rather than silently passing them.
+     The primitive's own aria wiring is therefore covered by the browser run, not
+     by the suite — stated, not hidden.
+  Deliberate delta left open: the primitive overlay is `bg-black/80` while the two
+  still-hand-rolled overlays (capture panel, sync-note dialog) keep `rgba(0,0,0,0.5)`,
+  so the app has two scrim opacities until those two migrate to the same primitive.
+  Verified: 10/10 widget tests (9 before), 206/206 unit, typecheck 0, 12/12 e2e.

@@ -199,6 +199,29 @@ Two consequences, the second worse than the first:
 selection effect), regenerate `topic-darwin.png`, and once a cold visit mounts the
 page collapse the new-concept capture's navigation back to a direct `/topic/t1`.
 
+### D2 — The review modal has no reachable route, so the flashcards flow cannot be used
+
+`ReviewModal` is mounted only by `ResourcesPage`, and neither of its two entry
+paths can fire:
+
+- `continueResource` is hardcoded `null`, so the resume ("continuar") action is
+  unreachable.
+- `toMaterialResources` maps every API resource to kind `material`, so
+  `openResource`'s `flashcards` branch never runs.
+
+Consequence for the visual net: `/study/review` (`review-darwin.png`) is a capture
+of "Concepto no encontrado." — another error-state baseline, the same class as D1's
+`topic-darwin.png`. Regenerating it can never show the modal, because the route
+never mounts one.
+
+Found by T5, which migrated the modal to the `dialog` primitive and could verify it
+only through a manual browser mount (dynamic import against the dev server), not
+through the app's own navigation.
+
+**How to close:** give the review flow a real entry (the continue/resume decision is
+the open one — see the resources launcher), then add one `interactive states`
+capture for the open modal and regenerate `review-darwin.png`.
+
 ## 🟡 Missing policy
 
 ### P1 — Nothing prunes stored artifacts
