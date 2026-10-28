@@ -42,7 +42,7 @@ before it), so the Writer rule's "2+ independent units" condition does not hold.
 | T4b | S1 | Forms → `input`/`label`/`textarea`/`button`: `create-concept`, `sync-note`, `capture-material` | 02e44b8 |
 | T5 | S1 | `widgets/review-modal` → `dialog` (reka-ui focus trap, Escape, restore focus) | 1afd42d |
 | T6 | S1 | `pages/flashcard-session` (15 buttons, 241 style lines): 11 migrated, grade row left hand-rolled | e8be1cf |
-| T7 | S1 | Entity cards (4 files) + `pages/resources` (badges) | |
+| T7 | S1 | Entity cards (4 files) + `pages/resources` (badges): 9 buttons, 2 badges, then the chip consistency + prop-leak fixes | 7e7edcb, 6349ec0 |
 | T8 | S1 | App shell, dashboard, lists | |
 | T9 | S2 | Close: push once, after the migration is verified | |
 
@@ -254,3 +254,42 @@ before it), so the Writer rule's "2+ independent units" condition does not hold.
   hand-rolled grade row — the L16 trap, harmless only while that row stays
   hand-rolled.
   Verified: 219/219 unit (206 + 13), typecheck 0, 12/12 e2e at ratio 0.
+- **L19** (T7 done; the net proved itself twice, and two gate-trust defects fell
+  out): nine buttons across five files became `Button`, the launcher's kind chip and
+  both entity counts became `Badge`, ~120 lines of launcher CSS are gone, and four
+  new render tests pin each card as a single interactive element.
+  `Card` was **not** adopted, and that is structural: in all four entity cards the
+  card *is* the control (one `<button>` owns the click), while `Card` is a
+  non-interactive column. Hosting it means moving the click target inward or nesting
+  a button in a card — redesigns. The frame stays the card's own CSS, with the box
+  restated in full so the primitive's `h-9`/`justify-center`/`font-medium` cannot
+  reshape it. That does freeze those four cards outside their files; a future
+  primitive change will not reach them.
+  The tolerance of 0 paid for itself immediately: the first pass clamped `DueCardItem`
+  to 56px with its content overflowing and let `font-medium` leak into secondary text.
+  Both were caught at 13,879 and 678 px and fixed instead of blessed. One user-visible
+  delta accepted after reading the images: the topic card is 70 → 48px tall because its
+  count stopped being a 14px span with a 44px line-height faking a touch target on a
+  label nobody can touch; the concept card followed (70 → 63px) in the follow-up so the
+  two chips would agree.
+  Three defects the audit produced, all now closed except the first:
+  1. `Badge` forwarded its whole prop bag, so every badge rendered
+     `<div … variant="outline">` — an attribute HTML does not have. Fixed the way
+     `Button` avoids it (explicit `as`/`asChild`); verified in SSR and in the live
+     bundle. `DialogContent` had the same defect with `showCloseButton` and is fixed
+     with a one-key omission, but **its observation is still owed**: the only consumer
+     is the review modal, whose route is unreachable (D2), so the attribute cannot be
+     read in a browser yet.
+  2. **The net could compare a bundle it did not build.**
+     `reuseExistingServer: !CI` meant a leftover `vite preview` made Playwright skip
+     `webServer.command`, build included — it produced a false 12/12 in this session,
+     with CSS the change had deleted still present in `dist/assets`. Now `false`, so
+     the `--strictPort` inside the command makes a busy port a loud failure. Verified
+     by putting a listener on 127.0.0.1:4173: the suite stops with "already used … or
+     set reuseExistingServer:true", exit 1.
+  3. Recorded for later: `--primary-foreground: #fff` (and the destructive one) are
+     literals in the token bridge, against `index.html`'s rule that the palette is the
+     only place a colour is defined — now load-bearing, because the migrated primary
+     buttons take their text colour from it. Backlog D4.
+  Verified: 231/231 unit, typecheck 0, 12/12 e2e at ratio 0 (six baselines regenerated
+  across the unit and its follow-up, each one read first).

@@ -249,6 +249,31 @@ add an `interactive states` capture of a revealed card, which is the cheaper hal
 its own hand-rolled grade buttons — the L16 trap, harmless only while that row stays
 hand-rolled, silently wrong the day it migrates.
 
+### D4 — Two token aliases are literal colours, and the migration made them load-bearing
+
+`src/app/styles.css` declares `--primary-foreground: #fff` and
+`--destructive-foreground: #fff` as literals, while ARCHITECTURE §3.1 says those
+tokens are "references onto those variables, never new values". Until T7 that was
+cosmetic; now every migrated primary button takes its text colour from
+`--primary-foreground`, so a `prefers-color-scheme: dark` flip renders white text on
+the accent instead of `--background-primary`.
+
+**How to close:** point both at palette entries from `index.html` (the light and dark
+blocks), then re-read the `due-cards` and `resources` baselines.
+
+### D5 — `shared/ui/card` still has no consumer
+
+The four entity cards cannot use it (the card *is* the button — see L19), and
+`pages/resources` renders its own card frame. The primitive set therefore ships a
+`card` nobody calls. The honest options are to give it a consumer in T8 (where the
+launcher's cards keep the click target inward) or to delete it; shipping a primitive
+no component uses is the one outcome that teaches nothing.
+
+**Also here:** `pages/resources` still hand-rolls its search field with its own
+padding, border and 44px floor although `shared/ui/input` exists; and `FlashcardCard`
+has no pixel coverage anywhere (backlog D2), so its migration is pinned only by a
+render test.
+
 ## 🟡 Missing policy
 
 ### P1 — Nothing prunes stored artifacts
