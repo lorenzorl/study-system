@@ -49,7 +49,13 @@ export default defineConfig({
     // silent second server on a different one.
     command: `pnpm build && pnpm preview --host ${HOST} --port ${PORT} --strictPort`,
     url: BASE_URL,
-    reuseExistingServer: !process.env.CI,
+    // The visual net must never compare an artifact it did not just build. With
+// `reuseExistingServer` on, any `vite preview` still listening on the port makes
+// Playwright skip this whole command — build included — and the suite then
+// compares the stale bundle against fresh baselines. It reported a false 12/12
+// that way once. Together with `--strictPort` inside the command, a busy port is
+// now a loud failure instead of a silent reuse.
+reuseExistingServer: false,
     timeout: 180_000,
   },
 })
