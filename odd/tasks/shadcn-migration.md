@@ -41,7 +41,7 @@ before it), so the Writer rule's "2+ independent units" condition does not hold.
 | T4a | S1 | Pilot: `create-topic` migrated, plus the CSS layer fix and the interactive-state captures it exposed | f48fb68 |
 | T4b | S1 | Forms → `input`/`label`/`textarea`/`button`: `create-concept`, `sync-note`, `capture-material` | 02e44b8 |
 | T5 | S1 | `widgets/review-modal` → `dialog` (reka-ui focus trap, Escape, restore focus) | 1afd42d |
-| T6 | S1 | `pages/flashcard-session` (15 buttons, 241 style lines) | |
+| T6 | S1 | `pages/flashcard-session` (15 buttons, 241 style lines): 11 migrated, grade row left hand-rolled | e8be1cf |
 | T7 | S1 | Entity cards (4 files) + `pages/resources` (badges) | |
 | T8 | S1 | App shell, dashboard, lists | |
 | T9 | S2 | Close: push once, after the migration is verified | |
@@ -221,3 +221,36 @@ before it), so the Writer rule's "2+ independent units" condition does not hold.
   still-hand-rolled overlays (capture panel, sync-note dialog) keep `rgba(0,0,0,0.5)`,
   so the app has two scrim opacities until those two migrate to the same primitive.
   Verified: 10/10 widget tests (9 before), 206/206 unit, typecheck 0, 12/12 e2e.
+- **L18** (T6 done; the net's blind spot measured, which is the real finding): 11
+  of 15 buttons on `flashcard-session` are the primitive now — 2 `default`, 9
+  `outline`, every one keeping `min-h-[44px]` — and the style block went 241 → 189
+  lines. 13 cases were written first: 12 characterization cases green against the
+  untouched component (that is what pins the contract) and one invariant case, "the
+  actions render through the shared/ui button", which is the only one that could go
+  red. The 4 grade buttons stay hand-rolled because their colours are literals
+  (`#e67e22`, `#27ae60`, `#2980b9`) instead of palette tokens, which is an S4
+  violation, and no `Button` variant expresses four distinct fills; recorded as
+  backlog D3.
+  The page is not the story here, the gate is. The secondary fill moved from
+  `--background-secondary` to the variant's `bg-background` plus a shadow — ~0.4% of
+  the page — and **the suite went green against a stale baseline** because
+  `maxDiffPixelRatio` was 0.01. It surfaced only because two PNGs were compared by
+  hand. Setting the ratio to 0 failed **8 of 12** captures; two runs produced
+  identical pixel counts (105, 136, 271, 352, 3722, 1435, 1672), which rules out
+  rendering noise, and a bisect pinned the drift to `index.html` +
+  `src/app/styles.css`: reverting just those two to the commit that captured the
+  baselines makes `due-cards` pixel-identical. So the baselines were stale against
+  the base-layer fix of L11/L12 — a change we wanted — not the code. All of them
+  were regenerated after reading before/after images, and the ratio is now 0 with
+  `threshold` still absorbing anti-aliasing.
+  Two transferable lessons: (a) Playwright's `--update-snapshots` in its default
+  `changed` mode **refuses to rewrite** an image whose diff is under the tolerance,
+  so a stale baseline needs `--update-snapshots=all` (never without `-g`) — that
+  refusal is itself proof the tolerance is too wide; (b) nothing in the net sees the
+  grade row or the concept-mode session (`answerRevealed` lives inside
+  `useReviewSession`, the flip is a click, and no fixture populates the flashcard
+  cache), so a regression in the controls that *did* migrate there would pass every
+  gate. `ReviewModal.render.test.ts` still asserts `toContain("disabled")` on its own
+  hand-rolled grade row — the L16 trap, harmless only while that row stays
+  hand-rolled.
+  Verified: 219/219 unit (206 + 13), typecheck 0, 12/12 e2e at ratio 0.

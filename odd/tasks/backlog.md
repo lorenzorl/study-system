@@ -222,6 +222,33 @@ through the app's own navigation.
 the open one — see the resources launcher), then add one `interactive states`
 capture for the open modal and regenerate `review-darwin.png`.
 
+### D3 — The grade row's colours bypass the palette, and the net cannot see it
+
+`FlashcardSessionPage` hardcodes three colours for its grade buttons — `#e67e22`
+(Difícil), `#27ae60` (Bien), `#2980b9` (Fácil) — instead of taking them from the
+palette `index.html` owns, which is what S4 requires. It is also the reason that row
+could not migrate to `Button`: no variant expresses four distinct fills without
+putting colour values into utilities, so T6 left those four buttons hand-rolled
+while migrating the other eleven.
+
+Two consequences worth naming:
+
+- The `prefers-color-scheme: dark` block in `index.html` cannot retune those three
+  colours: they are literals, not palette entries.
+- Nothing in the visual net sees that row, nor the concept-mode session:
+  `answerRevealed`/`showFeedback` live inside `useReviewSession`, the flip is a
+  click, and no smoke fixture populates the flashcard cache, so
+  `/topic/:t/concept/:c/flashcards` renders an empty state. A regression in the
+  controls T6 *did* migrate there would pass every gate.
+
+**How to close:** add the three grade colours to the palette in `index.html` and its
+dark block, then migrate the row against those tokens (or keep it hand-rolled and
+add an `interactive states` capture of a revealed card, which is the cheaper half).
+
+**Also here:** `ReviewModal.render.test.ts` still asserts `toContain("disabled")` on
+its own hand-rolled grade buttons — the L16 trap, harmless only while that row stays
+hand-rolled, silently wrong the day it migrates.
+
 ## 🟡 Missing policy
 
 ### P1 — Nothing prunes stored artifacts
