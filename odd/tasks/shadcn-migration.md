@@ -31,7 +31,7 @@ before it), so the Writer rule's "2+ independent units" condition does not hold.
 | ID | Spec | What | Commit |
 | --- | --- | --- | --- |
 | T1 | S3 | Playwright harness: config, `/api/**` stubs, screenshot smoke over the routes, CI job | this commit |
-| T2 | S1 | Add the missing primitives (`textarea`, `tabs`, `badge`) via the generator + the `cn` fix | |
+| T2 | S1 | Add the missing primitives (`textarea`, `tabs`, `badge`) via the generator + the `cn` fix | this commit |
 | T3 | S4 | Rewrite the 6 BEM assertions against accessibility (`role`/text), before any style moves | |
 | T4 | S1 | Forms → `input`/`label`/`textarea`/`button`: `create-topic`, `create-concept`, `sync-note`, `capture-material` | |
 | T5 | S1 | `widgets/review-modal` → `dialog` (reka-ui focus trap, Escape, restore focus) | |
@@ -82,3 +82,9 @@ before it), so the Writer rule's "2+ independent units" condition does not hold.
   `@tailwindcss/oxide`. Remaining gap, stated in `ARCHITECTURE` §3.2: the Linux
   baseline set must be generated once on Linux and committed; until then CI reports
   missing snapshots rather than a false green.
+- **L9** (evidence, T2): `pnpm dlx shadcn-vue@2.8.2 add textarea tabs badge` created the
+  nine files and **re-added `cn@0.5.0`**, writing `import { cn } from "cn"` in six of
+  them. The defect recorded in `ARCHITECTURE` §3.1 is reproducible on every `add`, not
+  a one-off — the documented `sed` plus `pnpm remove cn` is the required follow-up.
+  After it: guard 15/15 (the nine new files pass), suite 200/200, build 175 modules.
+  The primitive set is now `badge, button, card, dialog, input, label, tabs, textarea`.
