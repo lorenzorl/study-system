@@ -204,15 +204,14 @@ test.describe("interactive states", () => {
   // green if the form never mounted. This capture is the one that fails when the
   // migrated Input or Button regresses.
   //
-  // It cannot start at `/topic/t1` directly: `TopicPage` never loads the topics
-  // store, it only reads `currentTopic` out of it (`onMounted` selects the id), so
-  // a cold visit renders "Tema no encontrado." and the toggle never exists. The
-  // capture therefore walks the path a person walks — `/topics` loads the store,
-  // the topic card pushes the topic route — which is also the only route that
-  // mounts the page at all.
+  // It starts at `/topic/t1` directly, and that is half the assertion. Until D1 was
+  // fixed this test had to walk in through `/topics` → topic card, because
+  // `TopicPage` never loaded the topics store: a cold visit rendered "Tema no
+  // encontrado." and the "+" toggle did not exist. The direct deep link is now the
+  // discriminating check — it fails again the moment the mount-time load is
+  // removed, which entering through `/topics` first would hide.
   test("renders the new-concept form, open", async ({ page }) => {
-    await page.goto("/topics")
-    await page.getByRole("button", { name: /Atención/ }).click()
+    await page.goto("/topic/t1")
     await page.getByRole("button", { name: "Agregar concepto" }).click()
     await expect(page.getByPlaceholder(/Título del concepto/)).toBeVisible()
 

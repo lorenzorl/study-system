@@ -86,6 +86,7 @@ import { useTopicSelection } from "@/features/select-topic"
 import { useConceptSelection } from "@/features/select-concept"
 import { CreateConceptForm, useCreateConcept } from "@/features/create-concept"
 import { ConceptList } from "@/widgets/concept-list"
+import { createLoadIfEmpty } from "@/shared/lib/loadIfEmpty"
 import { Button } from "@/shared/ui/button"
 
 const props = defineProps<{
@@ -117,7 +118,19 @@ function clearErrors() {
   createConceptStore.clearError()
 }
 
+// A cold visit — deep link, reload, bookmark — arrives with an empty store, so
+// the page fills it itself: `currentTopic` is only a lookup in `entities/topic`.
+// A visit that already came through `/topics` (or any warmer path) still works
+// and is *not* reloaded, because the loader only runs while the store is empty
+// and idle (`backlog.md` D1, the rule in `shared/lib/loadIfEmpty`). `retry` below
+// still calls the store directly, so an explicit retry is never suppressed.
+const loadTopicsIfEmpty = createLoadIfEmpty({
+  isEmpty: () => topicsStore.topics.length === 0 && !topicsStore.loading,
+  load: () => topicsStore.loadTopics(),
+})
+
 onMounted(() => {
+  loadTopicsIfEmpty()
   topicSelection.selectTopic(props.topicId)
   conceptSelection.resetConcept()
 })

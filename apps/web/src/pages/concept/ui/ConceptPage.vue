@@ -86,6 +86,7 @@ import { useFlashcardCache } from "@/entities/flashcard"
 import { useTopicsStore } from "@/entities/topic"
 import { useTopicSelection } from "@/features/select-topic"
 import { useConceptSelection, useCurrentConcept } from "@/features/select-concept"
+import { createLoadIfEmpty } from "@/shared/lib/loadIfEmpty"
 import { Button } from "@/shared/ui/button"
 
 const props = defineProps<{
@@ -108,7 +109,18 @@ const flashcardCount = computed(() => {
   return flashcardCache.getCachedFlashcards(props.conceptId).length
 })
 
+// The same rule as `TopicPage` (`backlog.md` D1): a cold
+// `/topic/:t/concept/:c` arrives with an empty topics store and `concept` is
+// resolved out of it, so the page loads it — once, and only while it is empty and
+// idle. `retry` below still calls the store directly, so an explicit retry is
+// never suppressed.
+const loadTopicsIfEmpty = createLoadIfEmpty({
+  isEmpty: () => topicsStore.topics.length === 0 && !topicsStore.loading,
+  load: () => topicsStore.loadTopics(),
+})
+
 onMounted(() => {
+  loadTopicsIfEmpty()
   topicSelection.selectTopic(props.topicId)
   conceptSelection.selectConcept(props.conceptId)
 })

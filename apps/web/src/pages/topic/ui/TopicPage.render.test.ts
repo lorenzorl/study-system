@@ -12,11 +12,16 @@ import TopicPage from "./TopicPage.vue"
 // page shows for a loaded topic, for a failed request and for a cold visit, plus
 // the one action in the concept header. Never how the controls are styled.
 //
-// The cold-visit case is `backlog.md` D1, pinned as current behaviour rather than
-// fixed here: `TopicPage` never calls `loadTopics()`, so `currentTopic` resolves
-// only when something else already loaded the store. This test seeds the store for
-// the loaded cases and leaves the selection empty for the cold one, which is
-// exactly the state a deep link renders.
+// The cold-visit case is `backlog.md` D1. The page now loads the topics store
+// itself on mount (`shared/lib/loadIfEmpty`), so a real cold visit ends up
+// rendering the topic — but this suite cannot see that, because the repo's vitest
+// environment is `node` (no jsdom, no @vue/test-utils) and renders through
+// `vue/server-renderer`, where `onMounted` never runs. What this case therefore
+// pins is the paint *before* the load starts, which is a real state the page still
+// has (the selection is empty until mount). The mount-time load is pinned in two
+// places that can see it: `shared/lib/loadIfEmpty.test.ts` proves the rule itself,
+// and the `renders the new-concept form, open` capture enters `/topic/t1` cold and
+// would fail without it.
 //
 // The repo's vitest environment is `node` (no jsdom, no @vue/test-utils), so the
 // states are reached by seeding the pinia stores and rendering through
@@ -112,9 +117,11 @@ describe("TopicPage render", () => {
     expect(buttonLabelled(html, "Reintentar")).toBeTruthy()
   })
 
-  // D1, pinned as it is: with nothing in the selection a cold visit renders the
-  // not-found state, and its only way out is the dashboard.
-  it("renders the not-found state, with a way out, for a cold visit", async () => {
+  // D1's pre-mount paint: until the selection is set, the page has no topic to
+  // name, so it renders the not-found state and its one way out. Reachable for a
+  // frame on a cold visit; the mount handler replaces it as soon as it runs (see
+  // the file comment for why this suite cannot observe that step).
+  it("renders the not-found state, with a way out, before a topic is selected", async () => {
     const html = await render({ select: false })
 
     expect(html).toContain("Tema no encontrado.")

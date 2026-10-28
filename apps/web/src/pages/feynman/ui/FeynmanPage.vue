@@ -50,8 +50,10 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue"
 import { storeToRefs } from "pinia"
+import { useTopicsStore } from "@/entities/topic"
 import { useTopicSelection } from "@/features/select-topic"
 import { useConceptSelection, useCurrentConcept } from "@/features/select-concept"
+import { createLoadIfEmpty } from "@/shared/lib/loadIfEmpty"
 import { Button } from "@/shared/ui/button"
 
 const props = defineProps<{
@@ -59,6 +61,7 @@ const props = defineProps<{
   conceptId: string
 }>()
 
+const topicsStore = useTopicsStore()
 const topicSelection = useTopicSelection()
 const conceptSelection = useConceptSelection()
 const { currentTopicId } = storeToRefs(topicSelection)
@@ -67,7 +70,19 @@ const concept = useCurrentConcept(currentTopicId)
 const userExplanation = ref("")
 const response = ref("")
 
+// The same rule as `TopicPage` and `ConceptPage` (`backlog.md` D1): `concept` is
+// resolved out of the topics store, and a cold
+// `/topic/:t/concept/:c/feynman` arrives with that store empty. This page has no
+// retry control, so the mount-time load is its only way in. Nothing else about
+// the page changes: it still renders the not-found paragraph while the store is
+// empty and swaps to the form once the concepts arrive.
+const loadTopicsIfEmpty = createLoadIfEmpty({
+  isEmpty: () => topicsStore.topics.length === 0 && !topicsStore.loading,
+  load: () => topicsStore.loadTopics(),
+})
+
 onMounted(() => {
+  loadTopicsIfEmpty()
   topicSelection.selectTopic(props.topicId)
   conceptSelection.selectConcept(props.conceptId)
 })
