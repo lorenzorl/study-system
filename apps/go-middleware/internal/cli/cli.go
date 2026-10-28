@@ -44,6 +44,7 @@ func commands() []command {
 		{"review", "record a review of one flashcard", runReview},
 		{"topics", "list the study topics", runTopics},
 		{"concepts", "list the concepts of a topic", runConcepts},
+		{"backup", "replicate the database and the artifacts to R2", runBackup},
 	}
 }
 
