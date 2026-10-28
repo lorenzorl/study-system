@@ -1,90 +1,104 @@
 <template>
-  <!-- Overlay sits above the launcher; the dialog is the only tabbable surface. -->
-  <div class="review-modal">
-    <div
-      ref="dialogEl"
-      class="review-modal__dialog"
-      role="dialog"
-      aria-modal="true"
-      :aria-label="title"
+  <!--
+    The frame belongs to the `dialog` primitive: `DialogContent` brings the portal,
+    the scrim, the focus trap and focus restoration (reka-ui's `FocusScope` +
+    `DismissableLayer`), Escape closes through its own `onOpenChange`, and
+    `DialogTitle` gives the surface its accessible name. The classes on
+    `DialogContent` are the full-screen centering box this component used to draw
+    itself, so the panel keeps its gutter, its size and its bottom grade bar; the
+    panel's own frame is still the scoped `review-modal__dialog` CSS below.
+  -->
+  <Dialog :open="true" @update:open="onOpenChange">
+    <DialogContent
+      class="inset-0 z-50 flex max-w-none translate-x-0 translate-y-0 items-center justify-center gap-0 rounded-none border-0 bg-transparent p-4 shadow-none sm:max-w-none max-[520px]:items-stretch max-[520px]:p-0"
+      :show-close-button="false"
+      :aria-describedby="undefined"
     >
-      <header class="review-modal__header">
-        <h2 class="review-modal__title">Repaso · {{ title }}</h2>
-        <p v-if="total > 0" class="review-modal__progress">{{ currentIndex + 1 }} / {{ total }}</p>
-      </header>
+      <div class="review-modal__dialog">
+        <header class="review-modal__header">
+          <!-- `as-child` keeps the heading this component's own element, so the
+               scoped `review-modal__title` still styles it, while the primitive
+               learns its id and names the dialog with it. -->
+          <DialogTitle as-child>
+            <h2 class="review-modal__title">Repaso · {{ title }}</h2>
+          </DialogTitle>
+          <p v-if="total > 0" class="review-modal__progress">{{ currentIndex + 1 }} / {{ total }}</p>
+        </header>
 
-      <!-- Defensive: the launcher never opens an empty deck, but a zero-card
-           session must not masquerade as a completed one. -->
-      <div v-if="total === 0" class="review-modal__complete">
-        <p class="review-modal__complete-title">No hay tarjetas para repasar</p>
-        <div class="review-modal__complete-actions">
-          <button
-            type="button"
-            class="review-modal__btn review-modal__btn--secondary"
-            @click="requestClose"
-          >
-            Cerrar
-          </button>
+        <!-- Defensive: the launcher never opens an empty deck, but a zero-card
+             session must not masquerade as a completed one. -->
+        <div v-if="total === 0" class="review-modal__complete">
+          <p class="review-modal__complete-title">No hay tarjetas para repasar</p>
+          <div class="review-modal__complete-actions">
+            <button
+              type="button"
+              class="review-modal__btn review-modal__btn--secondary"
+              @click="requestClose"
+            >
+              Cerrar
+            </button>
+          </div>
         </div>
+
+        <template v-else-if="!isComplete && currentCard">
+          <!--
+            The card owns the flip: the modal only listens to `flip` and focuses the
+            card's own button so Space/Enter reach it.
+          -->
+          <div ref="cardHost" class="review-modal__card">
+            <FlashcardCard
+              :key="currentCard.id"
+              :card="currentCard"
+              @flip="onFlip"
+            />
+          </div>
+
+          <div class="review-modal__actions" role="group" aria-label="Calificar">
+            <button
+              v-for="option in GRADES"
+              :key="option.value"
+              type="button"
+              class="review-modal__grade"
+              :disabled="!isRevealed"
+              @click="handleGrade(option.value)"
+            >
+              {{ option.value }} {{ option.label }}
+            </button>
+          </div>
+        </template>
+
+        <div v-else ref="completeEl" class="review-modal__complete">
+          <p class="review-modal__complete-title">Repaso completado</p>
+          <p class="review-modal__complete-progress">
+            {{ total }} de {{ total }}
+          </p>
+          <div class="review-modal__complete-actions">
+            <button type="button" class="review-modal__btn" @click="restart">
+              Repasar de nuevo
+            </button>
+            <button
+              type="button"
+              class="review-modal__btn review-modal__btn--secondary"
+              @click="requestClose"
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
+
+        <footer class="review-modal__footer">
+          <span class="review-modal__source"><slot name="source" /></span>
+          <span class="review-modal__hint">Esc para salir</span>
+        </footer>
       </div>
-
-      <template v-else-if="!isComplete && currentCard">
-        <!--
-          The card owns the flip: the modal only listens to `flip` and focuses the
-          card's own button so Space/Enter reach it.
-        -->
-        <div ref="cardHost" class="review-modal__card">
-          <FlashcardCard
-            :key="currentCard.id"
-            :card="currentCard"
-            @flip="onFlip"
-          />
-        </div>
-
-        <div class="review-modal__actions" role="group" aria-label="Calificar">
-          <button
-            v-for="option in GRADES"
-            :key="option.value"
-            type="button"
-            class="review-modal__grade"
-            :disabled="!isRevealed"
-            @click="handleGrade(option.value)"
-          >
-            {{ option.value }} {{ option.label }}
-          </button>
-        </div>
-      </template>
-
-      <div v-else ref="completeEl" class="review-modal__complete">
-        <p class="review-modal__complete-title">Repaso completado</p>
-        <p class="review-modal__complete-progress">
-          {{ total }} de {{ total }}
-        </p>
-        <div class="review-modal__complete-actions">
-          <button type="button" class="review-modal__btn" @click="restart">
-            Repasar de nuevo
-          </button>
-          <button
-            type="button"
-            class="review-modal__btn review-modal__btn--secondary"
-            @click="requestClose"
-          >
-            Cerrar
-          </button>
-        </div>
-      </div>
-
-      <footer class="review-modal__footer">
-        <span class="review-modal__source"><slot name="source" /></span>
-        <span class="review-modal__hint">Esc para salir</span>
-      </footer>
-    </div>
-  </div>
+    </DialogContent>
+  </Dialog>
 </template>
 
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { FlashcardCard } from "@/entities/flashcard"
+import { Dialog, DialogContent, DialogTitle } from "@/shared/ui/dialog"
 import { useCardSession } from "../model/useCardSession"
 import type { ReviewCard } from "../model/useCardSession"
 
@@ -120,7 +134,6 @@ const {
   restart,
 } = useCardSession(props.cards, props.initialIndex)
 
-const dialogEl = ref<HTMLElement | null>(null)
 const cardHost = ref<HTMLElement | null>(null)
 const completeEl = ref<HTMLElement | null>(null)
 
@@ -154,6 +167,14 @@ function requestClose() {
   emit("close")
 }
 
+/**
+ * Escape, the scrim and the platform back gesture all end up here: the primitive
+ * owns every way of dismissing, this component only reports that it happened.
+ */
+function onOpenChange(open: boolean) {
+  if (!open) requestClose()
+}
+
 /** Reveal through the card's own button, so the flip stays owned by the entity. */
 function activateCard() {
   if (isRevealed.value || isComplete.value) return
@@ -171,12 +192,6 @@ function focusIsInsideDialog(): boolean {
 }
 
 function onKeydown(event: KeyboardEvent) {
-  if (event.key === "Escape") {
-    event.preventDefault()
-    requestClose()
-    return
-  }
-
   if (isComplete.value) return
 
   if (!focusIsInsideDialog()) return
@@ -203,9 +218,12 @@ function onKeydown(event: KeyboardEvent) {
 }
 
 onMounted(() => {
+  // The primitive traps focus and picks the first tabbable element inside the
+  // dialog; the card's own button is that element, so focusing it here only makes
+  // the intent explicit (and covers the completed/empty states, where it falls
+  // back to what the primitive chose).
   window.addEventListener("keydown", onKeydown)
-  // Focus the card itself, so the keyboard can reveal it immediately.
-  ;(cardButton() ?? dialogEl.value)?.focus()
+  cardButton()?.focus()
 })
 
 // Advancing replaces the card (and disables the grade buttons), so the keyboard
@@ -233,18 +251,6 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.review-modal {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1rem;
-  /* Neutral scrim: Obsidian has no variable for modal dimming. */
-  background: rgba(0, 0, 0, 0.5);
-}
-
 .review-modal__dialog {
   display: flex;
   flex-direction: column;
@@ -391,11 +397,6 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 520px) {
-  .review-modal {
-    padding: 0;
-    align-items: stretch;
-  }
-
   .review-modal__dialog {
     max-width: none;
     border: none;
