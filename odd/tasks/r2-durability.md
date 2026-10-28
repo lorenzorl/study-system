@@ -218,3 +218,22 @@ server keeps working with no R2 configuration at all.
   T1** — the review is not due, and the writer's own verification stands. The expectation that a
   credential-touching unit would come back `reviewDue: true` did not hold for this one; it is
   re-tested per unit rather than assumed, and T4 and T5 are the units where it is most likely.
+- **L24** (evidence, T1 writer self-verification): `under_budget` is a judgement about cost, not
+  an absolution of risk, so the plan's `writerSelfVerification: true` was discharged with
+  observable checks instead of an assertion that the code looks careful: (a) `git grep` over the
+  committed tree for `sk-or-v1` and for a literal `STUDY_R2_SECRET_ACCESS_KEY=` assignment returns
+  nothing, so no credential is committed; (b) `git check-ignore -v .env` still matches
+  `.gitignore:6`, so the file that does hold one stays out of the tree; (c) `Validate` builds its
+  message from variable **names** and the endpoint value only — it never interpolates
+  `SecretAccessKey`; (d) `TestReplica_StringNeverPrintsTheSecret` passes, covering `%v`, `%+v`,
+  `%s` of the settings and `%+v` of the whole `Config`.
+- **L25** (decision, escalation): T5 replaces the live database, which is Task Size high-risk item
+  1 ("hard to undo"), and that consequence is not measured by a line count. Its `assess` will pass
+  `escalate: {item: 1}` so an independent verifier runs even if the tier comes back `under_budget`.
+  Escalation can only raise, never lower, so it costs a verifier and buys the check that matters.
+  The same escalation is deliberately **not** pre-applied to T2-T4 and T6: the tier is measured per
+  unit, not predicted.
+- **L26** (decision, plan shape): a single "review the feature at the end" task was dropped from
+  the projection because review is not a task — it is a gate applied inside each work unit
+  (L23). Keeping it as a task would have restated the L22 mistake in a different place. The gate
+  now lives in T7's definition and in each unit's closure note.
