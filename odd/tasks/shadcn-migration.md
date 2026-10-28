@@ -16,9 +16,13 @@ root).
   unit must pass an explicit `baseRef` + `committedOnly` (the origin/master default
   inflates the candidate — see `odd/tasks/shadcn-vue.md` L16 and the
   `rdd/native-review-base-ref` memory).
-- **S3** — Visual safety net: "Playwright + screenshots (suma dependencia)" / "Playwright
-  con smoke por página y screenshots. Detecta regresiones de estilos de verdad." /
-  "Un smoke por ruta: 8 páginas, render + screenshot" / "Job en CI".
+- **S3** — Visual safety net (rewritten by L14): "Playwright + screenshots (suma
+  dependencia)" / "Playwright con smoke por página y screenshots. Detecta regresiones
+  de estilos de verdad." / "Un smoke por ruta: 8 páginas, render + screenshot". The
+  original selection also said "Job en CI"; L14 withdrew that half, because a
+  baseline is per platform and the committed set is macOS only. The net runs
+  locally, on the machine that owns the baselines, and CI has no Playwright step
+  (`ARCHITECTURE` §3.2).
 - **S4** — A migration, not a rewrite: every visible capability survives, the palette
   stays owned by `index.html` (§3.1 of `ARCHITECTURE.md`), the FSD guard stays green,
   and `shared/ui` primitives may not import from any higher layer.
@@ -30,10 +34,11 @@ before it), so the Writer rule's "2+ independent units" condition does not hold.
 
 | ID | Spec | What | Commit |
 | --- | --- | --- | --- |
-| T1 | S3 | Playwright harness: config, `/api/**` stubs, screenshot smoke over the routes, CI job | 063f910 |
+| T1 | S3 | Playwright harness: config, `/api/**` stubs, screenshot smoke over the routes | 063f910 |
+| T1b | S3 | Retire the CI step: the net runs locally until a Linux baseline set exists | 91d0488 |
 | T2 | S1 | Add the missing primitives (`textarea`, `tabs`, `badge`) via the generator + the `cn` fix | f688a34 |
 | T3 | S4 | Rewrite the 6 BEM assertions against accessibility (`role`/text), before any style moves | 3401a83 |
-| T4a | S1 | Pilot: `create-topic` migrated, plus the CSS layer fix and the interactive-state captures it exposed | 7fececf |
+| T4a | S1 | Pilot: `create-topic` migrated, plus the CSS layer fix and the interactive-state captures it exposed | f48fb68 |
 | T4b | S1 | Forms → `input`/`label`/`textarea`/`button`: `create-concept`, `sync-note`, `capture-material` | |
 | T5 | S1 | `widgets/review-modal` → `dialog` (reka-ui focus trap, Escape, restore focus) | |
 | T6 | S1 | `pages/flashcard-session` (15 buttons, 241 style lines) | |
@@ -128,3 +133,18 @@ before it), so the Writer rule's "2+ independent units" condition does not hold.
   image**, and the ground truth came from `getComputedStyle` and `boundingBox()`, not
   from the picture. 10/10 pass without `--update-snapshots`; 200 unit tests;
   `CreateTopicForm` went from 93 to 38 style lines.
+- **L14** (user decision, S3 rewritten, T1b): "Cortalo: no quiero Docker en esto".
+  The candidate fix for the red CI gate was to generate the Linux baseline set in a
+  container that mirrors the runner — `ubuntu:24.04`, amd64, repo mounted read-only,
+  `git archive HEAD` so no darwin `node_modules` leak in — and then let CI compare
+  pixels with no flags. It was stopped on request, and it also died on its own
+  (`qemu: uncaught target signal 6`, exit 134, while `pnpm install` ran under amd64
+  emulation on this arm64 host). So the net leaves CI: `.github/workflows/ci.yml` has
+  no Playwright step, and the workflow comment plus `ARCHITECTURE` §3.2 both record
+  that re-adding one is only correct together with a committed Linux baseline set
+  generated on Linux. Nothing was lost by removing it — `--ignore-snapshots` never
+  compared a pixel — and what CI stops claiming is the thing the validator rejected.
+  Verified: `pnpm test:e2e` on the machine that owns the baselines, 10/10 pass, exit 0.
+  Also corrected in the same commit: T4a's real hash is `f48fb68`, not `7fececf`. The
+  correction cycle's `git reset --soft HEAD~1` rewrote it, so the table had been
+  pointing at a dangling commit that only `git cat-file` could still resolve.
