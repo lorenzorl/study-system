@@ -274,7 +274,16 @@ func (r ReplicaSettings) Validate() error {
 	if r.Endpoint != "" {
 		parsed, err := url.Parse(r.Endpoint)
 		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
-			return fmt.Errorf("%s: %q must be an http or https URL with a host", EnvR2Endpoint, r.Endpoint)
+			return fmt.Errorf("%s: %q must be an http or https URL with a host", EnvR2Endpoint, redactEndpoint(r.Endpoint))
+		}
+		// A key pair in the URL is refused rather than tolerated. It is a second
+		// place a credential can live, outside the field the redaction covers, and
+		// the repository has already paid for this class of bug once (4b92c33,
+		// "never persist the credentials in a fetched URL"). The message names the
+		// two variables to use instead and never echoes what was found.
+		if parsed.User != nil {
+			return fmt.Errorf("%s: credentials are not allowed in the endpoint; set %s and %s instead",
+				EnvR2Endpoint, EnvR2AccessKeyID, EnvR2SecretAccessKey)
 		}
 	}
 
@@ -287,14 +296,52 @@ func (r ReplicaSettings) Validate() error {
 // fmt prints every field of the nested struct, so one
 // log.Printf("%+v", cfg) at startup would write the bucket key to disk. The
 // identifier is printed, because it is what makes a signature mismatch
-// diagnosable; the secret beside it never is.
+// diagnosable; the secret beside it never is. The endpoint is rendered through
+// redactEndpoint for the same reason: it can carry a key pair of its own.
 func (r ReplicaSettings) String() string {
 	secret := "unset"
 	if r.SecretAccessKey != "" {
 		secret = "set"
 	}
 	return fmt.Sprintf("ReplicaSettings{bucket: %q, prefix: %q, endpoint: %q, access key id: %q, secret: %s}",
-		r.Bucket, r.Prefix, r.EffectiveEndpoint(), r.AccessKeyID, secret)
+		r.Bucket, r.Prefix, redactEndpoint(r.EffectiveEndpoint()), r.AccessKeyID, secret)
+}
+
+// GoString renders the settings for %#v.
+//
+// String alone does not cover the sharp verb: fmt uses GoStringer, not Stringer,
+// for %#v and falls back to printing the value field by field, which writes
+// SecretAccessKey in full. That was observed, not assumed — the redaction test
+// failed on %#v after passing on %v, %+v and %s. Delegating to String keeps one
+// rendering rule in one place.
+func (r ReplicaSettings) GoString() string {
+	return r.String()
+}
+
+// redactEndpoint removes URL userinfo before an endpoint reaches a log line or an
+// error message.
+//
+// It is deliberately textual rather than parse-based: an unparseable value is
+// exactly the case where a parser returns nothing useful, and a malformed URL can
+// still carry "https://key:secret@host". Anything before a final '@' that is not
+// followed by a path separator is treated as userinfo and dropped. Over-redacting
+// an unusual but harmless path costs a diagnosability detail; under-redacting
+// costs a credential.
+func redactEndpoint(raw string) string {
+	if raw == "" {
+		return ""
+	}
+
+	at := strings.LastIndex(raw, "@")
+	if at < 0 || strings.Contains(raw[at:], "/") {
+		return raw
+	}
+
+	scheme := "https://"
+	if index := strings.Index(raw, "://"); index >= 0 {
+		scheme = raw[:index+3]
+	}
+	return scheme + "<redacted>@" + raw[at+1:]
 }
 
 // Options selects where a run reads its configuration from.
