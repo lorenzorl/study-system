@@ -1,4 +1,11 @@
 <template>
+  <!--
+    Both controls here are the `shared/ui` button (`shadcn-migration.md` T8): the
+    retry is `variant="outline"` because it is secondary, and the topic action in the
+    section header takes the primitive's `icon` size plus the 44px floor the page has
+    always had (the primitive's 36px would have shrunk the touch target) and `ml-auto`,
+    which is all the page ever owned about its position.
+  -->
   <div class="dashboard">
     <MetricsBar />
     <DailyReviewCard
@@ -13,20 +20,22 @@
 
     <div v-else-if="error" class="dashboard__state error-state">
       <p>{{ error }}</p>
-      <button class="dashboard__retry-btn" @click="retry">Reintentar</button>
+      <Button variant="outline" class="min-h-[44px]" @click="retry">Reintentar</Button>
     </div>
 
     <section v-else class="dashboard__section">
       <h2 class="dashboard__section-title">
         <span>Temas</span>
-        <button
-          class="dashboard__add-btn"
+        <Button
+          variant="outline"
+          size="icon"
+          class="min-h-[44px] min-w-[44px]"
           @click="showNewTopicForm = !showNewTopicForm"
           aria-label="Agregar tema"
           title="Agregar tema"
         >
           +
-        </button>
+        </Button>
         <SyncNoteTrigger />
       </h2>
 
@@ -65,6 +74,7 @@ import { useReviewSession } from "@/features/review-card"
 import { MetricsBar } from "@/widgets/metrics-bar"
 import { DailyReviewCard } from "@/widgets/daily-review"
 import { TopicList } from "@/widgets/topic-list"
+import { Button } from "@/shared/ui/button"
 import { flashcardsRouteFor } from "../model/syncedRoute"
 
 const router = useRouter()
@@ -180,23 +190,6 @@ function goToSyncedConcept(result: SyncNoteResult) {
   min-height: 44px;
 }
 
-.dashboard__retry-btn {
-  min-height: 44px;
-  min-width: 44px;
-  padding: 0.5rem 1rem;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
-  background: var(--background-secondary);
-  color: var(--text-normal);
-  cursor: pointer;
-  font-size: 0.85rem;
-  transition: background-color 0.15s ease;
-}
-
-.dashboard__retry-btn:hover {
-  background: var(--background-modifier-hover);
-}
-
 .spinner {
   display: inline-block;
   width: 20px;
@@ -219,24 +212,5 @@ function goToSyncedConcept(result: SyncNoteResult) {
 
 .error-state {
   color: var(--text-error);
-}
-
-.dashboard__add-btn {
-  min-height: 44px;
-  min-width: 44px;
-  padding: 0.25rem 0.5rem;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
-  background: var(--background-secondary);
-  color: var(--text-normal);
-  cursor: pointer;
-  font-size: 1.1rem;
-  font-weight: 600;
-  line-height: 1;
-  transition: background-color 0.15s ease;
-}
-
-.dashboard__add-btn:hover {
-  background: var(--background-modifier-hover);
 }
 </style>

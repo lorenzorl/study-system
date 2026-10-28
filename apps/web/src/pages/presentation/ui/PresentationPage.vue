@@ -1,18 +1,24 @@
 <template>
+  <!--
+    The deck owns the page, but not the way out: that is a plain button, so it is the
+    `shared/ui` button with `variant="outline"` (secondary — leaving is not the deck's
+    action) and the 44px floor this control has always had, kept as a class because
+    the primitives are sized by utilities (`shadcn-migration.md` T8).
+  -->
   <div class="presentation-page">
     <DeckViewer
       :key="deckKey"
       class="presentation-page__deck"
       :html="deckHtml"
     />
-    <button
-      type="button"
-      class="presentation-page__exit"
+    <Button
+      variant="outline"
+      class="presentation-page__exit min-h-[44px] min-w-[44px]"
       aria-label="Salir de la presentación"
       @click="exit"
     >
       Salir
-    </button>
+    </Button>
   </div>
 </template>
 
@@ -20,6 +26,7 @@
 import { computed } from "vue"
 import { useRoute, useRouter } from "vue-router"
 import { DeckViewer } from "@/widgets/deck-viewer"
+import { Button } from "@/shared/ui/button"
 import { FIXTURE_DECK_HTML } from "../model/fixtureDeck"
 
 // No data flow yet (D9): the page renders the fixture deck, and the route's
@@ -52,6 +59,9 @@ function exit() {
   height: 100%;
 }
 
+/* What the page still owns: where the way out sits, and that it clears the deck's
+ * own controls. Its box — padding, border, radius, fill, font — is the primitive's
+ * now. */
 .presentation-page__exit {
   position: absolute;
   top: 0.5rem;
@@ -59,21 +69,6 @@ function exit() {
   /* Above Reveal's slide number (31) and navigation controls (11), so leaving is
      always reachable and never lands under a deck affordance. */
   z-index: 40;
-  min-width: 44px;
-  min-height: 44px;
-  padding: 0.35rem 0.75rem;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
-  background: var(--background-secondary);
-  color: var(--text-normal);
-  font-family: var(--font-text, inherit);
-  font-size: 0.85rem;
-  cursor: pointer;
-  transition: background-color 0.15s ease;
-}
-
-.presentation-page__exit:hover {
-  background: var(--background-modifier-hover);
 }
 </style>
 

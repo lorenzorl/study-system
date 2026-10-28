@@ -1,14 +1,21 @@
 <template>
+  <!--
+    The shell's only control is the way back, so it is the `shared/ui` button
+    (`shadcn-migration.md` T8) with `variant="outline"` because it is secondary, and
+    the 44px touch target kept as a class — the primitives are sized by utilities and
+    a migration does not shrink a 44px target to the primitive's 36px.
+  -->
   <div class="study-dashboard">
     <header class="study-dashboard__header">
-      <button
-        class="study-dashboard__back"
+      <Button
+        variant="outline"
+        class="min-h-[44px]"
         v-if="showBack"
         @click="goBack"
         :aria-label="'Volver'"
       >
         ← Volver
-      </button>
+      </Button>
       <h1 class="study-dashboard__title">Estudio</h1>
       <!-- Two destinations, both top level: the launcher and the topic list.
            The back button is for anything deeper where the trail is not obvious. -->
@@ -38,6 +45,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useRouter, useRoute } from "vue-router";
+import { Button } from "@/shared/ui/button";
 
 const router = useRouter();
 const route = useRoute();
@@ -67,26 +75,6 @@ function goBack() {
   padding: 0.5rem 0.75rem;
   border-bottom: 1px solid var(--background-modifier-border);
   min-height: 44px;
-}
-
-.study-dashboard__back {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 44px;
-  min-height: 44px;
-  padding: 0.25rem 0.5rem;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
-  background: var(--background-secondary);
-  color: var(--text-normal);
-  cursor: pointer;
-  font-size: 0.85rem;
-  transition: background-color 0.15s ease;
-}
-
-.study-dashboard__back:hover {
-  background: var(--background-modifier-hover);
 }
 
 .study-dashboard__title {

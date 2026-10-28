@@ -73,4 +73,37 @@ describe("DashboardPage render", () => {
     expect(html).toContain("DDD")
     expect(html).toContain("0 conceptos")
   })
+
+  it("offers the topic action in the section header, by name and by title", async () => {
+    const html = await renderPage()
+
+    expect(html).toContain('aria-label="Agregar tema"')
+    expect(html).toContain('title="Agregar tema"')
+  })
+
+  it("offers a retry when the topics request failed", async () => {
+    const html = await renderPage(() => {
+      useTopicsStore().error = "No se pudo cargar."
+    })
+
+    expect(html).toContain("No se pudo cargar.")
+    expect(html).toContain("Reintentar")
+  })
+
+  // INVARIANT: the one case the migration is expected to turn red — the header
+  // action, the retry and the sync trigger all render through the shared/ui button.
+  it("renders its controls through the shared/ui button", async () => {
+    for (const html of [
+      await renderPage(),
+      await renderPage(() => {
+        useTopicsStore().error = "No se pudo cargar."
+      }),
+    ]) {
+      const rendered = html.split(/(?=<button)/).filter((chunk) => chunk.startsWith("<button"))
+      expect(rendered.length).toBeGreaterThan(0)
+      for (const button of rendered) {
+        expect(button).toContain('data-slot="button"')
+      }
+    }
+  })
 })

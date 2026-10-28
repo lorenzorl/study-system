@@ -1,4 +1,16 @@
 <template>
+  <!--
+    Every control here is the `shared/ui` button (`shadcn-migration.md` T8).
+
+    The retry and the way out are plain buttons: `variant="outline"` names them as
+    secondary, and `min-h-[44px]` keeps the touch target this page has always had as
+    a class, because the primitives are sized by utilities and a migration does not
+    shrink a 44px target to the primitive's 36px.
+
+    The concept action in the section header is a square icon button, so it takes the
+    primitive's `icon` size plus the same 44px floor (36px would have shrunk the
+    target) and `ml-auto`, which is all the page ever owned about its position.
+  -->
   <div class="topic-view">
     <div v-if="loading" class="topic-view__state loading-state">
       <span class="spinner"></span> Cargando...
@@ -6,17 +18,18 @@
 
     <div v-else-if="error" class="topic-view__state error-state">
       <p>{{ error }}</p>
-      <button class="topic-view__retry-btn" @click="retry">Reintentar</button>
+      <Button variant="outline" class="min-h-[44px]" @click="retry">Reintentar</Button>
     </div>
 
     <div v-else-if="!currentTopic" class="topic-view__state">
       <p>Tema no encontrado.</p>
-      <button
-        class="topic-view__back-btn"
+      <Button
+        variant="outline"
+        class="min-h-[44px]"
         @click="router.push({ name: 'dashboard' })"
       >
         ← Volver
-      </button>
+      </Button>
     </div>
 
     <div v-else class="topic-view__content">
@@ -27,14 +40,16 @@
       <section class="topic-view__section">
         <h3 class="topic-view__section-title">
           <span>Conceptos</span>
-          <button
-            class="topic-view__add-btn"
+          <Button
+            variant="outline"
+            size="icon"
+            class="ml-auto min-h-[44px] min-w-[44px]"
             @click="showNewConceptForm = !showNewConceptForm"
             aria-label="Agregar concepto"
             title="Agregar concepto"
           >
             +
-          </button>
+          </Button>
         </h3>
 
         <CreateConceptForm
@@ -71,6 +86,7 @@ import { useTopicSelection } from "@/features/select-topic"
 import { useConceptSelection } from "@/features/select-concept"
 import { CreateConceptForm, useCreateConcept } from "@/features/create-concept"
 import { ConceptList } from "@/widgets/concept-list"
+import { Button } from "@/shared/ui/button"
 
 const props = defineProps<{
   topicId: string
@@ -189,25 +205,6 @@ function cancelNewConcept() {
   min-height: 44px;
 }
 
-.topic-view__back-btn,
-.topic-view__retry-btn {
-  min-height: 44px;
-  min-width: 44px;
-  padding: 0.5rem 1rem;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
-  background: var(--background-secondary);
-  color: var(--text-normal);
-  cursor: pointer;
-  font-size: 0.85rem;
-  transition: background-color 0.15s ease;
-}
-
-.topic-view__back-btn:hover,
-.topic-view__retry-btn:hover {
-  background: var(--background-modifier-hover);
-}
-
 .spinner {
   display: inline-block;
   width: 20px;
@@ -230,25 +227,5 @@ function cancelNewConcept() {
 
 .error-state {
   color: var(--text-error);
-}
-
-.topic-view__add-btn {
-  margin-left: auto;
-  min-height: 44px;
-  min-width: 44px;
-  padding: 0.25rem 0.5rem;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
-  background: var(--background-secondary);
-  color: var(--text-normal);
-  cursor: pointer;
-  font-size: 1.1rem;
-  font-weight: 600;
-  line-height: 1;
-  transition: background-color 0.15s ease;
-}
-
-.topic-view__add-btn:hover {
-  background: var(--background-modifier-hover);
 }
 </style>

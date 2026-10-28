@@ -1,4 +1,11 @@
 <template>
+  <!--
+    The explanation action is the `shared/ui` button (`shadcn-migration.md` T8): it is
+    the page's one primary action, so it keeps the default variant, and it keeps the
+    44px touch target as a class plus `self-start`, which is the one thing the page
+    owned about its placement. The textarea is deliberately untouched — the task is the
+    controls the primitives absorb, and the field is its own unit.
+  -->
   <div class="feynman">
     <div v-if="concept" class="feynman__content">
       <div class="feynman__header">
@@ -20,13 +27,13 @@
         :aria-label="'Explicá ' + concept.title + ' con tus propias palabras'"
       ></textarea>
 
-      <button
-        class="feynman__submit"
+      <Button
+        class="min-h-[44px] self-start"
         @click="explain"
         :disabled="!userExplanation.trim()"
       >
         Explicar este concepto
-      </button>
+      </Button>
 
       <div v-if="response" class="feynman__response">
         <h3 class="feynman__response-title">Retroalimentación</h3>
@@ -45,6 +52,7 @@ import { ref, onMounted } from "vue"
 import { storeToRefs } from "pinia"
 import { useTopicSelection } from "@/features/select-topic"
 import { useConceptSelection, useCurrentConcept } from "@/features/select-concept"
+import { Button } from "@/shared/ui/button"
 
 const props = defineProps<{
   topicId: string
@@ -132,30 +140,6 @@ function explain() {
   outline: none;
   border-color: var(--interactive-accent);
   box-shadow: 0 0 0 2px rgba(var(--interactive-accent-rgb, 100, 100, 255), 0.2);
-}
-
-.feynman__submit {
-  min-height: 44px;
-  min-width: 44px;
-  padding: 0.5rem 1.5rem;
-  border: 1px solid var(--interactive-accent);
-  border-radius: 6px;
-  background: var(--interactive-accent);
-  color: var(--text-on-accent, #fff);
-  cursor: pointer;
-  font-size: 0.85rem;
-  font-weight: 500;
-  transition: opacity 0.15s ease;
-  align-self: flex-start;
-}
-
-.feynman__submit:hover:not(:disabled) {
-  opacity: 0.9;
-}
-
-.feynman__submit:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .feynman__response {

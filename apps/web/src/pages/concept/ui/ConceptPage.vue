@@ -1,4 +1,19 @@
 <template>
+  <!--
+    Every control here is the `shared/ui` button (`shadcn-migration.md` T8).
+
+    The two error/empty actions are plain buttons, so the primitive owns their box
+    and `variant="outline"` names them as secondary; `min-h-[44px]` is the touch
+    target this page has always had, kept as a class because the primitives are
+    sized by utilities and a migration does not shrink a 44px target to the
+    primitive's 36px.
+
+    The two actions are a different shape: each one is an icon + label + meta block
+    that fills the column, so the control *is* the frame and it stays the page's own
+    CSS, with the box restated in full so the primitive's `h-9`/`justify-center`/
+    `font-medium`/`nowrap` cannot reshape it (the same rule T7 applied to the entity
+    cards).
+  -->
   <div class="concept-view">
     <div v-if="loading" class="concept-view__state loading-state">
       <span class="spinner"></span> Cargando...
@@ -6,17 +21,18 @@
 
     <div v-else-if="error" class="concept-view__state error-state">
       <p>{{ error }}</p>
-      <button class="concept-view__retry-btn" @click="retry">Reintentar</button>
+      <Button variant="outline" class="min-h-[44px]" @click="retry">Reintentar</Button>
     </div>
 
     <div v-else-if="!concept" class="concept-view__state">
       <p>Concepto no encontrado.</p>
-      <button
-        class="concept-view__back-btn"
+      <Button
+        variant="outline"
+        class="min-h-[44px]"
         @click="router.push({ name: 'topic', params: { topicId: props.topicId } })"
       >
         ← Volver al Tema
-      </button>
+      </Button>
     </div>
 
     <div v-else class="concept-view__content">
@@ -26,7 +42,7 @@
       </div>
 
       <div class="concept-view__actions">
-        <button
+        <Button
           class="concept-view__action"
           @click="navigateTo('flashcards')"
           :disabled="flashcardCount === 0"
@@ -39,9 +55,9 @@
               tarjeta{{ flashcardCount === 1 ? '' : 's' }}
             </small>
           </span>
-        </button>
+        </Button>
 
-        <button class="concept-view__action" @click="navigateTo('feynman')">
+        <Button class="concept-view__action" @click="navigateTo('feynman')">
           <span class="concept-view__action-icon">📝</span>
           <span class="concept-view__action-text">
             Técnica Feynman
@@ -49,7 +65,7 @@
               Explícalo con tus propias palabras
             </small>
           </span>
-        </button>
+        </Button>
       </div>
 
       <div
@@ -70,6 +86,7 @@ import { useFlashcardCache } from "@/entities/flashcard"
 import { useTopicsStore } from "@/entities/topic"
 import { useTopicSelection } from "@/features/select-topic"
 import { useConceptSelection, useCurrentConcept } from "@/features/select-concept"
+import { Button } from "@/shared/ui/button"
 
 const props = defineProps<{
   topicId: string
@@ -148,11 +165,23 @@ function navigateTo(module: "flashcards" | "feynman") {
   gap: 0.5rem;
 }
 
+/* The frame of an action row: the control *is* the box, so it is stated in full.
+ *
+ * Everything after `font-size` exists because the root is the primitive now and it
+ * has its own opinion about a button: `h-9` would pin the height to 36px, its
+ * `justify-content: center` would centre the icon and text, `gap-2` would narrow
+ * the icon gutter from 12px to 8px, `rounded-md` (6px) would square the 8px
+ * corners, `nowrap` would stop the meta line wrapping, and `font-medium` would
+ * make the meta line heavier than the `400` it declares. `variant` is left at its
+ * default because the frame owns the paint; what the variant still carries is the
+ * disabled state, which the primitive already expresses as `opacity-50`. */
 .concept-view__action {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 0.75rem;
   width: 100%;
+  height: auto;
   min-height: 56px;
   padding: 0.75rem 1rem;
   border: 1px solid var(--background-modifier-border);
@@ -160,6 +189,8 @@ function navigateTo(module: "flashcards" | "feynman") {
   background: var(--background-secondary);
   color: var(--text-normal);
   cursor: pointer;
+  font-weight: normal;
+  white-space: normal;
   text-align: left;
   transition: border-color 0.15s ease, background-color 0.15s ease;
 }
@@ -198,25 +229,6 @@ function navigateTo(module: "flashcards" | "feynman") {
   text-align: center;
   color: var(--text-muted);
   min-height: 44px;
-}
-
-.concept-view__back-btn,
-.concept-view__retry-btn {
-  min-height: 44px;
-  min-width: 44px;
-  padding: 0.5rem 1rem;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
-  background: var(--background-secondary);
-  color: var(--text-normal);
-  cursor: pointer;
-  font-size: 0.85rem;
-  transition: background-color 0.15s ease;
-}
-
-.concept-view__back-btn:hover,
-.concept-view__retry-btn:hover {
-  background: var(--background-modifier-hover);
 }
 
 .spinner {

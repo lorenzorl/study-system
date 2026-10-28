@@ -77,4 +77,10 @@ describe("app shell", () => {
     expect(await renderAt("/topics")).not.toContain("Volver")
     expect(await renderAt("/present/deck-atencion")).toContain("Volver")
   })
+
+  // INVARIANT: the one case the migration is expected to turn red. The way back is
+  // a plain button, so it renders through the shared/ui primitive.
+  it("renders the way back through the shared/ui button", async () => {
+    expect(await renderAt("/present/deck-atencion")).toContain('data-slot="button"')
+  })
 })

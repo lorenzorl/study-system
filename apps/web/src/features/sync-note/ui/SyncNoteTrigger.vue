@@ -1,20 +1,26 @@
 <template>
-  <button
+  <!--
+    The one way in for a note is the `shared/ui` button (`shadcn-migration.md` T8). It
+    is the primary action of the header it sits in, so it keeps the default variant
+    and the 44px touch target as a class; `ml-auto` is all this control ever owned
+    about its position.
+  -->
+  <Button
     ref="triggerEl"
-    type="button"
-    class="sync-note-trigger"
+    class="ml-auto min-h-[44px]"
     aria-label="Sincronizar nota"
     title="Sincronizar una nota pegada"
     :aria-expanded="panelOpen"
     @click="openPanel"
   >
     Sincronizar nota
-  </button>
+  </Button>
 </template>
 
 <script setup lang="ts">
-import { nextTick, ref, watch } from "vue"
+import { nextTick, ref, watch, type ComponentPublicInstance } from "vue"
 import { storeToRefs } from "pinia"
+import { Button } from "@/shared/ui/button"
 import { useSyncNote } from "../model/useSyncNote"
 
 /**
@@ -28,7 +34,11 @@ import { useSyncNote } from "../model/useSyncNote"
 const store = useSyncNote()
 const { panelOpen } = storeToRefs(store)
 
-const triggerEl = ref<HTMLButtonElement | null>(null)
+// The primitive renders its own element, so a template ref on it is the component
+// instance: the focusable element is its `$el`. Restoring focus onto the control the
+// reader pressed is the reason this ref exists, so it is read through `$el` rather
+// than being dropped.
+const triggerEl = ref<ComponentPublicInstance | null>(null)
 let wasOpen = false
 
 watch(panelOpen, async (isOpen) => {
@@ -42,30 +52,10 @@ watch(panelOpen, async (isOpen) => {
   if (!wasOpen) return
   wasOpen = false
   await nextTick()
-  triggerEl.value?.focus()
+  ;(triggerEl.value?.$el as HTMLElement | undefined)?.focus()
 })
 
 function openPanel(): void {
   store.openPanel()
 }
 </script>
-
-<style scoped>
-.sync-note-trigger {
-  margin-left: auto;
-  min-height: 44px;
-  padding: 0.25rem 0.75rem;
-  border: 1px solid var(--interactive-accent);
-  border-radius: 6px;
-  background: var(--interactive-accent);
-  color: var(--text-on-accent, #fff);
-  cursor: pointer;
-  font-size: 0.8rem;
-  font-weight: 500;
-  transition: opacity 0.15s ease;
-}
-
-.sync-note-trigger:hover {
-  opacity: 0.9;
-}
-</style>

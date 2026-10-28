@@ -36,4 +36,13 @@ describe("SyncNoteTrigger render", () => {
       'aria-expanded="true"',
     )
   })
+
+  // INVARIANT: the one case the migration is expected to turn red — the trigger is
+  // a plain button, so it renders through the shared/ui primitive.
+  it("is the shared/ui button", async () => {
+    const html = await render()
+
+    expect(html.match(/<button/g)).toHaveLength(1)
+    expect(html).toContain('data-slot="button"')
+  })
 })

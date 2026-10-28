@@ -1,4 +1,11 @@
 <template>
+  <!--
+    Both controls are the `shared/ui` button (`shadcn-migration.md` T8): the retry is
+    `variant="outline"` because it is secondary, and "Comenzar repaso" is left at the
+    default variant because it is the page's one primary action. `min-h-[44px]` keeps
+    the touch target this page has always had as a class, because the primitives are
+    sized by utilities and a migration does not shrink a 44px target to 36px.
+  -->
   <div class="due-cards-view">
     <!-- Loading -->
     <div v-if="loading" class="due-cards-view__state loading-state">
@@ -8,7 +15,7 @@
     <!-- Error -->
     <div v-else-if="error" class="due-cards-view__state error-state">
       <p>{{ error }}</p>
-      <button class="due-cards-view__retry-btn" @click="retry">Reintentar</button>
+      <Button variant="outline" class="min-h-[44px]" @click="retry">Reintentar</Button>
     </div>
 
     <!-- Empty -->
@@ -32,9 +39,9 @@
       </div>
 
       <div class="due-cards-view__actions">
-        <button class="due-cards-view__start-btn" @click="startReview">
+        <Button class="min-h-[44px]" @click="startReview">
           Comenzar repaso
-        </button>
+        </Button>
       </div>
     </template>
   </div>
@@ -45,6 +52,7 @@ import { onMounted } from "vue"
 import { useRouter } from "vue-router"
 import { DueCardItem } from "@/entities/review"
 import { useReviewSession } from "@/features/review-card"
+import { Button } from "@/shared/ui/button"
 
 const router = useRouter()
 const reviewSession = useReviewSession()
@@ -94,41 +102,6 @@ function startReview() {
   display: flex;
   justify-content: center;
   padding-top: 0.5rem;
-}
-
-.due-cards-view__start-btn {
-  min-height: 44px;
-  min-width: 44px;
-  padding: 0.5rem 1.5rem;
-  border: 1px solid var(--interactive-accent);
-  border-radius: 6px;
-  background: var(--interactive-accent);
-  color: var(--text-on-accent, #fff);
-  cursor: pointer;
-  font-size: 0.9rem;
-  font-weight: 500;
-  transition: opacity 0.15s ease;
-}
-
-.due-cards-view__start-btn:hover {
-  opacity: 0.9;
-}
-
-.due-cards-view__retry-btn {
-  min-height: 44px;
-  min-width: 44px;
-  padding: 0.5rem 1rem;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
-  background: var(--background-secondary);
-  color: var(--text-normal);
-  cursor: pointer;
-  font-size: 0.85rem;
-  transition: background-color 0.15s ease;
-}
-
-.due-cards-view__retry-btn:hover {
-  background: var(--background-modifier-hover);
 }
 
 .due-cards-view__state {
