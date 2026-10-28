@@ -95,6 +95,32 @@ After every `add`, rewrite the import and never `pnpm add cn`:
 grep -rl 'from "cn"' src/shared/ui | xargs sed -i '' 's|from "cn"|from "@/shared/lib/utils"|g'
 ```
 
+### 3.2 The visual safety net
+
+`e2e/smoke.spec.ts` renders the eight routes against the **production bundle**
+(`vite preview`) and compares one full-page screenshot per route. It exists
+because nothing else here can see a colour: the unit suite runs `renderToString`
+in a `node` environment and asserts text, so a migrated control could lose its
+border and every test would still pass.
+
+`/api/**` is stubbed through `page.route` from fixtures that mirror the entity
+wire types (`ResourceResponse`, `TopicResponse`/`ConceptDTO`, `DueCard`), so every
+page renders its populated state and the suite needs no Go binary. A screenshot
+of an error state is not a regression test.
+
+Baselines live in `e2e/__screenshots__/` and are **committed**; the report and the
+run artifacts (`playwright-report/`, `test-results/`) are not. The path template
+carries `{platform}`, because font rasterisation differs between macOS and Linux
+and a baseline from one would fail on the other for reasons unrelated to the code.
+The Linux set has to be generated once on Linux and committed — run the suite in
+the CI container with `--update-snapshots` and commit what it produces. Until that
+one-time step, the pixel comparison runs locally and CI reports missing snapshots
+instead of a regression.
+
+Accepting a visual change is deliberate: `pnpm exec playwright test
+--update-snapshots`, then read the PNG diff. A baseline updated without looking is
+a regression captured as the new truth.
+
 ## 4. The platform boundary
 
 The app imports **no platform or SDK package at all**. It runs in the browser and

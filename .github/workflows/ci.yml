@@ -71,6 +71,19 @@ jobs:
       - name: Build the web app
         run: pnpm build
 
+      # The visual safety net (ARCHITECTURE §3.2). It runs against the built
+      # bundle, so it comes after the build; the Playwright webServer rebuilds
+      # inside the step, which is harmless and keeps the config self-contained.
+      #
+      # The Linux baselines have to be committed for this step to compare rather
+      # than report missing snapshots; see §3.2 for the one-time generation.
+      # Locally: `pnpm exec playwright install chromium`, then `pnpm test:e2e`.
+      - name: Install the Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run the visual smoke
+        run: pnpm test:e2e
+
   embedded-app:
     name: Embedded app — committed build is current
     runs-on: ubuntu-latest
