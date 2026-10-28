@@ -71,22 +71,22 @@ jobs:
       - name: Build the web app
         run: pnpm build
 
-      # The visual safety net (ARCHITECTURE §3.2). It runs against the built
-      # bundle, so it comes after the build; the Playwright webServer rebuilds
-      # inside the step, which is harmless and keeps the config self-contained.
+      # There is deliberately no Playwright step in this job.
       #
-      # `--ignore-snapshots` is deliberate. The committed baselines are macOS
-      # only (the template appends the platform), so a Linux runner would fail
-      # with missing snapshots instead of comparing anything. A gate that is
-      # deterministically red gates nothing. CI asserts every route renders with
-      # no console error; the pixel comparison runs locally until the Linux set
-      # is generated once and committed (§3.2).
-      # Locally: `pnpm exec playwright install chromium`, then `pnpm test:e2e`.
-      - name: Install the Playwright browser
-        run: pnpm exec playwright install --with-deps chromium
-
-      - name: Run the visual smoke
-        run: pnpm test:e2e -- --ignore-snapshots
+      # The visual safety net (ARCHITECTURE §3.2) compares screenshots against
+      # committed baselines, and `snapshotPathTemplate` pins `{platform}` to the
+      # machine that produced them, so the ten committed baselines are macOS
+      # only. On this runner every screenshot assertion fails with a missing
+      # snapshot: wiring the plain command in made this job deterministically
+      # red, and wiring in `--ignore-snapshots` made it green while skipping
+      # every assertion the net exists for. Neither is a gate, so the net runs
+      # locally, where the baselines live:
+      #
+      #   pnpm exec playwright install chromium && pnpm test:e2e
+      #
+      # Bringing it back to CI is one step, not a rewiring: generate the Linux
+      # set on Linux (`playwright test --update-snapshots`), commit it, and add
+      # the plain `pnpm test:e2e` step here with no flags.
 
   embedded-app:
     name: Embedded app — committed build is current
