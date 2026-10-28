@@ -23,8 +23,8 @@ function render(seed: (store: Store) => void = () => {}): Promise<string> {
   return renderToString(app)
 }
 
-function buttonWithClass(html: string, className: string): string {
-  const match = html.match(new RegExp(`<button[^>]*${className}[^>]*>`))
+function buttonMatching(html: string, pattern: RegExp): string {
+  const match = html.match(pattern)
   expect(match).not.toBeNull()
 
   return match?.[0] ?? ""
@@ -57,7 +57,7 @@ describe("SyncNoteForm render", () => {
   it("keeps the submit disabled while the fields are empty", async () => {
     const html = await render((store) => store.openPanel())
 
-    expect(buttonWithClass(html, "sync-note__submit")).toContain("disabled")
+    expect(buttonMatching(html, /<button[^>]*type="submit"[^>]*>/)).toContain("disabled")
   })
 
   it("shows the store's own refusal message as-is", async () => {

@@ -35,11 +35,15 @@ async function renderAt(path: string): Promise<string> {
  * Read from the rendered markup instead of the component's state: the test is
  * about what a reader sees, and the attribute order RouterLink emits is not
  * something this suite should freeze.
+ *
+ * `aria-current="page"` rather than the styling class: that is what a screen
+ * reader announces, and it survives a change of CSS approach. The class that
+ * paints the underline is an implementation detail of the nav.
  */
 function activeHref(html: string): string | undefined {
   for (const match of html.matchAll(/<a\s([^>]*)>/g)) {
     const attributes = match[1]
-    if (attributes.includes("study-dashboard__link--active")) {
+    if (/aria-current="page"/.test(attributes)) {
       return /href="([^"]*)"/.exec(attributes)?.[1]
     }
   }
@@ -61,11 +65,11 @@ describe("app shell", () => {
   it("marks the current section, and only the current one", async () => {
     const resources = await renderAt("/")
     expect(activeHref(resources)).toBe("/")
-    expect(resources.match(/study-dashboard__link--active/g)).toHaveLength(1)
+    expect(resources.match(/aria-current="page"/g)).toHaveLength(1)
 
     const topics = await renderAt("/topics")
     expect(activeHref(topics)).toBe("/topics")
-    expect(topics.match(/study-dashboard__link--active/g)).toHaveLength(1)
+    expect(topics.match(/aria-current="page"/g)).toHaveLength(1)
   })
 
   it("offers a way back only where the trail is not obvious", async () => {

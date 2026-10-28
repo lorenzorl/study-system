@@ -53,9 +53,16 @@ function material(overrides: Partial<Resource> = {}): Resource {
   }
 }
 
-/** The card's primary action element, whatever state it is in. */
+/**
+ * The card's primary action element, whatever state it is in.
+ *
+ * Matched by its accessible name, which now carries the resource title: the same
+ * verb repeated on every card ("Repasar", "Presentar") gives a screen reader four
+ * indistinguishable buttons. The class is what the migration replaces, so it is
+ * not a valid anchor.
+ */
 function actionButton(html: string): string {
-  const match = html.match(/<button[^>]*resource-card__action[^>]*>/)
+  const match = html.match(/<button[^>]*aria-label="[^"]*Clean Architecture"[^>]*>/)
   expect(match).not.toBeNull()
 
   return match?.[0] ?? ""

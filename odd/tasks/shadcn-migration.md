@@ -32,7 +32,7 @@ before it), so the Writer rule's "2+ independent units" condition does not hold.
 | --- | --- | --- | --- |
 | T1 | S3 | Playwright harness: config, `/api/**` stubs, screenshot smoke over the routes, CI job | this commit |
 | T2 | S1 | Add the missing primitives (`textarea`, `tabs`, `badge`) via the generator + the `cn` fix | this commit |
-| T3 | S4 | Rewrite the 6 BEM assertions against accessibility (`role`/text), before any style moves | |
+| T3 | S4 | Rewrite the 6 BEM assertions against accessibility (`role`/text), before any style moves | this commit |
 | T4 | S1 | Forms → `input`/`label`/`textarea`/`button`: `create-topic`, `create-concept`, `sync-note`, `capture-material` | |
 | T5 | S1 | `widgets/review-modal` → `dialog` (reka-ui focus trap, Escape, restore focus) | |
 | T6 | S1 | `pages/flashcard-session` (15 buttons, 241 style lines) | |
@@ -88,3 +88,17 @@ before it), so the Writer rule's "2+ independent units" condition does not hold.
   a one-off — the documented `sed` plus `pnpm remove cn` is the required follow-up.
   After it: guard 15/15 (the nine new files pass), suite 200/200, build 175 modules.
   The primitive set is now `badge, button, card, dialog, input, label, tabs, textarea`.
+- **L10** (evidence, T3): all six BEM assertions are gone (`grep` → 0). Three of them
+  needed **no component change at all**, because the semantics already existed and the
+  tests were pinning the class instead: `RouterLink` already emits
+  `aria-current="page"` on the exact-active link, the capture tabs already bind
+  `:aria-pressed`, and the grades already sit in a `role="group"
+  aria-label="Calificar"` with visible names. The one real accessibility defect found
+  is in `ResourcesPage`: every card's action button had the same accessible name
+  ("Repasar", "Presentar"), so a screen reader announced four indistinguishable
+  buttons. It now carries `aria-label` with the resource title.
+  Two pitfalls worth remembering: a helper that returns only the opening tag cannot
+  assert on a button's label (the text lives in the content), and building a helper
+  that returns only the opening tag is exactly why the tab assertion failed once.
+  Verified: suite 200/200, and the visual smoke still 8/8 — the baselines tolerate
+  attribute-only changes, which is what makes them usable during the migration.

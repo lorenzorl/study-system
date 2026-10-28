@@ -24,7 +24,14 @@ describe("ReviewModal render", () => {
   it("disables all four grades before the answer is revealed", async () => {
     const html = await render(CARDS)
 
-    const buttons = html.match(/<button[^>]*review-modal__grade[^>]*>/g) ?? []
+    // The grades live in the labelled group, so the test anchors on that group
+    // instead of on the button class the migration replaces.
+    const group = html.match(
+      /<div[^>]*role="group"[^>]*aria-label="Calificar"[^>]*>([\s\S]*?)<\/div>/,
+    )
+    expect(group).not.toBeNull()
+
+    const buttons = group?.[1].match(/<button[^>]*>/g) ?? []
 
     expect(buttons).toHaveLength(4)
     for (const button of buttons) expect(button).toContain("disabled")

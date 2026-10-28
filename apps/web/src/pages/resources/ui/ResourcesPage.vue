@@ -91,6 +91,7 @@
           <button
             type="button"
             class="resource-card__action"
+            :aria-label="`${resource.primaryActionLabel}: ${resource.title}`"
             :disabled="!isOpenable(resource)"
             :title="isOpenable(resource) ? undefined : CORPUS_ONLY_HINT"
             @click="openResource(resource, $event)"
