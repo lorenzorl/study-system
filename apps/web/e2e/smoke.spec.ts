@@ -1,6 +1,21 @@
 import { expect, test, type Page } from "@playwright/test"
 
 /**
+ * How much of a page may differ before the comparison fails: nothing.
+ *
+ * It was 0.01 (1% of the page), and T6 proved what that costs. Migrating the
+ * secondary actions changed their fill and added a shadow — about 0.4% of the
+ * page — so the suite went green against a stale baseline, and the drift only
+ * surfaced because the two images were compared by hand afterwards. A tolerance
+ * wide enough to swallow a real change is a gate that reports "no change" for
+ * changes it cannot see.
+ *
+ * `threshold` (Playwright's per-pixel colour distance, default 0.2) still absorbs
+ * anti-aliasing noise; what is gone is the budget of pixels allowed to move.
+ */
+const PIXEL_TOLERANCE = 0
+
+/**
  * The routes the migration touches, one screenshot each
  * (odd/tasks/shadcn-migration.md S3: "un smoke por ruta: 8 páginas, render + screenshot").
  */
@@ -112,7 +127,7 @@ for (const route of ROUTES) {
     await expect(page).toHaveScreenshot(`${route.name}.png`, {
       fullPage: true,
       animations: "disabled",
-      maxDiffPixelRatio: 0.01,
+      maxDiffPixelRatio: PIXEL_TOLERANCE,
     })
   })
 }
@@ -138,7 +153,7 @@ test.describe("interactive states", () => {
     await expect(page).toHaveScreenshot("topics-new-topic-form.png", {
       fullPage: true,
       animations: "disabled",
-      maxDiffPixelRatio: 0.01,
+      maxDiffPixelRatio: PIXEL_TOLERANCE,
     })
   })
 
@@ -152,7 +167,7 @@ test.describe("interactive states", () => {
     await expect(page).toHaveScreenshot("topics-sync-note-dialog.png", {
       fullPage: true,
       animations: "disabled",
-      maxDiffPixelRatio: 0.01,
+      maxDiffPixelRatio: PIXEL_TOLERANCE,
     })
   })
 
@@ -178,7 +193,7 @@ test.describe("interactive states", () => {
     await expect(page).toHaveScreenshot("topic-new-concept-form.png", {
       fullPage: true,
       animations: "disabled",
-      maxDiffPixelRatio: 0.01,
+      maxDiffPixelRatio: PIXEL_TOLERANCE,
     })
   })
 
@@ -195,7 +210,7 @@ test.describe("interactive states", () => {
     await expect(page).toHaveScreenshot("resources-capture-panel.png", {
       fullPage: true,
       animations: "disabled",
-      maxDiffPixelRatio: 0.01,
+      maxDiffPixelRatio: PIXEL_TOLERANCE,
     })
   })
 })
