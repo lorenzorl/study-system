@@ -164,3 +164,57 @@ server keeps working with no R2 configuration at all.
   not a tracked `.gitignore` edit — so the shared repository's status stays readable. Verified in
   the new worktree: `gofmt -l` clean, `go vet ./...` clean, `go build ./...` OK, the config
   package green, and the full suite green from the `master` baseline.
+- **L20** (evidence, RDD scope): the receipt-driven review candidate does not match this
+  change. `inspect` was called with `workspaceRoot` set to this worktree, because the session
+  cwd is the shared tree and the default would have targeted the wrong repository state. It
+  returned target `sha256:87aaa428…` over a `base-diff/workspace` projection with
+  `base-ref=d70d9a2c` — which is `origin/master` — and `committed-only=true`, covering **204
+  files, +7,799/−2,222 across 14 commits**. This feature's actual candidate is **3 files,
+  +479, 1 commit** (`db7067f`). The cause is repository state, not the tool: local `master` is
+  13 commits ahead of `origin/master` (the whole web-app feature, unpublished), so a projector
+  measured against the remote base absorbs that mainline into the candidate. **START was not
+  issued.** Relaying a consent envelope for a 204-file review would misrepresent what the human
+  is approving, and the contract already names the terminal stop this would earn
+  (`lens_context_budget_exceeded`). A second inconsistency was recorded rather than worked
+  around: the reminder named target `sha256:67277a2b…` and `inspect` returned
+  `sha256:87aaa428…`, two different mutation generations. Resolution belongs to the user —
+  publish `master` so the base advances, or review this feature once it does. Neither the base
+  ref nor the target identity was reconstructed by hand.
+- **L21** (evidence, coordination): session `01a17eb8` fast-forwarded `master` from `9b4373a` to
+  `14ca817` (six commits: Tailwind v4 plus the shadcn-vue primitives in `apps/web`, and a fix
+  to the FSD guard) with a ref-only update, so no checkout happened and this worktree was not
+  touched. Verified rather than assumed: `master` = `14ca817`, this branch = `db7067f`,
+  `master...feat/r2-durability` = 6 behind / 1 ahead, and the branch diff is still the same
+  three paths, disjoint from `apps/web/**`. No rebase and no merge was taken now: the branch
+  carries one commit, integration is not imminent, and rebasing would rewrite `db7067f` and
+  invalidate the hash recorded in T1 and L19 for no present gain. It also would not help L20 —
+  the review candidate is measured against `origin/master` (`d70d9a2c`), which a local `master`
+  advance does not move.
+- **L22** (evidence, RDD base — supersedes the resolution L20 proposed): session `01a17eb8`
+  reported a third path that neither L20 option covered. `START` accepts an explicit `baseRef`
+  plus `committedOnly: true` and scopes the candidate to it, instead of inheriting the
+  `origin/master` default: on their branch the default offered 231 files and the explicit base
+  offered 37, and the review reached `approved`. This feature's base is
+  `9b4373a69633b610a9f518721cfa81c7a6fd8151`, confirmed to equal `git merge-base HEAD master`, so
+  it is stable for the whole feature and does not move when `master` advances. Two field notes
+  from them are recorded because they cost them a failed attempt: an abbreviated SHA is rejected
+  as `base-ref-unresolvable`, and a `candidate-mismatch` traced to a retained untracked selection
+  from an older inspect is cleared by a fresh inspect plus `untrackedScope: "exclude"`. A failed
+  START creates no lineage and burns no authority, so a retry is safe. **Publishing `master` is
+  therefore not a prerequisite for review**, which is what L20 assumed; it remains a separate
+  delivery decision. L22 first concluded that the review should be taken "once, at delivery,
+  over the whole feature". **That conclusion was wrong and L23 corrects it.**
+- **L23** (evidence, RDD protocol — corrects L22): the contract is explicit that the candidate is
+  "a work-unit commit or a PR slice, never a TODO checkbox and never the accumulated feature
+  branch", so a single review over `9b4373a..HEAD` with all seven tasks inside is what the rule
+  forbids; an oversized candidate risks `lens_context_budget_exceeded`, a terminal stop that costs
+  the attempt. The correct rhythm is `assess` after each work-unit commit, with
+  `{baseRef: <parent sha>, committedOnly: true}`, because an assess on a clean, fully committed
+  tree otherwise answers `unassessable` with "the review assess candidate has no pending changes" —
+  the same base problem as L20. Assess is read-only: no lineage, no authority, no review state.
+  **T1's own result: `risk: medium`, `changedPaths: 3`, `changedLines: 479`, `reviewDue: false`,
+  `reviewDueReason: under_budget`, `candidate.consumed: false`, `outcome_source: unknown`, plan
+  `writerSelfVerification: true` / `independentVerifier: false`.** Disposition: **no START for
+  T1** — the review is not due, and the writer's own verification stands. The expectation that a
+  credential-touching unit would come back `reviewDue: true` did not hold for this one; it is
+  re-tested per unit rather than assumed, and T4 and T5 are the units where it is most likely.
