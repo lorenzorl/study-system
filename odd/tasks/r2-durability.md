@@ -53,7 +53,7 @@ server keeps working with no R2 configuration at all.
 | --- | --- | --- | --- |
 | T1 | S8, S12 | inline | this commit |
 | T2 | S7, S9 | worker | `5bf3c83`, `02e8050` |
-| T3 | S6, S10 | inline | pending |
+| T3 | S6, S10 | worker | `d1a756b` |
 | T4 | S2, S3, S5 | inline | pending |
 | T5 | S3, S10 | inline | pending |
 | T6 | S4, S8 | inline | pending |
@@ -266,3 +266,26 @@ server keeps working with no R2 configuration at all.
   the excess is mostly test code, and cutting further would split one struct's methods across
   commits, which makes review harder rather than easier. The split cost one `reset --mixed` and
   left the working tree byte-identical; full suite, `gofmt` and `vet` are green afterwards.
+- **L30** (evidence, T3): delegated to `gentle-ai-worker` with the surface narrowed to
+  `apps/go-middleware/internal/platform/backup/`, committed as `d1a756b` (295 production + 483 test
+  = 778 lines, about twice the slice target and mostly test code; splitting `Take` from `Validate`
+  would make review harder, not easier — recorded, not hidden). Four probes changed the code, and
+  each is the kind of thing a reviewer would otherwise have to take on trust:
+  (a) `VACUUM INTO` **refuses a non-empty destination but silently overwrites a zero-byte one**, so
+  delegating the existence check to SQLite would be a defect; `Take` refuses any existing path
+  itself. (b) `VACUUM INTO ?` **does** accept a bound parameter through this driver, so no path is
+  ever spliced into SQL text. (c) A `mode=ro` source handle can run it and still sees rows living
+  only in the WAL — but **`immutable=1` also "succeeds" while silently dropping those WAL rows**
+  (3 of 4 in the probe). That hazard is the single most dangerous finding of this task and is
+  recorded so nobody optimises it in later. (d) `PRAGMA integrity_check` answers `ok` for an empty
+  database and for a zero-byte file alike, so integrity alone cannot prove a snapshot is usable;
+  that is why `Validate` returns a `Report` with the table list and page count and the caller
+  asserts its own schema. RED was partly synthetic and the writer said so: with a compiling stub,
+  8 of 15 tests failed for the intended reasons and 7 passed vacuously, so those seven clauses were
+  proven by mutation (four mutations, each repaired and sha256-verified). The WAL acceptance test
+  also pins the counterexample: a naive `.db` copy of the same live database opens cleanly and
+  reads zero rows. Parent verification, independent of the report: only the new directory appears
+  in `git status`, `go.mod`/`go.sum` unchanged, package tests pass, **full suite exits 0**,
+  `gofmt` and `vet` clean. One branch is declared untested rather than faked: removing the file
+  when `VACUUM` succeeded but validation failed is unreachable with real output and shares the
+  helper that mutation M2 proves load-bearing.
