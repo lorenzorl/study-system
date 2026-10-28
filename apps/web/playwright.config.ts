@@ -12,6 +12,24 @@ import { defineConfig } from "@playwright/test"
  * other for reasons that have nothing to do with the code. Each platform keeps
  * its own baselines; see the note in ARCHITECTURE §3.2 about the Linux set.
  */
+
+/**
+ * Where the preview server listens: `[host, port]`, declared once.
+ *
+ * Both sides of the readiness check have to agree, and they have to agree on
+ * IPv4. The preview server defaults to the hostname `localhost`, which resolves
+ * to the IPv6 loopback first, so a probe against the IPv4 address finds nothing
+ * listening and the suite waits out its entire timeout instead of failing. The
+ * address is therefore pinned rather than inherited.
+ *
+ * Host and port are separate values composed into a URL here, so the two places
+ * that need the address cannot drift apart — and the port is a plain number, not
+ * a licence plate buried in two string literals.
+ */
+const HOST = "127.0.0.1"
+const PORT = 4173
+const BASE_URL = `http://${HOST}:${PORT}`
+
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: true,
@@ -20,21 +38,17 @@ export default defineConfig({
   reporter: process.env.CI ? "github" : "list",
   snapshotPathTemplate: "{testDir}/__screenshots__/{testFileName}/{arg}-{platform}{ext}",
   use: {
-    baseURL: "http://127.0.0.1:4173",
+    baseURL: BASE_URL,
     browserName: "chromium",
     viewport: { width: 1280, height: 800 },
     trace: "on-first-retry",
   },
   webServer: {
-    // Build then serve, so the smoke exercises the same assets the Go binary serves.
-    //
-    // `--host 127.0.0.1` is not cosmetic: `vite preview` defaults to `localhost`,
-    // which on this machine binds **IPv6 loopback only** (`[::1]:4173`, verified
-    // with `lsof`). A readiness check against `127.0.0.1` then connects to nothing
-    // and the suite dies after the full timeout. Pinning both sides to IPv4 is
-    // deterministic on every platform.
-    command: "pnpm build && pnpm preview --host 127.0.0.1 --port 4173 --strictPort",
-    url: "http://127.0.0.1:4173",
+    // Build then serve, so the smoke exercises the same assets the Go binary
+    // serves. `--strictPort` turns a busy port into a failure instead of a
+    // silent second server on a different one.
+    command: `pnpm build && pnpm preview --host ${HOST} --port ${PORT} --strictPort`,
+    url: BASE_URL,
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,
   },
