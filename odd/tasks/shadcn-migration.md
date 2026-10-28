@@ -345,3 +345,28 @@ before it), so the Writer rule's "2+ independent units" condition does not hold.
   between units, and none has looked at the branch as a whole.** The guarantees that
   do hold are the per-unit assessments, the 263-case unit suite (FSD guard included),
   the 13-case e2e net at pixel ratio 0, and typecheck.
+- **L22** (D1 closed, per L21's decision): the rule is one piece —
+  `shared/lib/loadIfEmpty.ts`, `createLoadIfEmpty({ isEmpty, load })` — not three
+  copies. It runs the loader at most once per empty episode, shares the in-flight
+  promise between callers, and **re-arms when the load settles**, so a failed load is
+  retried by the next mount instead of pinning the page to its error state. It lives in
+  `shared` and takes the store as an argument rather than importing it, which is what
+  keeps it testable without pinia. The three pages pass
+  `topics.length === 0 && !loading`, so the store's own flag stops a second instance
+  from duplicating a request; `retry` still bypasses the guard and is never suppressed.
+  Coverage is split honestly: four unit cases for the helper, and the **wiring cannot
+  be unit tested here** (vitest is SSR, `onMounted` never fires) — so it is proven by
+  the concept-form capture returning to a direct `page.goto("/topic/t1")`, the case
+  that used to time out on "Tema no encontrado.", and by three baselines regenerated
+  against real content: the topic page shows its concepts, the concept page shows the
+  two action rows that had never had pixel coverage, the feynman page shows the
+  textarea and its submit for the first time. `/study/review` did not move — it is
+  unreachable for a different reason than D2 recorded: the route carries no ids, so
+  nothing can resolve regardless of the store.
+  Three risks this unit surfaced, all in the backlog: `pages/flashcard-session` has the
+  same mount gap and was outside this unit's surfaces; both pages still paint "no
+  encontrado" for one frame before `onMounted` runs (moving the load into setup would
+  fix it but changes what the render tests can see); and `FeynmanPage` has no error UI
+  and no retry, so a failed load now leaves it silently on the not-found paragraph.
+  `assess` on this slice: `reviewDue: false`, medium, 11 paths / 229 lines.
+  Verified: 267/267 unit (263 + 4), typecheck 0, 13/13 e2e at ratio 0.

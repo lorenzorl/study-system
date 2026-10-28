@@ -174,7 +174,7 @@ is not a refactor, so it is written down here rather than only in the commit.
 
 ## 🔴 Open defects
 
-### D1 — `/topic/:id` cannot be opened cold: the topic page never loads the topics store
+### D1 (closed in `35d51f0`) — `/topic/:id` could not be opened cold: the pages never loaded the topics store
 
 `TopicPage.vue`'s `onMounted` only calls `topicSelection.selectTopic(props.topicId)`;
 it never calls `topicsStore.loadTopics()`. `currentTopic` is a lookup in that
@@ -195,9 +195,11 @@ Two consequences, the second worse than the first:
    only renders its error state is not a visual regression test"); it was never
    verified per route.
 
-**How to close:** load the store in `TopicPage` when it is empty (keeping the
-selection effect), regenerate `topic-darwin.png`, and once a cold visit mounts the
-page collapse the new-concept capture's navigation back to a direct `/topic/t1`.
+**Closed by** `35d51f0`: `shared/lib/loadIfEmpty.ts` (one rule, four unit cases,
+in-flight dedupe, re-arm on settle), wired into `TopicPage`, `ConceptPage` and
+`FeynmanPage`; `topic`, `concept` and `feynman` baselines regenerated against real
+content, and the concept-form capture went back to a direct `/topic/t1`. What it did
+**not** fix is recorded as D6.
 
 **Broadened by T8:** it is not only `TopicPage`. `ConceptPage` and `FeynmanPage`
 also never call `loadTopics()` (only their `retry` handler does), so a cold
@@ -282,6 +284,22 @@ no component uses is the one outcome that teaches nothing.
 padding, border and 44px floor although `shared/ui/input` exists; and `FlashcardCard`
 has no pixel coverage anywhere (backlog D2), so its migration is pinned only by a
 render test.
+
+### D6 — Three loose ends D1 left behind
+
+1. **`pages/flashcard-session` has the same mount gap.** Only its `retry` calls
+   `loadTopics()`, so a cold `/topic/:t/concept/:c/flashcards` cannot resolve. It was
+   outside D1's surfaces.
+2. **Both fixed pages paint "no encontrado" for one frame** before `onMounted` runs and
+   the store reports `loading`. Moving the load into setup would remove the flash, but
+   it changes what the SSR render tests can observe — a separate decision.
+3. **`FeynmanPage` has no error UI and no retry.** A failed load leaves it on the
+   not-found paragraph with nothing to press. That was unchanged behaviour, but D1
+   made the page reachable, so it is now observable.
+
+**Also worth knowing:** the re-arm semantics mean a permanently failing `/api/topics`
+refetches once per mount rather than once per session. Intentional (a dead end is worse
+than a retry), unit-pinned, and worth revisiting if the endpoint gets flaky.
 
 ## 🟡 Missing policy
 
