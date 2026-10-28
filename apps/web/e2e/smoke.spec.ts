@@ -116,3 +116,43 @@ for (const route of ROUTES) {
     })
   })
 }
+
+/**
+ * The interactive states.
+ *
+ * The route captures above show each page as it first loads, and most of what the
+ * primitive migration touches is behind a click: the new-topic form only exists
+ * while its panel is open. A migration whose screenshot was green because the
+ * component never rendered would be worse than no screenshot at all — this block
+ * is the fix for that, and it grows by one case per migration unit, so every unit
+ * is covered by the state it actually changes.
+ */
+test.describe("interactive states", () => {
+  test("renders the new-topic form, open", async ({ page }) => {
+    await page.goto("/topics")
+    await page.getByRole("button", { name: "Agregar tema" }).click()
+    await expect(page.getByPlaceholder(/Nombre del tema/)).toBeVisible()
+
+    expect(CONSOLE_ERRORS).toEqual([])
+
+    await expect(page).toHaveScreenshot("topics-new-topic-form.png", {
+      fullPage: true,
+      animations: "disabled",
+      maxDiffPixelRatio: 0.01,
+    })
+  })
+
+  test("renders the sync-note dialog, open", async ({ page }) => {
+    await page.goto("/topics")
+    await page.getByRole("button", { name: "Sincronizar nota" }).click()
+    await expect(page.getByRole("dialog")).toBeVisible()
+
+    expect(CONSOLE_ERRORS).toEqual([])
+
+    await expect(page).toHaveScreenshot("topics-sync-note-dialog.png", {
+      fullPage: true,
+      animations: "disabled",
+      maxDiffPixelRatio: 0.01,
+    })
+  })
+})

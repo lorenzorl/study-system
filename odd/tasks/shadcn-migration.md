@@ -30,10 +30,11 @@ before it), so the Writer rule's "2+ independent units" condition does not hold.
 
 | ID | Spec | What | Commit |
 | --- | --- | --- | --- |
-| T1 | S3 | Playwright harness: config, `/api/**` stubs, screenshot smoke over the routes, CI job | this commit |
-| T2 | S1 | Add the missing primitives (`textarea`, `tabs`, `badge`) via the generator + the `cn` fix | this commit |
-| T3 | S4 | Rewrite the 6 BEM assertions against accessibility (`role`/text), before any style moves | this commit |
-| T4 | S1 | Forms → `input`/`label`/`textarea`/`button`: `create-topic`, `create-concept`, `sync-note`, `capture-material` | |
+| T1 | S3 | Playwright harness: config, `/api/**` stubs, screenshot smoke over the routes, CI job | 063f910 |
+| T2 | S1 | Add the missing primitives (`textarea`, `tabs`, `badge`) via the generator + the `cn` fix | f688a34 |
+| T3 | S4 | Rewrite the 6 BEM assertions against accessibility (`role`/text), before any style moves | 3401a83 |
+| T4a | S1 | Pilot: `create-topic` migrated, plus the CSS layer fix and the interactive-state captures it exposed | 7fececf |
+| T4b | S1 | Forms → `input`/`label`/`textarea`/`button`: `create-concept`, `sync-note`, `capture-material` | |
 | T5 | S1 | `widgets/review-modal` → `dialog` (reka-ui focus trap, Escape, restore focus) | |
 | T6 | S1 | `pages/flashcard-session` (15 buttons, 241 style lines) | |
 | T7 | S1 | Entity cards (4 files) + `pages/resources` (badges) | |
@@ -102,3 +103,28 @@ before it), so the Writer rule's "2+ independent units" condition does not hold.
   that returns only the opening tag is exactly why the tab assertion failed once.
   Verified: suite 200/200, and the visual smoke still 8/8 — the baselines tolerate
   attribute-only changes, which is what makes them usable during the migration.
+- **L11** (defect, T4a — caught by the net, invisible to 200 green tests): the first
+  migrated form rendered with a **native black border** on `variant="outline"`, its
+  label jammed against the edge, and the browser's own font. Three causes stacked:
+  1. Skipping preflight leaves `<button>`/`<input>` with the UA frame, font and padding.
+  2. `index.html` carried `* { margin: 0; padding: 0 }` **unlayered**, and unlayered
+     CSS outranks every layer — so `px-4` was present in the bundle and had no
+     effect. That single line silently defeats all of Tailwind.
+  3. Nothing defined a default `border-color` (preflight does), so Tailwind's
+     `border` — width and style only — fell back to `currentColor`: black.
+- **L12** (fix, architectural): the universal reset moved from `index.html` into
+  `@layer base` in `src/app/styles.css`, which still beats the browser's defaults
+  while letting utilities and scoped component styles override it; the base layer
+  also gained a default `border-color` from the palette and the form-control
+  normalisation. Full preflight is still not imported, so `h1`-`h6` and lists stay
+  untouched. Verified two ways: the DOM reports `padding: 8px 16px`, `border: 1px
+  solid rgb(221,221,221)` and a `85.39 x 36` box, and all eight pre-existing route
+  baselines still match — the reset did not move anything that was already there.
+- **L13** (defect, T1 blind spot): the eight route captures could not see the
+  migrated component at all, because the new-topic form only exists while its panel
+  is open — the smoke was green and proved nothing. Added `interactive states`, and
+  the rule that **each migration unit adds the capture of the state it changes**.
+  Also learned: re-reading the same screenshot path three times showed a **cached
+  image**, and the ground truth came from `getComputedStyle` and `boundingBox()`, not
+  from the picture. 10/10 pass without `--update-snapshots`; 200 unit tests;
+  `CreateTopicForm` went from 93 to 38 style lines.

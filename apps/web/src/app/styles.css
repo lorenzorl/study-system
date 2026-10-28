@@ -93,11 +93,54 @@
 }
 
 /*
- * One base rule, for the seam preflight would have covered: a focus ring that
- * follows the palette instead of the browser's default outline. Scoped to
- * `:focus-visible` so a mouse click stays silent.
+ * The base layer, and every rule in it is load-bearing.
+ *
+ * The `shared/ui` primitives are built on two assumptions that preflight normally
+ * satisfies, and both failures were measured on the first migrated form while
+ * 200 unit tests stayed green:
+ *
+ * 1. Form controls are normalised. Without it a `<button>` keeps the browser's
+ *    2px outset frame, its own font and its own padding.
+ * 2. `border-color` has a default. Tailwind's `border` utility sets only width and
+ *    style, so with no default the colour falls back to `currentColor` and an
+ *    `outline` button renders inside a native-looking black frame.
+ *
+ * This is the *subset* of preflight the primitives need. Full preflight also
+ * flattens `h1`-`h6` and strips list markers, which would re-style the 24
+ * components whose `<style>` blocks never re-declare those.
+ *
+ * The reset has to live here, in a layer, and not in `index.html`: unlayered CSS
+ * outranks every layer, so a `* { padding: 0 }` up there defeats every Tailwind
+ * utility (`px-4` was in the bundle and had no effect). Layered, it still beats
+ * the browser's defaults, while utilities and any component's own scoped styles
+ * — unlayered — can override it.
  */
 @layer base {
+  *,
+  ::before,
+  ::after,
+  ::backdrop,
+  ::file-selector-button {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    /* Width 0, but a colour that follows the palette, so `border` has a default. */
+    border: 0 solid var(--background-modifier-border);
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+    color: inherit;
+    background-color: transparent;
+  }
+
+  /*
+   * A focus ring that follows the palette instead of the browser's default
+   * outline, scoped to `:focus-visible` so a mouse click stays silent.
+   */
   :focus-visible {
     outline: 2px solid var(--ring);
     outline-offset: 2px;
