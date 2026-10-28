@@ -1,4 +1,20 @@
 <template>
+  <!--
+    Every plain action here is the `shared/ui` button: it owns the border, radius,
+    background, padding, focus ring, hover and disabled state.
+
+    `variant="outline"` is the secondary action (retry, back, leave, the two
+    navigation arrows) and the default variant is the accent-filled primary one
+    ("Repasar de nuevo", "Estudiar de nuevo"). The four grade buttons stay
+    hand-rolled: their identity is one colour per grade, no variant expresses it,
+    and those colours already live in this file's CSS — moving them into utility
+    classes would put new colour values in a component, which the palette rule in
+    `index.html` forbids. The `review-modal` grade row was left the same way.
+
+    `min-h-[44px]` is the touch target this page has always had. It is a class and
+    not a rule because the primitives are sized by utilities; a migration does not
+    shrink a 44px target to the primitive's default 36px.
+  -->
   <div class="flashcard-session" ref="sessionEl">
     <!-- ═══ Due-Review Mode (FSRS) ═══ -->
     <template v-if="reviewIsSessionActive">
@@ -10,13 +26,13 @@
       <!-- Review error -->
       <div v-else-if="reviewError" class="flashcard-session__state error-state">
         <p>{{ reviewError }}</p>
-        <button class="flashcard-session__retry-btn" @click="retryReview">Reintentar</button>
+        <Button variant="outline" class="min-h-[44px]" @click="retryReview">Reintentar</Button>
       </div>
 
       <!-- No review cards -->
       <div v-else-if="!reviewCard" class="flashcard-session__empty">
         <p>No hay tarjetas para repasar.</p>
-        <button class="flashcard-session__back-btn" @click="goBackToDue">← Volver</button>
+        <Button variant="outline" class="min-h-[44px]" @click="goBackToDue">← Volver</Button>
       </div>
 
       <!-- Review completion -->
@@ -27,12 +43,12 @@
           Repasaste {{ reviewCompletedCount }} de {{ reviewTotalCount }} tarjeta{{ reviewTotalCount === 1 ? '' : 's' }}.
         </p>
         <div class="flashcard-session__complete-actions">
-          <button class="flashcard-session__btn" @click="restartReview">
+          <Button class="min-h-[44px]" @click="restartReview">
             Repasar de nuevo
-          </button>
-          <button class="flashcard-session__btn flashcard-session__btn--secondary" @click="goBackToDue">
+          </Button>
+          <Button variant="outline" class="min-h-[44px]" @click="goBackToDue">
             Volver al Panel
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -99,29 +115,23 @@
       <!-- Error -->
       <div v-else-if="error" class="flashcard-session__state error-state">
         <p>{{ error }}</p>
-        <button class="flashcard-session__retry-btn" @click="retry">Reintentar</button>
+        <Button variant="outline" class="min-h-[44px]" @click="retry">Reintentar</Button>
       </div>
 
       <!-- No concept found -->
       <div v-else-if="!concept" class="flashcard-session__empty">
         <p>Concepto no encontrado.</p>
-        <button
-          class="flashcard-session__back-btn"
-          @click="goBackToConcept"
-        >
+        <Button variant="outline" class="min-h-[44px]" @click="goBackToConcept">
           ← Volver
-        </button>
+        </Button>
       </div>
 
       <!-- No flashcards for this concept -->
       <div v-else-if="flashcards.length === 0" class="flashcard-session__empty">
         <p>No hay tarjetas para estudiar. Sincronizá la nota primero.</p>
-        <button
-          class="flashcard-session__back-btn"
-          @click="goBackToConcept"
-        >
+        <Button variant="outline" class="min-h-[44px]" @click="goBackToConcept">
           ← Volver al Panel
-        </button>
+        </Button>
       </div>
 
       <!-- Completion state -->
@@ -133,12 +143,12 @@
           de {{ concept.title }}.
         </p>
         <div class="flashcard-session__complete-actions">
-          <button class="flashcard-session__btn" @click="restartSession">
+          <Button class="min-h-[44px]" @click="restartSession">
             Estudiar de nuevo
-          </button>
-          <button class="flashcard-session__btn flashcard-session__btn--secondary" @click="goBackToConcept">
+          </Button>
+          <Button variant="outline" class="min-h-[44px]" @click="goBackToConcept">
             Volver al Panel
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -151,21 +161,23 @@
         <FlashcardCard :card="flashcards[currentIndex]" />
 
         <div class="flashcard-session__nav">
-          <button
-            class="flashcard-session__nav-btn"
+          <Button
+            variant="outline"
+            class="min-h-[44px]"
             @click="prevCard"
             :disabled="currentIndex === 0"
-            :aria-label="'Tarjeta anterior'"
+            aria-label="Tarjeta anterior"
           >
             ← Anterior
-          </button>
-          <button
-            class="flashcard-session__nav-btn"
+          </Button>
+          <Button
+            variant="outline"
+            class="min-h-[44px]"
             @click="nextCard"
-            :aria-label="'Siguiente tarjeta'"
+            aria-label="Siguiente tarjeta"
           >
             {{ currentIndex === flashcards.length - 1 ? 'Finalizar →' : 'Siguiente →' }}
-          </button>
+          </Button>
         </div>
 
         <div class="flashcard-session__keys" v-if="!hasTouch">
@@ -181,6 +193,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from "vue"
 import { useRouter } from "vue-router"
 import { storeToRefs } from "pinia"
 import { useSwipe } from "@/shared/lib"
+import { Button } from "@/shared/ui/button"
 import { FlashcardCard } from "@/entities/flashcard"
 import { useTopicsStore } from "@/entities/topic"
 import { useTopicSelection } from "@/features/select-topic"
@@ -310,6 +323,18 @@ function goBackToDue() {
 </script>
 
 <style scoped>
+/*
+ * The plain actions are `shared/ui` primitives now: their border, radius,
+ * background, padding, hover, focus ring and disabled state come from the design
+ * tokens, not from this file. What stays is what the primitives do not own — the
+ * session's column and grids, the card area, the completion panel, the spinner and
+ * the key hints.
+ *
+ * The grade buttons keep their own rules on purpose. Their identity is one colour
+ * per grade (`--text-error`, plus three that predate the palette), which no button
+ * variant expresses, and the primitive would add a hover background they never
+ * had. `review-modal`'s grade row was left hand-rolled for the same reason.
+ */
 .flashcard-session {
   display: flex;
   flex-direction: column;
@@ -397,28 +422,6 @@ function goBackToDue() {
   justify-content: center;
 }
 
-.flashcard-session__nav-btn {
-  min-height: 44px;
-  min-width: 44px;
-  padding: 0.5rem 1.25rem;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
-  background: var(--background-secondary);
-  color: var(--text-normal);
-  cursor: pointer;
-  font-size: 0.85rem;
-  transition: background-color 0.15s ease;
-}
-
-.flashcard-session__nav-btn:hover:not(:disabled) {
-  background: var(--background-modifier-hover);
-}
-
-.flashcard-session__nav-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
 .flashcard-session__keys {
   text-align: center;
 }
@@ -467,29 +470,6 @@ function goBackToDue() {
   margin-top: 0.5rem;
 }
 
-.flashcard-session__btn {
-  min-height: 44px;
-  padding: 0.5rem 1rem;
-  border: none;
-  border-radius: 6px;
-  background: var(--interactive-accent);
-  color: var(--text-on-accent, #fff);
-  cursor: pointer;
-  font-size: 0.85rem;
-  font-weight: 500;
-  transition: opacity 0.15s ease;
-}
-
-.flashcard-session__btn:hover {
-  opacity: 0.9;
-}
-
-.flashcard-session__btn--secondary {
-  background: var(--background-secondary);
-  color: var(--text-normal);
-  border: 1px solid var(--background-modifier-border);
-}
-
 /* ── Empty / state ───────────────────────────────────────────────────────── */
 
 .flashcard-session__empty {
@@ -505,25 +485,6 @@ function goBackToDue() {
 .flashcard-session__state {
   padding: 2rem 1rem;
   text-align: center;
-}
-
-.flashcard-session__retry-btn,
-.flashcard-session__back-btn {
-  min-height: 44px;
-  min-width: 44px;
-  padding: 0.5rem 1rem;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
-  background: var(--background-secondary);
-  color: var(--text-normal);
-  cursor: pointer;
-  font-size: 0.85rem;
-  transition: background-color 0.15s ease;
-}
-
-.flashcard-session__retry-btn:hover,
-.flashcard-session__back-btn:hover {
-  background: var(--background-modifier-hover);
 }
 
 .spinner {
