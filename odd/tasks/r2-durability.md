@@ -52,7 +52,7 @@ server keeps working with no R2 configuration at all.
 | ID | Spec | Route | Commit |
 | --- | --- | --- | --- |
 | T1 | S8, S12 | inline | this commit |
-| T2 | S7, S9 | inline | pending |
+| T2 | S7, S9 | worker | `5bf3c83`, `02e8050` |
 | T3 | S6, S10 | inline | pending |
 | T4 | S2, S3, S5 | inline | pending |
 | T5 | S3, S10 | inline | pending |
@@ -237,3 +237,32 @@ server keeps working with no R2 configuration at all.
   the projection because review is not a task — it is a gate applied inside each work unit
   (L23). Keeping it as a task would have restated the L22 mistake in a different place. The gate
   now lives in T7's definition and in each unit's closure note.
+- **L27** (evidence, T2): delegated to `gentle-ai-worker` against the narrow surface
+  `apps/go-middleware/internal/platform/r2/` and committed as `c7802d3`. The writer reported
+  honestly that RED could not be observed, because the package did not exist and there was no
+  compilable pre-implementation state; it substituted four mutation checks against the finished
+  tree, each failing exactly one intended test, with the files restored and sha256-verified
+  afterwards. That is an applicability exception, not invented lifecycle evidence. It also found
+  three real defects during GREEN rather than accommodating them: the double did not expose Host
+  as a header (test wrong), `List` addressed `/bucket/prefix` instead of `/bucket` (implementation
+  wrong — the prefix is a query parameter there), and `fmt` `%+v` of `*Client` printed the secret
+  because fmt cannot call `String` on an unexported field (a real S9 leak, fixed with
+  `Client.String`). Parent verification was done independently of the report: only the new
+  directory appears in `git status`, `go.mod` and `go.sum` are unchanged, the package tests pass,
+  and the **full suite exits 0** with `gofmt` and `vet` clean. Both signing vectors pass
+  unmodified. Its own closure note: the authenticated round trip against the real bucket is not
+  proven, and T4/T5 need that rehearsal.
+- **L28** (risk surfaced, review workload): T2's candidate measures **4 paths / 1419 changed
+  lines**, roughly 3.5 times the ~400-line work-unit slice this workflow asks for. `assess` still
+  returned `under_budget`, so the tool does not object; the objection is the human reviewer's, and
+  it is recorded rather than hidden. Noted here so the choice is visible before T3 adds to the
+  branch. The user chose to split it.
+- **L29** (evidence, split executed): `c7802d3` was replaced by two commits, both verified.
+  `5bf3c83` holds the signer (`sign.go` 246 + `sign_test.go` 117 = **363 lines**, under the ~400
+  slice) and was proven self-contained rather than assumed: with the client files stashed away,
+  `go build` and the package tests still passed, so the signer is reviewable and runnable on its
+  own against the pinned vectors. `02e8050` holds the transport (`r2.go` 568 + `client_test.go`
+  488 = 1056 lines). That second slice is still above the slice target and is recorded as such:
+  the excess is mostly test code, and cutting further would split one struct's methods across
+  commits, which makes review harder rather than easier. The split cost one `reset --mixed` and
+  left the working tree byte-identical; full suite, `gofmt` and `vet` are green afterwards.
