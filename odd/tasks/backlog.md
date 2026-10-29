@@ -172,6 +172,135 @@ is not a refactor, so it is written down here rather than only in the commit.
 
 ---
 
+## 🔴 Open defects
+
+### D1 (closed in `35d51f0`) — `/topic/:id` could not be opened cold: the pages never loaded the topics store
+
+`TopicPage.vue`'s `onMounted` only calls `topicSelection.selectTopic(props.topicId)`;
+it never calls `topicsStore.loadTopics()`. `currentTopic` is a lookup in that
+store, so a direct visit — deep link, reload, bookmark — renders
+"Tema no encontrado." The page is reachable only by warming the store first, for
+example `/topics` → topic card.
+
+Found by T4b, which could not click "Agregar concepto" on a cold `/topic/t1`: the
+Playwright failure snapshot showed only the paragraph "Tema no encontrado." and a
+`← Volver` button.
+
+Two consequences, the second worse than the first:
+
+1. Deep links and reloads to a topic are broken.
+2. The committed `topic-darwin.png` route baseline is a capture of that error
+   state, so the visual net's route loop gives false confidence about the topic
+   page: it screenshots a failure and passes. L5 stated the rule ("a page that
+   only renders its error state is not a visual regression test"); it was never
+   verified per route.
+
+**Closed by** `35d51f0`: `shared/lib/loadIfEmpty.ts` (one rule, four unit cases,
+in-flight dedupe, re-arm on settle), wired into `TopicPage`, `ConceptPage` and
+`FeynmanPage`; `topic`, `concept` and `feynman` baselines regenerated against real
+content, and the concept-form capture went back to a direct `/topic/t1`. What it did
+**not** fix is recorded as D6.
+
+**Broadened by T8:** it is not only `TopicPage`. `ConceptPage` and `FeynmanPage`
+also never call `loadTopics()` (only their `retry` handler does), so a cold
+`/topic/:t/concept/:c` or `/topic/:t/concept/:c/feynman` renders "Concepto no
+encontrado." too. With D2's `/study/review`, **four of the eight route baselines
+photograph a failure** — `topic`, `concept`, `feynman`, `review` — so the net covers
+four real pages out of eight, and the concept action rows and the Feynman submit have
+no pixel coverage at all. Fixing this is the same one change per page (load the store
+when it is empty), then four baselines regenerated against real content.
+
+### D2 — The review modal has no reachable route, so the flashcards flow cannot be used
+
+`ReviewModal` is mounted only by `ResourcesPage`, and neither of its two entry
+paths can fire:
+
+- `continueResource` is hardcoded `null`, so the resume ("continuar") action is
+  unreachable.
+- `toMaterialResources` maps every API resource to kind `material`, so
+  `openResource`'s `flashcards` branch never runs.
+
+Consequence for the visual net: `/study/review` (`review-darwin.png`) is a capture
+of "Concepto no encontrado." — another error-state baseline, the same class as D1's
+`topic-darwin.png`. Regenerating it can never show the modal, because the route
+never mounts one.
+
+Found by T5, which migrated the modal to the `dialog` primitive and could verify it
+only through a manual browser mount (dynamic import against the dev server), not
+through the app's own navigation.
+
+**How to close:** give the review flow a real entry (the continue/resume decision is
+the open one — see the resources launcher), then add one `interactive states`
+capture for the open modal and regenerate `review-darwin.png`.
+
+### D3 — The grade row's colours bypass the palette, and the net cannot see it
+
+`FlashcardSessionPage` hardcodes three colours for its grade buttons — `#e67e22`
+(Difícil), `#27ae60` (Bien), `#2980b9` (Fácil) — instead of taking them from the
+palette `index.html` owns, which is what S4 requires. It is also the reason that row
+could not migrate to `Button`: no variant expresses four distinct fills without
+putting colour values into utilities, so T6 left those four buttons hand-rolled
+while migrating the other eleven.
+
+Two consequences worth naming:
+
+- The `prefers-color-scheme: dark` block in `index.html` cannot retune those three
+  colours: they are literals, not palette entries.
+- Nothing in the visual net sees that row, nor the concept-mode session:
+  `answerRevealed`/`showFeedback` live inside `useReviewSession`, the flip is a
+  click, and no smoke fixture populates the flashcard cache, so
+  `/topic/:t/concept/:c/flashcards` renders an empty state. A regression in the
+  controls T6 *did* migrate there would pass every gate.
+
+**How to close:** add the three grade colours to the palette in `index.html` and its
+dark block, then migrate the row against those tokens (or keep it hand-rolled and
+add an `interactive states` capture of a revealed card, which is the cheaper half).
+
+**Also here:** `ReviewModal.render.test.ts` still asserts `toContain("disabled")` on
+its own hand-rolled grade buttons — the L16 trap, harmless only while that row stays
+hand-rolled, silently wrong the day it migrates.
+
+### D4 — Two token aliases are literal colours, and the migration made them load-bearing
+
+`src/app/styles.css` declares `--primary-foreground: #fff` and
+`--destructive-foreground: #fff` as literals, while ARCHITECTURE §3.1 says those
+tokens are "references onto those variables, never new values". Until T7 that was
+cosmetic; now every migrated primary button takes its text colour from
+`--primary-foreground`, so a `prefers-color-scheme: dark` flip renders white text on
+the accent instead of `--background-primary`.
+
+**How to close:** point both at palette entries from `index.html` (the light and dark
+blocks), then re-read the `due-cards` and `resources` baselines.
+
+### D5 — `shared/ui/card` still has no consumer
+
+The four entity cards cannot use it (the card *is* the button — see L19), and
+`pages/resources` renders its own card frame. The primitive set therefore ships a
+`card` nobody calls. The honest options are to give it a consumer in T8 (where the
+launcher's cards keep the click target inward) or to delete it; shipping a primitive
+no component uses is the one outcome that teaches nothing.
+
+**Also here:** `pages/resources` still hand-rolls its search field with its own
+padding, border and 44px floor although `shared/ui/input` exists; and `FlashcardCard`
+has no pixel coverage anywhere (backlog D2), so its migration is pinned only by a
+render test.
+
+### D6 — Three loose ends D1 left behind
+
+1. **`pages/flashcard-session` has the same mount gap.** Only its `retry` calls
+   `loadTopics()`, so a cold `/topic/:t/concept/:c/flashcards` cannot resolve. It was
+   outside D1's surfaces.
+2. **Both fixed pages paint "no encontrado" for one frame** before `onMounted` runs and
+   the store reports `loading`. Moving the load into setup would remove the flash, but
+   it changes what the SSR render tests can observe — a separate decision.
+3. **`FeynmanPage` has no error UI and no retry.** A failed load leaves it on the
+   not-found paragraph with nothing to press. That was unchanged behaviour, but D1
+   made the page reachable, so it is now observable.
+
+**Also worth knowing:** the re-arm semantics mean a permanently failing `/api/topics`
+refetches once per mount rather than once per session. Intentional (a dead end is worse
+than a retry), unit-pinned, and worth revisiting if the endpoint gets flaky.
+
 ## 🟡 Missing policy
 
 ### P1 — Nothing prunes stored artifacts

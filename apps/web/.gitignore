@@ -1,0 +1,8 @@
+node_modules
+dist
+*.local
+
+# Playwright: the report and the run artifacts are disposable.
+# `e2e/__screenshots__/` is NOT ignored — those are the committed baselines.
+playwright-report
+test-results

@@ -1,0 +1,148 @@
+/*
+ * Tailwind entry and the design-token bridge.
+ *
+ * Two palettes meet here and only one of them owns colour. The app's palette is
+ * the `:root` block in `index.html` (`--text-normal`, `--background-primary`,
+ * `--interactive-accent`, …) — "the only place the palette is defined; a page
+ * never hard-codes a colour" (ARCHITECTURE.md, `index.html`). shadcn's tokens
+ * (`--background`, `--foreground`, `--primary`, …) are *aliases onto those
+ * variables*, never new values, so a `bg-background` primitive and a page using
+ * `var(--background-primary)` cannot disagree, and the dark-mode block in
+ * `index.html` keeps working for both without a second source of truth.
+ *
+ * Preflight is deliberately NOT imported. `index.html` already owns the
+ * document reset (`* { margin: 0; padding: 0; box-sizing: border-box }`), and
+ * preflight would additionally flatten `h1`-`h6` to `font-size: inherit` and
+ * strip list markers — re-styling the 24 existing components, whose `<style>`
+ * blocks never re-declare those. `theme.css` + `utilities.css` are the two
+ * pieces the primitives need: the token namespace and the utility generator.
+ */
+
+@layer theme, base, components, utilities;
+
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+@import "tw-animate-css";
+
+/*
+ * The app has no `.dark` class: `index.html` flips the palette under
+ * `prefers-color-scheme: dark`. Binding the variant to the same condition keeps
+ * a `dark:` utility honest instead of inert.
+ */
+@custom-variant dark (@media (prefers-color-scheme: dark));
+
+:root {
+  --radius: 0.5rem;
+
+  /* shadcn semantic tokens -> the app's palette. Refs, not literals. */
+  --background: var(--background-primary);
+  --foreground: var(--text-normal);
+  --card: var(--background-primary);
+  --card-foreground: var(--text-normal);
+  --popover: var(--background-primary);
+  --popover-foreground: var(--text-normal);
+  --primary: var(--interactive-accent);
+  --primary-foreground: #fff;
+  --secondary: var(--background-secondary);
+  --secondary-foreground: var(--text-normal);
+  --muted: var(--background-secondary);
+  --muted-foreground: var(--text-muted);
+  --accent: var(--background-modifier-hover);
+  --accent-foreground: var(--text-normal);
+  --destructive: var(--text-error);
+  --destructive-foreground: #fff;
+  --border: var(--background-modifier-border);
+  --input: var(--background-modifier-border);
+  --ring: var(--interactive-accent);
+}
+
+/*
+ * `inline` is what makes the aliases work: Tailwind emits
+ * `background-color: var(--background)` rather than freezing the value at build
+ * time, so the indirection to the `index.html` palette survives — including the
+ * dark-mode flip. Opacity modifiers (`bg-background/50`) still work, because v4
+ * resolves them with `color-mix()`.
+ */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --font-sans: var(--font-text);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+/*
+ * The base layer, and every rule in it is load-bearing.
+ *
+ * The `shared/ui` primitives are built on two assumptions that preflight normally
+ * satisfies, and both failures were measured on the first migrated form while
+ * 200 unit tests stayed green:
+ *
+ * 1. Form controls are normalised. Without it a `<button>` keeps the browser's
+ *    2px outset frame, its own font and its own padding.
+ * 2. `border-color` has a default. Tailwind's `border` utility sets only width and
+ *    style, so with no default the colour falls back to `currentColor` and an
+ *    `outline` button renders inside a native-looking black frame.
+ *
+ * This is the *subset* of preflight the primitives need. Full preflight also
+ * flattens `h1`-`h6` and strips list markers, which would re-style the 24
+ * components whose `<style>` blocks never re-declare those.
+ *
+ * The reset has to live here, in a layer, and not in `index.html`: unlayered CSS
+ * outranks every layer, so a `* { padding: 0 }` up there defeats every Tailwind
+ * utility (`px-4` was in the bundle and had no effect). Layered, it still beats
+ * the browser's defaults, while utilities and any component's own scoped styles
+ * — unlayered — can override it.
+ */
+@layer base {
+  *,
+  ::before,
+  ::after,
+  ::backdrop,
+  ::file-selector-button {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    /* Width 0, but a colour that follows the palette, so `border` has a default. */
+    border: 0 solid var(--background-modifier-border);
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+    color: inherit;
+    background-color: transparent;
+  }
+
+  /*
+   * A focus ring that follows the palette instead of the browser's default
+   * outline, scoped to `:focus-visible` so a mouse click stays silent.
+   */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}

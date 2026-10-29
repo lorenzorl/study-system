@@ -23,6 +23,7 @@ import (
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/platform/storage"
 	ragapp "github.com/lorenzorangel/study-system/apps/go-middleware/internal/rag/app"
 	raghttp "github.com/lorenzorangel/study-system/apps/go-middleware/internal/rag/http"
+	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/server/spa"
 	studyhttp "github.com/lorenzorangel/study-system/apps/go-middleware/internal/study/http"
 )
 
@@ -122,16 +123,35 @@ func Run(ctx context.Context, cfg *config.Config, port int) error {
 		study.SubmitReview,
 	)
 
+	// The pasted-text path needs no key to accept material: it indexes always and
+	// embeds only when a client exists (composition.TextIngest says why). The URL
+	// route below is handed this very use case, so a paste and a download are
+	// ingested by one piece of code.
+	textIngest, err := rag.TextIngest(clients, cfg.EmbeddingModel, store)
+	if err != nil {
+		return fmt.Errorf("build the pasted-text stage: %w", err)
+	}
+
 	ragRoutes := raghttp.NewRouter(
 		searchUC,
 		raghttp.NewUploadDocumentHandler(store, rag.DocumentRepo(), submitter, clients.Embedding != nil),
 		raghttp.NewDocumentStatusHandler(statusUC),
 		raghttp.NewDocumentsHandler(rag.ListDocuments()),
+		raghttp.NewIngestTextHandler(textIngest, cfg.MaxUploadBytes),
+		// NewIngestURLHandler installs the production address rule itself; there is
+		// no argument here that could relax it. Refusing loopback, private and
+		// link-local targets is the only thing standing between this endpoint and a
+		// proxy into the machine the server runs on, so an operator must not be
+		// able to turn it off either — hence no configuration knob.
+		raghttp.NewIngestURLHandler(textIngest, cfg.MaxUploadBytes),
 	)
 
 	rootMux := http.NewServeMux()
 	rootMux.Handle("/api/rag/", ragRoutes)
-	rootMux.Handle("/", studyRoutes)
+	// The study context keeps its routes under `/api/`; the app itself is mounted
+	// at the root and owns every other path, client routes included.
+	rootMux.Handle("/api/", studyRoutes)
+	rootMux.Handle("/", spa.New(spa.App))
 
 	server := &http.Server{
 		Addr:    ":" + strconv.Itoa(port),
@@ -140,7 +160,7 @@ func Run(ctx context.Context, cfg *config.Config, port int) error {
 
 	serveErr := make(chan error, 1)
 	go func() {
-		log.Printf("server listening on :%d (cors origins: %d)", port, len(cfg.CORSAllowedOrigins))
+		log.Printf("server listening on :%d (cors origins: %d, web app embedded)", port, len(cfg.CORSAllowedOrigins))
 		serveErr <- server.ListenAndServe()
 	}()
 
