@@ -38,11 +38,14 @@
         }
       }
 
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      }
+      /*
+       * The universal reset lives in `src/app/styles.css` inside `@layer base`,
+       * not here. Unlayered CSS outranks every layer, so a `* { padding: 0 }`
+       * written here silently defeats every Tailwind utility — `px-4` was in the
+       * bundle and had no effect, which is how the first migrated button ended up
+       * with its label jammed against the edge. The palette stays here: this file
+       * is still the only place a colour value is written.
+       */
 
       html,
       body,
@@ -53,8 +56,8 @@
         color: var(--text-normal);
       }
     </style>
-    <script type="module" crossorigin src="/assets/index-BFx84dYp.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-DHD2tu2C.css">
+    <script type="module" crossorigin src="/assets/index-CqVPP4P2.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-Db2EiDxD.css">
   </head>
   <body>
     <div id="app"></div>
