@@ -481,8 +481,13 @@ func putBackAfter(action string, cause error, moved []movedFile) error {
 	return fmt.Errorf("%s: %w", action, cause)
 }
 
-// putBack returns every moved file to where it came from, in reverse order, so the
-// database itself is back before its sidecars are.
+// putBack returns every moved file to where it came from, walking the record in
+// reverse so the last file moved aside is the first one restored. Because moveAside
+// moves the database first and the sidecars after it, that means the sidecars come
+// back before the database does — the mirror of the move, which is what an
+// interrupted install needs. The order was traced by an independent verifier rather
+// than inferred: this comment previously claimed the opposite, so check it against
+// the loop below instead of trusting it.
 func putBack(moved []movedFile) error {
 	var failures []error
 

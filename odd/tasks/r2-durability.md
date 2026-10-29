@@ -55,7 +55,7 @@ server keeps working with no R2 configuration at all.
 | T2 | S7, S9 | worker | `5bf3c83`, `02e8050` |
 | T3 | S6, S10 | worker | `d1a756b` |
 | T4 | S2, S3, S5 | worker | `0a61914` |
-| T5 | S3, S10 | inline | pending |
+| T5 | S3, S10 | worker | `ff3ff02` |
 | T6 | S4, S8 | inline | pending |
 | T7 | S10, all | inline | pending |
 
@@ -313,3 +313,41 @@ server keeps working with no R2 configuration at all.
   is S8 behaving as designed. The writer also ran a differential check of every other command
   against `b71fe62` and found only the intended usage line plus the two now-known `backup`
   invocations, byte-identical everywhere else.
+- **L32** (evidence, T5 — the high-risk unit): committed as `ff3ff02`. `assess` was called with
+  `escalate: {item: 1}`, and the escalation did exactly what it promises: `risk` went medium →
+  `high`, `agentEscalation.applied: true`, and `plan.independentVerifier` flipped false → **true**,
+  while `reviewDue` stayed false (`under_budget`). So no native review, but an independent verifier
+  ran — the one case where I knew something the line count could not. Before that, my own
+  **mutation test** on the most important property: replacing `moveAside`'s source list with the
+  database alone made
+  `TestRestore_MovesThePreviousDatabaseAndItsSidecarsAsideSoItsWALCannotBeApplied` **fail**
+  (`…pre-restore-…-wal: no such file or directory`) and the file was restored byte-identically
+  (`sha256 a1d34c1d…` before and after). That is the test catching a deliberately injected bug, not
+  a test passing.
+- **L33** (independent verification, no blockers): `gentle-ai-verify` was given seven adversarial
+  questions and answered them against its own scratch probe suite, not against the author's tests.
+  Verdict: WAL property **holds** (live path left with no `-wal`/`-shm`/`-journal`, restored content
+  reads back, previous pair byte-identical and reopenable); rollback **holds with caveat** (every
+  injected rename failure 2–5 and the commit left the home byte-identical); validate-before-touch
+  **holds** (six invalid snapshots, empty stdout, same inode, no leftovers); confirmation **holds**
+  (no `-yes` → exit 1 with the tree unchanged; malformed `-from` → zero GETs); temp placement
+  **holds** (same `st_dev`, cross-device rename unreachable); artifacts **hold with caveat**.
+  Suite exit codes confirmed 0 for both commands. Seven non-blocking findings were recorded, and
+  two of them are why L33 is worth more than a rubber stamp:
+  **F2 — a crash window between the database move and the sidecar moves leaves `-wal`/`-shm` with
+  no database, and the next open creates an empty database and deletes the WAL, so those rows are
+  gone.** The verifier probed that state and reports the plan text overstates what is left there.
+  The move order narrows the window rather than eliminating it, and the mirror order would be worse.
+  **F7 — restore does not detect a running server**: with an open handle, the restore succeeds and a
+  later write through the old handle lands in the `.pre-restore-` copy while the live database shows
+  the restored rows. Silent divergence. That is S4's "documented, not enforced" bound showing up in
+  the one command that could enforce it, and it belongs to T6's documentation.
+  The rest: F1 an inverted comment in `putBack` (fixed in this commit — the trace shows sidecars
+  restored before the database, the comment claimed the reverse, and a future reader could
+  "correct" the order and break the rollback); F3 no parent-directory fsync after the renames; F4 a
+  killed run leaves a `.study-restore-*.db` in `data/` with no sweep; F5 orphan sidecars are moved
+  aside but the plan prints `previous: none`; F6 a partial artifact failure exits 0, so automation
+  cannot see missing PDFs. F2–F6 are queued rather than rushed at the end of a long turn: changing
+  the data-destroying path deserves its own deliberation and test, and the verifier also handed over
+  four green regression tests (sidecar move failures at renames 2–4, a second restore in the same
+  second, orphan sidecars, a hot rollback journal) that cover gaps the current suite does not reach.
