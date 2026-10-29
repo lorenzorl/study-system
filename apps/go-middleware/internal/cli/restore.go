@@ -15,6 +15,7 @@ import (
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/platform/apperror"
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/platform/backup"
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/platform/config"
+	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/platform/db"
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/platform/r2"
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/platform/storage"
 )
@@ -145,6 +146,16 @@ it replaces, and where the previous database moves to. Installing it requires -y
 Without -yes the same plan is printed and the command refuses with a non-zero exit
 code, having changed nothing.
 
+Stop the server before restoring. This command cannot tell whether one is running and
+takes no lock: a live process keeps writing through its own handle after the database
+is replaced, those writes land in the pre-restore copy, and the live database and that
+copy then diverge without either side reporting an error.
+
+Before any file moves, the live write-ahead log is checkpointed and truncated, so that
+no committed row exists only in a -wal when the swap begins. If the log cannot be
+checkpointed the restore still proceeds and says so: a database that is locked or
+damaged is when a restore is needed most.
+
 The previous database is never deleted or truncated: it moves aside to the pre-restore
 path the plan printed, and its -wal, -shm and -journal files move with it. Moving the
 WAL away with the database is the point: a -wal left next to a newly installed file
@@ -206,6 +217,12 @@ func restoreFromReplica(
 		return fmt.Errorf("refusing to restore without -yes: %s is unchanged", destPath)
 	}
 
+	// The checkpoint happens only now. It writes to the live database, and "without
+	// -yes nothing changes" is a property the tests assert on the whole tree.
+	if previousExists {
+		checkpointLiveWAL(ctx, cfg, stderr)
+	}
+
 	if err := installSnapshot(tempPath, destPath, previousPath); err != nil {
 		return err
 	}
@@ -220,6 +237,50 @@ func restoreFromReplica(
 	// completed restore into a failed one.
 	fetchMissingArtifacts(ctx, cfg, client, stdout, stderr)
 	return nil
+}
+
+// checkpointLiveWAL truncates the live database's write-ahead log so that no
+// committed row exists only in a sidecar when the moves begin.
+//
+// It exists because of the window the moves cannot close. installSnapshot renames the
+// database aside and then its -wal and -shm, and those renames are not one atomic
+// operation: a crash between the first and the second leaves the sidecars at the live
+// path with no database, and the next open creates an empty database and deletes the
+// WAL, so the rows that lived only there are gone. Measured, not theorised — an
+// independent verifier reproduced that state. After a truncating checkpoint the WAL
+// has nothing unique left to lose, which removes the premise of the loss instead of
+// narrowing the window.
+//
+// A failure is a warning, not an abort. The checkpoint needs a writable, unlocked
+// database, and a database that is locked or damaged is exactly when a restore is
+// needed: refusing would trade a narrow crash window for a guaranteed outage. The
+// operator is told what the residual risk is instead of being handed a refusal.
+func checkpointLiveWAL(ctx context.Context, cfg *config.Config, stderr io.Writer) {
+	// db.Open rather than composition.OpenDatabase: opening to checkpoint must not
+	// migrate a schema on a database that is about to be replaced.
+	sqlDB, err := db.Open(ctx, cfg.DatabaseDSN)
+	if err != nil {
+		warnUncheckpointed(stderr, err)
+		return
+	}
+	defer sqlDB.Close()
+
+	// wal_checkpoint answers with (busy, log frames, frames checkpointed). A busy
+	// answer means another connection held the database, so the log may still carry
+	// frames that only it knows about.
+	var busy, logFrames, checkpointed int
+	if err := sqlDB.QueryRowContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)").Scan(&busy, &logFrames, &checkpointed); err != nil {
+		warnUncheckpointed(stderr, err)
+		return
+	}
+	if busy != 0 {
+		warnUncheckpointed(stderr, errors.New("the database is in use"))
+	}
+}
+
+// warnUncheckpointed names the residual window instead of hiding it.
+func warnUncheckpointed(stderr io.Writer, cause error) {
+	fmt.Fprintf(stderr, "warning: could not checkpoint the write-ahead log before the swap (%v); if the process dies midway, rows that exist only in the -wal can be lost to the next open\n", cause)
 }
 
 // printRestorePlan says exactly what the restore is about to replace, before it

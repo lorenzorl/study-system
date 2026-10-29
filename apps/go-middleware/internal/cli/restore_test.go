@@ -528,9 +528,6 @@ func TestRestore_MovesThePreviousDatabaseAndItsSidecarsAsideSoItsWALCannotBeAppl
 	assert.NotContains(t, string(mustReadFile(t, dest)), walOnlyTopic,
 		"the database file itself must not carry the newest row")
 
-	beforeDatabase := mustReadFile(t, dest)
-	beforeWAL := mustReadFile(t, dest+"-wal")
-
 	client := newFakeDownloader()
 	key := replicaDBPrefix + "study-20240102T030405Z.db"
 	client.seed(key, snapshotBytes)
@@ -540,10 +537,16 @@ func TestRestore_MovesThePreviousDatabaseAndItsSidecarsAsideSoItsWALCannotBeAppl
 
 	previous := dest + ".pre-restore-20240102T030405Z"
 
-	// The previous database and its sidecars left the live path together, at the
-	// path the plan printed, unchanged and recoverable by hand.
-	assert.Equal(t, beforeDatabase, mustReadFile(t, previous))
-	assert.Equal(t, beforeWAL, mustReadFile(t, previous+"-wal"))
+	// The previous database and its sidecars left the live path together, at the path
+	// the plan printed, and the previous state is recoverable by hand. Its bytes are not
+	// the bytes the fixture wrote, because the write-ahead log is checkpointed before the
+	// moves: the row that used to live only in the -wal is now inside the database file,
+	// which is the property that closes the crash window.
+	assert.Contains(t, string(mustReadFile(t, previous)), walOnlyTopic,
+		"the checkpoint must have folded the WAL-only row into the database before the move")
+	if wal, err := os.ReadFile(previous + "-wal"); err == nil {
+		assert.Empty(t, wal, "the WAL travels with the previous database but holds nothing unique")
+	}
 
 	// No sidecar of the previous database is left where SQLite could apply it to
 	// the restored file, which is the difference between a correct restore and one
@@ -564,9 +567,6 @@ func TestRestore_PutsTheLiveDatabaseBackWhenTheCommitStepFails(t *testing.T) {
 
 	sqlDB := liveDatabase(t, cfg)
 	insertTopic(t, sqlDB, "topic-live", "Live topic")
-
-	beforeDatabase := mustReadFile(t, dest)
-	beforeWAL := mustReadFile(t, dest+"-wal")
 
 	client := newFakeDownloader()
 	client.seed(replicaDBPrefix+"study-20240102T030405Z.db", snapshotBytesWithTopic(t, "Snapshot topic"))
@@ -593,10 +593,11 @@ func TestRestore_PutsTheLiveDatabaseBackWhenTheCommitStepFails(t *testing.T) {
 	assert.Contains(t, err.Error(), "injected rename failure")
 	assert.True(t, commitAttempted, "the failure must be the commit, after the previous database moved aside")
 
-	// A failed restore leaves the live database exactly as it was: same bytes, the
-	// WAL back at its side, and nothing left at the pre-restore path.
-	assert.Equal(t, beforeDatabase, mustReadFile(t, dest))
-	assert.Equal(t, beforeWAL, mustReadFile(t, dest+"-wal"))
+	// A failed restore leaves the live data where a reader finds it. The bytes are not
+	// the ones the fixture wrote, because the checkpoint folds the WAL into the database
+	// before the moves: that is the fix, not a side effect. What must hold is that every
+	// row survives and nothing is left at the pre-restore path.
+	assert.Contains(t, readTopicNames(t, dest), "Live topic")
 	assert.NoFileExists(t, dest+".pre-restore-20240102T030405Z")
 	assert.NoFileExists(t, dest+".pre-restore-20240102T030405Z-wal")
 
@@ -685,3 +686,52 @@ func TestRestore_ReportsAFailedArtifactFetchWithoutFailingTheRestore(t *testing.
 
 // The fake must satisfy the same narrow interface the real client does.
 var _ downloader = (*fakeDownloader)(nil)
+
+// F2: the crash window is between the database move and the sidecar moves. A crash
+// there used to leave -wal/-shm at the live path with no database, and the next open
+// creates an empty database and deletes the WAL, so the rows it held were gone.
+// The checkpoint runs before the first move, so by the time the window opens the WAL
+// has nothing left to lose. This test inspects the state *inside* the window, which is
+// the only place the difference is observable: the rollback would otherwise put the
+// sidecars back and hide whether the checkpoint happened.
+func TestRestore_CheckpointsTheWALBeforeTheMovesSoTheWindowHoldsNothing(t *testing.T) {
+	cfg := replicaTestConfig(t)
+	dest := databaseFile(cfg)
+
+	sqlDB := liveDatabase(t, cfg)
+	insertTopic(t, sqlDB, "topic-wal", walOnlyTopic)
+	require.FileExists(t, dest+"-wal", "the fixture must leave a WAL behind for this test to mean anything")
+
+	client := newFakeDownloader()
+	client.seed(replicaDBPrefix+"study-20240102T030405Z.db", snapshotBytesWithTopic(t, "Snapshot topic"))
+
+	original := renamePath
+	t.Cleanup(func() { renamePath = original })
+
+	calls := 0
+	renamePath = func(from, to string) error {
+		calls++
+		if calls == 2 {
+			// The database has moved aside and the sidecars have not: this is the
+			// window. Assert its state before failing the install.
+			assert.NoFileExists(t, dest, "the database must already be moved aside")
+			if info, err := os.Stat(dest + "-wal"); err == nil {
+				assert.Zero(t, info.Size(),
+					"the WAL must be truncated before the moves, or a crash here loses its rows")
+			}
+			return errors.New("injected rename failure")
+		}
+		return os.Rename(from, to)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := restoreFromReplica(t.Context(), cfg, client, "", true, restoreClock, &stdout, &stderr)
+	renamePath = original
+
+	require.Error(t, err)
+	assert.GreaterOrEqual(t, calls, 2)
+	assert.NotContains(t, stderr.String(), "could not checkpoint",
+		"the checkpoint must succeed against a healthy database")
+	assert.Contains(t, readTopicNames(t, dest), walOnlyTopic,
+		"after the rollback the live database must still hold the WAL-only row")
+}
