@@ -408,3 +408,30 @@ server keeps working with no R2 configuration at all.
   documented and not enforced; nothing tested two writers. One observation recorded as benign: the
   snapshot is `journal_mode=delete` while the live database is `wal`, and `db.Open` re-applies WAL
   on the next application open.
+- **L39** (evidence, verifier tests and F3/F4/F5): the verifier's five functions now live in
+  `restore_durability_test.go`, and two deviations from its text are reported rather than buried.
+  (a) `TestRestore_MovesOrphanSidecarsAsideWhenNoDatabaseExists` **did not compile as handed over**
+  (`declared and not used: walBefore`), so the value is discharged with `_ = walBefore`. (b)
+  `TestRestore_MovesAHotRollbackJournalAsideWithTheDatabase` **cannot pass as written any more**,
+  and the cause is proved, not guessed: the F2 checkpoint opens the live database with `db.Open`,
+  whose DSN pragmas include `journal_mode(WAL)`, and switching journal mode makes SQLite roll the
+  hot journal back and delete it before `moveAside` runs. So there are no journal bytes left to
+  travel. **Disposition A**, the same one L34 applied to two other superseded assertions: the
+  scenario and fixture stay, the last assertion moves to the property that now holds — the aborted
+  transaction was rolled back, so nothing can be applied to an empty database. That is the safer
+  outcome, and `TestRestore_ConsumesAHotRollbackJournalBeforeTheMoves` pins it. The alternative
+  (skip the checkpoint when a `-journal` exists) was rejected: whichever order the moves take, a
+  crash can leave a hot journal at the live path with no database, which is the corruption F2
+  removed. **F3/F4/F5 are fixed with test-first coverage**: six new tests, and each was observed
+  failing first (F3 as `undefined: syncDir`, F4 and F5 as real assertion failures). F3 fsyncs the
+  containing directory after the commit rename and deliberately does not return the flush error,
+  because the rename already happened. F4 sweeps leftover `.study-restore-*.db` before downloading,
+  matching prefix+suffix only, unlinking symlinks rather than following them, and reporting the
+  count. F5 names orphan sidecars in the plan and on completion, so an operator can find what
+  moved. Declared limits: F4 is proved against a synthetic leftover rather than a real SIGKILL
+  mid-download; F3's durability is observable only through its seam, and a directory fsync on
+  darwin does not flush the drive's own cache, so power-loss durability is asserted by
+  construction; and the sweep silently skips a leftover it cannot unlink. One behaviour note: a
+  restore refused without `-yes` now also clears a killed run's leftovers, because the sweep must
+  precede the download and the download precedes the gate — the live database and its sidecars are
+  untouched, which the existing test still asserts.

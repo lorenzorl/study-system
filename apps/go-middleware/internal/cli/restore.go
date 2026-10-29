@@ -50,10 +50,18 @@ import (
 // rather than a directory so the move stays inside the destination's filesystem.
 const preRestoreSuffix = ".pre-restore-"
 
-// restoreTempPattern names the file the snapshot is downloaded into. It lives beside
-// the destination, never in the system temporary directory: the commit is a rename,
-// and a rename is only atomic within one filesystem.
-const restoreTempPattern = ".study-restore-*.db"
+// The download's name, in the three pieces the sweep needs and the pattern
+// os.CreateTemp needs. They are derived from each other rather than repeated, because
+// the sweep deletes files: what it matches and what the download writes have to be the
+// same definition, or one of the two will eventually drift.
+//
+// The file lives beside the destination, never in the system temporary directory: the
+// commit is a rename, and a rename is only atomic within one filesystem.
+const (
+	restoreTempPrefix  = ".study-restore-"
+	restoreTempSuffix  = ".db"
+	restoreTempPattern = restoreTempPrefix + "*" + restoreTempSuffix
+)
 
 // sqliteSidecarSuffixes are the files SQLite keeps beside a database file. All of
 // them move with it: -wal and -shm are the ones that can be applied to a newly
@@ -70,6 +78,24 @@ var artifactFileNames = []string{artifactPayloadName, artifactMetadataName}
 // it — a permission that blocks the commit also blocks the moves before it. One test
 // swaps it to fail the commit and observes the previous database coming back.
 var renamePath = os.Rename
+
+// syncDir flushes a directory so that a rename inside it survives a power loss. It is
+// a variable for the same reason renamePath is: no filesystem state a test can arrange
+// shows whether the flush happened at all.
+var syncDir = flushDirectory
+
+// flushDirectory makes the entries of dir durable. It returns its error instead of
+// deciding what it means, because its only caller runs it after a committed rename,
+// where nothing can be undone and the restore must not be reported as failed.
+func flushDirectory(dir string) error {
+	handle, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer handle.Close()
+
+	return handle.Sync()
+}
 
 // downloader is the narrow slice of *r2.Client this command uses. The restore only
 // reads the replica, so unlike backup's uploader it has no Put and no Delete: a
@@ -162,6 +188,11 @@ WAL away with the database is the point: a -wal left next to a newly installed f
 can be applied to it, which produces a database that opens, reports success and is
 wrong. A failed install moves the previous database and its sidecars back.
 
+A download left behind by an interrupted run is swept out of the database's directory
+before the new snapshot is fetched, and only files matching the download's own name are
+removed. Sidecars left behind by an earlier run are moved aside and named even when the
+database they belonged to is gone.
+
 After the database is in place, the artifacts the replica holds that are missing here
 are downloaded. An artifact that is already stored is never overwritten: it is
 immutable and addressed by its generated id. A failed download is reported per
@@ -199,6 +230,13 @@ func restoreFromReplica(
 		return fmt.Errorf("prepare %s for the snapshot: %w", dir, err)
 	}
 
+	// A run killed between the download and the commit leaves its download in this
+	// directory, roughly the size of the snapshot, and nothing used to remove it. The
+	// sweep runs before this run's download so it cannot match its own file.
+	if swept := sweepLeftoverDownloads(dir); swept > 0 {
+		fmt.Fprintf(stdout, "swept %d leftover snapshot download(s) from %s\n", swept, dir)
+	}
+
 	tempPath, report, err := downloadValidatedSnapshot(ctx, client, key, dir)
 	if err != nil {
 		return err
@@ -209,7 +247,13 @@ func restoreFromReplica(
 
 	previousPath := preRestorePath(destPath, now)
 	previousExists := fileExists(destPath)
-	printRestorePlan(stdout, key, report, destPath, previousPath, previousExists)
+
+	// Sidecars left behind by an earlier crash are still state: they leave the live
+	// path with the database, so the plan and the completion line name them even when
+	// there is no database to name (F5).
+	rescued := sidecarsToMove(destPath, previousPath)
+
+	printRestorePlan(stdout, key, report, destPath, previousPath, previousExists, rescued)
 
 	// The second gate. It is checked here, after the plan, so "restore without -yes"
 	// answers with what would have happened instead of only "no".
@@ -228,8 +272,13 @@ func restoreFromReplica(
 	}
 
 	fmt.Fprintf(stdout, "restored %s from %s\n", destPath, key)
-	if previousExists {
+	switch {
+	case previousExists:
 		fmt.Fprintf(stdout, "the previous database and its sidecars are at %s\n", previousPath)
+	case len(rescued) > 0:
+		// No database moved, but the orphan sidecars did: this is where the operator
+		// finds them (F5).
+		fmt.Fprintf(stdout, "the previous sidecars are at %s\n", strings.Join(moveTargets(rescued), ", "))
 	}
 
 	// Only now, with the database already in place, are the artifacts fetched: the
@@ -291,6 +340,7 @@ func printRestorePlan(
 	report backup.Report,
 	destPath, previousPath string,
 	previousExists bool,
+	rescued []movedFile,
 ) {
 	fmt.Fprintln(stdout, "restore plan:")
 	// The size and the table count are the validated file's, not the object's: they
@@ -304,6 +354,12 @@ func printRestorePlan(
 		return
 	}
 	fmt.Fprintf(stdout, "  previous: none, nothing exists at %s\n", destPath)
+	if len(rescued) > 0 {
+		// There is no database to move, but its sidecars are here and still leave the
+		// live path. Naming them is the difference between a plan an operator can act
+		// on and one that says the directory is empty when it is not (F5).
+		fmt.Fprintf(stdout, "  sidecars: %s\n", movePairs(rescued))
+	}
 }
 
 // snapshotToRestore picks the snapshot to install: the one named by from, or the
@@ -500,7 +556,92 @@ func installSnapshot(tempPath, destPath, previousPath string) error {
 		return putBackAfter("install "+destPath, err, moved)
 	}
 
+	// The rename is durable only once the directory that holds the new entry is
+	// flushed; without this a power loss can undo a commit the command has already
+	// reported. A failing flush is deliberately not an error: the rename has happened
+	// and the live database is the snapshot, so there is nothing left to roll back and
+	// reporting a failure here would describe a state that does not exist.
+	_ = syncDir(filepath.Dir(destPath))
+
 	return nil
+}
+
+// sidecarsToMove lists the sidecars present beside the database at destPath, paired
+// with where each one moves.
+//
+// It exists for the plan and the completion line rather than for the install, which
+// moves what it finds: an orphan -wal or -shm is state too, and a plan that said
+// "nothing exists here" left the operator unable to find what the restore had moved
+// (F5).
+func sidecarsToMove(destPath, previousPath string) []movedFile {
+	moved := make([]movedFile, 0, len(sqliteSidecarSuffixes))
+
+	for _, from := range sidecarPaths(destPath) {
+		if !fileExists(from) {
+			continue
+		}
+		moved = append(moved, movedFile{From: from, To: previousPath + strings.TrimPrefix(from, destPath)})
+	}
+
+	return moved
+}
+
+// movePairs renders moves as "from -> to", for a plan that has to name both ends of
+// every path it is about to touch.
+func movePairs(moved []movedFile) string {
+	pairs := make([]string, 0, len(moved))
+	for _, file := range moved {
+		pairs = append(pairs, file.From+" -> "+file.To)
+	}
+
+	return strings.Join(pairs, ", ")
+}
+
+// moveTargets renders where a set of moved files ended up.
+func moveTargets(moved []movedFile) []string {
+	targets := make([]string, 0, len(moved))
+	for _, file := range moved {
+		targets = append(targets, file.To)
+	}
+
+	return targets
+}
+
+// sweepLeftoverDownloads removes the snapshot downloads an interrupted run left in
+// dir, and answers how many it removed.
+//
+// The download's own name is the only thing it matches. This deletes files, so it must
+// never touch what the download did not write: not the database, not its sidecars, not
+// an operator's file that merely starts the same way. Entries are unlinked by name, so
+// a symlink is removed rather than followed into a file that belongs to somebody else,
+// and a directory is left alone. The sidecars the failed validation left beside a
+// leftover are the same file's shape extended, so they go with it.
+func sweepLeftoverDownloads(dir string) int {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		// The caller has just created dir, so this is a permission problem rather than
+		// something to guess about: sweep nothing and let the download report it.
+		return 0
+	}
+
+	swept := 0
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasPrefix(name, restoreTempPrefix) || !strings.HasSuffix(name, restoreTempSuffix) {
+			continue
+		}
+
+		path := filepath.Join(dir, name)
+		if err := os.Remove(path); err != nil {
+			continue
+		}
+		for _, sidecar := range sidecarPaths(path) {
+			_ = os.Remove(sidecar)
+		}
+		swept++
+	}
+
+	return swept
 }
 
 // moveAside moves the live database and every sidecar out of the live path.

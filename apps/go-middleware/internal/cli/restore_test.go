@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -734,4 +735,196 @@ func TestRestore_CheckpointsTheWALBeforeTheMovesSoTheWindowHoldsNothing(t *testi
 		"the checkpoint must succeed against a healthy database")
 	assert.Contains(t, readTopicNames(t, dest), walOnlyTopic,
 		"after the rollback the live database must still hold the WAL-only row")
+}
+
+// F4: a run killed between the download and the commit leaves its download in the
+// database's directory, roughly the size of a snapshot, and nothing removed it. The
+// sweep is narrow on purpose — this command deletes files, so it may only ever match
+// the name its own download uses.
+func TestRestore_SweepsLeftoverSnapshotDownloadsBeforeDownloading(t *testing.T) {
+	cfg := replicaTestConfig(t)
+	dest := databaseFile(cfg)
+	dir := filepath.Dir(dest)
+
+	// The shape a killed run leaves: the download and the sidecars validation put
+	// beside it.
+	leftover := filepath.Join(dir, ".study-restore-1234567890.db")
+	require.NoError(t, os.WriteFile(leftover, []byte("half a snapshot"), 0o644))
+	require.NoError(t, os.WriteFile(leftover+"-journal", []byte("stale journal"), 0o644))
+	other := filepath.Join(dir, ".study-restore-notes.txt")
+
+	// Everything that is not the download's own name survives, including a file
+	// that starts the same way.
+	require.NoError(t, os.WriteFile(other, []byte("keep me"), 0o644))
+
+	sqlDB := liveDatabase(t, cfg)
+	insertTopic(t, sqlDB, "topic-live", "Live topic")
+
+	client := newFakeDownloader()
+	client.seed(replicaDBPrefix+"study-20240102T030405Z.db", snapshotBytesWithTopic(t, "Snapshot topic"))
+
+	var stdout, stderr bytes.Buffer
+	require.NoError(t, restoreFromReplica(t.Context(), cfg, client, "", true, restoreClock, &stdout, &stderr))
+
+	assert.NoFileExists(t, leftover)
+	assert.NoFileExists(t, leftover+"-journal")
+	assert.Equal(t, []byte("keep me"), mustReadFile(t, other))
+
+	// The count is reported, and before the download ran: the operator reads what
+	// was cleared away on this run.
+	assert.Contains(t, stdout.String(), "swept 1 leftover snapshot download(s) from "+dir)
+	assert.Less(t, strings.Index(stdout.String(), "swept 1 leftover"), strings.Index(stdout.String(), "restore plan:"))
+
+	assert.Equal(t, []string{"Snapshot topic"}, readTopicNames(t, dest))
+
+	// The sweep took the leftover and the run took its own download: nothing of the
+	// download's shape survives, and the operator's file was never its shape.
+	remaining, err := filepath.Glob(filepath.Join(dir, restoreTempPattern))
+	require.NoError(t, err)
+	assert.Empty(t, remaining)
+}
+
+// The sweep unlinks entries; it must never follow a symlink into somebody else's
+// file, which is the difference between removing a leftover and deleting data.
+func TestRestore_SweepsLeftoversWithoutFollowingSymlinks(t *testing.T) {
+	cfg := replicaTestConfig(t)
+	dest := databaseFile(cfg)
+	dir := filepath.Dir(dest)
+
+	victim := filepath.Join(t.TempDir(), "victim.db")
+	require.NoError(t, os.WriteFile(victim, []byte("not the restore's file"), 0o644))
+
+	link := filepath.Join(dir, ".study-restore-symlink.db")
+	require.NoError(t, os.Symlink(victim, link))
+
+	client := newFakeDownloader()
+	client.seed(replicaDBPrefix+"study-20240102T030405Z.db", snapshotBytesWithTopic(t, "Snapshot topic"))
+
+	var stdout, stderr bytes.Buffer
+	require.NoError(t, restoreFromReplica(t.Context(), cfg, client, "", true, restoreClock, &stdout, &stderr))
+
+	assert.NoFileExists(t, link, "the leftover entry is removed")
+	assert.Equal(t, []byte("not the restore's file"), mustReadFile(t, victim),
+		"the file the link pointed at is not the restore's to delete")
+}
+
+// F5: with orphan sidecars and no database the plan said "previous: none" and the
+// completion line said nothing, so the operator could not find what had moved.
+func TestRestore_NamesOrphanSidecarsInThePlanAndOnCompletion(t *testing.T) {
+	cfg := replicaTestConfig(t)
+	dest := databaseFile(cfg)
+	previous := dest + ".pre-restore-20240102T030405Z"
+
+	// A previous run left its sidecars and no database.
+	require.NoError(t, os.Remove(dest))
+	require.NoError(t, os.WriteFile(dest+"-wal", []byte("stale wal"), 0o644))
+	require.NoError(t, os.WriteFile(dest+"-shm", []byte("stale shm"), 0o644))
+
+	client := newFakeDownloader()
+	client.seed(replicaDBPrefix+"study-20240102T030405Z.db", snapshotBytesWithTopic(t, "Snapshot topic"))
+
+	var plan, stderr bytes.Buffer
+	require.Error(t, restoreFromReplica(t.Context(), cfg, client, "", false, restoreClock, &plan, &stderr))
+
+	assert.Contains(t, plan.String(), "  previous: none, nothing exists at "+dest)
+	assert.Contains(t, plan.String(), dest+"-wal -> "+previous+"-wal")
+	assert.Contains(t, plan.String(), dest+"-shm -> "+previous+"-shm")
+
+	// And the completion line names where they actually are.
+	var stdout bytes.Buffer
+	require.NoError(t, restoreFromReplica(t.Context(), cfg, client, "", true, restoreClock, &stdout, &stderr))
+
+	assert.Contains(t, stdout.String(), "the previous sidecars are at "+previous+"-wal, "+previous+"-shm")
+	assert.NoFileExists(t, dest+"-wal")
+	assert.Equal(t, []byte("stale wal"), mustReadFile(t, previous+"-wal"))
+	assert.Equal(t, []string{"Snapshot topic"}, readTopicNames(t, dest))
+}
+
+// F3: the commit is a rename, and a rename is only durable once the directory that
+// holds the new entry is flushed. No filesystem state a test can arrange shows
+// whether the flush happened, so the seam makes it observable — the same reason
+// renamePath is a variable.
+func TestRestore_SyncsTheDestinationDirectoryAfterTheCommit(t *testing.T) {
+	cfg := replicaTestConfig(t)
+	dest := databaseFile(cfg)
+
+	client := newFakeDownloader()
+	client.seed(replicaDBPrefix+"study-20240102T030405Z.db", snapshotBytesWithTopic(t, "Snapshot topic"))
+
+	original := syncDir
+	t.Cleanup(func() { syncDir = original })
+	var synced []string
+	syncDir = func(dir string) error {
+		synced = append(synced, dir)
+		return nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	require.NoError(t, restoreFromReplica(t.Context(), cfg, client, "", true, restoreClock, &stdout, &stderr))
+
+	assert.Equal(t, []string{filepath.Dir(dest)}, synced,
+		"the new name must be flushed in the directory that holds it, or a power loss undoes the commit")
+	assert.Equal(t, []string{"Snapshot topic"}, readTopicNames(t, dest))
+}
+
+// The rename already happened when the flush runs, so a flush that fails is
+// reported to nobody and must not turn a completed restore into an error: there is
+// nothing left to roll back.
+func TestRestore_ADirectorySyncFailureDoesNotFailACommittedRestore(t *testing.T) {
+	cfg := replicaTestConfig(t)
+	dest := databaseFile(cfg)
+
+	client := newFakeDownloader()
+	client.seed(replicaDBPrefix+"study-20240102T030405Z.db", snapshotBytesWithTopic(t, "Snapshot topic"))
+
+	original := syncDir
+	t.Cleanup(func() { syncDir = original })
+	syncDir = func(string) error { return errors.New("injected sync failure") }
+
+	var stdout, stderr bytes.Buffer
+	require.NoError(t, restoreFromReplica(t.Context(), cfg, client, "", true, restoreClock, &stdout, &stderr),
+		"the snapshot is already the live database: a failed directory flush cannot un-commit it")
+
+	assert.Contains(t, stdout.String(), "restored "+dest+" from "+replicaDBPrefix+"study-20240102T030405Z.db")
+	assert.Equal(t, []string{"Snapshot topic"}, readTopicNames(t, dest))
+	assertNoRestoreLeftovers(t, filepath.Dir(dest))
+}
+
+// The hot-journal case, as the code behaves after the F2 fix. This test exists because
+// the independent verifier's TestRestore_MovesAHotRollbackJournalAsideWithTheDatabase
+// asserts the older property and no longer holds: the checkpoint opens the live
+// database before the moves, and to change its journal mode SQLite rolls the aborted
+// transaction back, which deletes the journal. Nothing committed is lost — the previous
+// database still opens and still holds the committed row — so what needs pinning is that
+// no journal is left where SQLite could apply it, and that the previous copy needs none.
+func TestRestore_ConsumesAHotRollbackJournalBeforeTheMoves(t *testing.T) {
+	cfg := replicaTestConfig(t)
+	dest := databaseFile(cfg)
+
+	sqlDB := liveDatabase(t, cfg)
+	insertTopic(t, sqlDB, "topic-committed", "Committed topic")
+	require.NoError(t, sqlDB.Close())
+
+	child := exec.Command(os.Args[0], "-test.run=TestRestore_hotJournalChild", "-test.timeout=60s")
+	child.Env = append(os.Environ(), "STUDY_HOT_JOURNAL_DB="+dest)
+	output, err := child.CombinedOutput()
+	require.Error(t, err, "the helper is killed before it can exit cleanly")
+	t.Logf("child: %q err=%v", string(output), err)
+	require.FileExists(t, dest+"-journal", "the fixture must leave a hot journal behind")
+
+	client := newFakeDownloader()
+	client.seed(replicaDBPrefix+"study-20240102T030405Z.db", snapshotBytesWithTopic(t, "Snapshot topic"))
+
+	var stdout, stderr bytes.Buffer
+	require.NoError(t, restoreFromReplica(t.Context(), cfg, client, "", true, restoreClock, &stdout, &stderr))
+
+	previous := dest + ".pre-restore-20240102T030405Z"
+
+	assert.NoFileExists(t, dest+"-journal", "no journal may be left where the restored file could pick it up")
+	assert.Equal(t, []string{"Snapshot topic"}, readTopicNames(t, dest))
+
+	// The aborted transaction was rolled back, so the previous database is the last
+	// committed state and needs no journal beside it.
+	assert.NoFileExists(t, previous+"-journal")
+	assert.Equal(t, []string{"Committed topic"}, readTopicNames(t, previous))
 }
