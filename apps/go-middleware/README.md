@@ -212,10 +212,23 @@ the working directory says so on stderr.
 | `STUDY_LLM_MODEL` | `qwen/qwen3.5-flash-02-23` | Model slug used for the pages that need the model. |
 | `STUDY_EMBEDDING_MODEL` | `google/gemini-embedding-2` | Multilingual embedding model for the semantic stage; chosen from measured evidence (see Semantic search). |
 | `STUDY_OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | Base URL of the chat-completions API. Override it for a proxy, a gateway, or a test double; a malformed value aborts the boot. |
+| `STUDY_R2_ACCOUNT_ID` | unset | Cloudflare account that owns the replica bucket. The S3 endpoint is derived from it unless `STUDY_R2_ENDPOINT` overrides it. |
+| `STUDY_R2_BUCKET` | unset | Bucket the durable replica is written to. |
+| `STUDY_R2_ACCESS_KEY_ID` | unset | Access key identifier of an R2 API token. |
+| `STUDY_R2_SECRET_ACCESS_KEY` | unset | Secret half of that token. It never reaches a log line, an error message, or a rendering of the resolved configuration. |
+| `STUDY_R2_ENDPOINT` | `https://<account-id>.r2.cloudflarestorage.com` | S3 endpoint. Override it for a local S3 double or another provider. A key pair embedded in the URL is refused rather than tolerated. |
+| `STUDY_R2_PREFIX` | `study-system` | Key prefix inside the bucket, so one bucket can hold more than one repository's state. |
 
 Invalid values fail at startup with a message naming the variable. A port
 outside 1-65535, a non-numeric port, or an origin list made only of separators
 all abort the boot rather than falling back silently.
+
+The six `STUDY_R2_*` variables are **optional together**, and none of them is
+needed to boot: the replica is used by `backup` and `restore` and by nothing else,
+and those two commands fail at use time naming every variable that is missing at
+once. Validating the group at load would stop the server from starting over a
+credential it never uses, which is the rule `STUDY_OPENROUTER_API_KEY` already
+follows.
 
 ### CORS
 
@@ -267,6 +280,89 @@ Layout on disk:
 `Artifact.OriginalName` carries the format hint. The store is format-agnostic on
 purpose: a tool that needs an extension should ask for the original name rather
 than infer one from a filename.
+
+## Durable replica
+
+`backup` and `restore` replicate `data/` to an S3-compatible bucket, Cloudflare R2
+by default. **`data/` stays the working state and the bucket is a replica**: both
+commands read the local state, never the other way round, and nothing else in the
+binary needs the bucket to exist.
+
+```text
+study-system backup [-dry-run]              replicate the database and the artifacts
+study-system restore [-from KEY] [-yes]     replace the local state with a snapshot
+```
+
+### The database replicates as a snapshot, not as a file
+
+`backup` takes a `VACUUM INTO` snapshot of the live database. That is not a detail
+to skip: the database runs in WAL mode, so a plain file copy can produce a torn
+image that opens cleanly, answers queries, and is wrong. The snapshot is then
+validated — it must open, answer `PRAGMA integrity_check` with `ok`, and carry
+this application's tables — and one that fails is never uploaded.
+
+Artifacts need none of that care: they are immutable and addressed by a generated
+id, so they are appended, and skipped when already present.
+
+### Key layout and retention
+
+```text
+<prefix>/db/study-<UTC timestamp>.db    one snapshot per backup
+<prefix>/artifacts/<id>/payload         the bytes
+<prefix>/artifacts/<id>/meta.json       original name, size, timestamp
+```
+
+The timestamp is fixed-width UTC, so the keys sort chronologically as strings, and
+retention depends on that: the newest 14 snapshots are kept and the older ones are
+deleted, oldest first, and only keys matching that shape are ever deleted. A delete
+that fails is reported and does not fail the run, so a long-lived bucket can hold
+more than 14 snapshots while every run still reports success.
+
+### Restore
+
+Stop the server first. `restore` cannot detect a running server and takes no lock:
+a live process keeps writing through its own handle after the database is replaced,
+those writes land in the pre-restore copy, and the two states diverge without
+either side reporting an error.
+
+```bash
+study-system backup -dry-run     # the exact upload set and byte count; uploads nothing
+study-system backup              # replicate
+study-system restore             # print the plan: key, size, target, where the old one goes
+study-system restore -yes        # install it
+study-system restore -from db/study-20260101T120000Z.db -yes
+```
+
+Restore validates the downloaded snapshot before it touches anything, then moves
+the previous database **and its `-wal`, `-shm` and `-journal` sidecars** aside to a
+printed `.pre-restore-<UTC>` path instead of deleting them. The sidecars move
+because a restored database left beside a stale WAL is one that opens and is
+silently wrong; they move aside rather than being deleted so that a mistaken
+snapshot is still recoverable by hand. Before the first move the live WAL is
+checkpointed, so a crash in the middle cannot lose rows that existed only there.
+
+Artifacts the replica holds and this machine does not are fetched afterwards, and an
+artifact that is already stored is never overwritten. A failed artifact download is
+reported per artifact on stderr and does not undo the database restore that already
+succeeded — including the exit code, which stays zero: a partial artifact failure is
+visible in the output, not in the status.
+
+### One writer
+
+This design assumes **one process writes the database**. Other devices can read a
+restored copy, but two machines writing to two SQLite files have no operation log to
+reconcile, so the last snapshot would win silently. That is a bound of the design
+and not a gap to be closed later: writing concurrently needs logical replication,
+not a file replica.
+
+### What has not been verified
+
+The authenticated round trip against a real bucket has not been run. The signature
+is pinned to the published AWS vectors and the request shape is covered by a local
+S3 double, but no backup has been written to, or restored from, a real R2 bucket.
+Treat the first real backup as a rehearsal: `backup -dry-run`, then `backup`, then
+confirm the objects exist, and rehearse a restore against a copy of `data/` through
+`-home` rather than against your live state.
 
 ## Page extraction
 

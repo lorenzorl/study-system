@@ -32,6 +32,9 @@ type command struct {
 }
 
 // commands is the whole surface, in the order the usage text lists it.
+//
+// Only backup and restore reach the replica, and both refuse at use time when it is
+// not configured: every other command boots with no R2 settings at all (S8).
 func commands() []command {
 	return []command{
 		{"serve", "run the HTTP server", runServe},
@@ -44,6 +47,8 @@ func commands() []command {
 		{"review", "record a review of one flashcard", runReview},
 		{"topics", "list the study topics", runTopics},
 		{"concepts", "list the concepts of a topic", runConcepts},
+		{"backup", "replicate the database and the artifacts to R2", runBackup},
+		{"restore", "replace the local state with a snapshot from R2", runRestore},
 	}
 }
 
