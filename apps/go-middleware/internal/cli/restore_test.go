@@ -653,7 +653,7 @@ func TestRestore_FetchesTheMissingArtifactsAndNeverOverwritesAPresentOne(t *test
 	assert.Equal(t, artifacts[1].ID, stored.ID)
 }
 
-func TestRestore_ReportsAFailedArtifactFetchWithoutFailingTheRestore(t *testing.T) {
+func TestRestore_ReportsAFailedArtifactFetchAsAPartialSuccess(t *testing.T) {
 	cfg := replicaTestConfig(t)
 	artifacts := seedArtifacts(t, cfg, "broken.pdf", "intact.pdf")
 
@@ -675,8 +675,14 @@ func TestRestore_ReportsAFailedArtifactFetchWithoutFailingTheRestore(t *testing.
 	client.seed(replicaArtifactPrefix+artifacts[1].ID+"/meta.json", mustReadFile(t, intactMetadata))
 
 	var stdout, stderr bytes.Buffer
-	require.NoError(t, restoreFromReplica(t.Context(), cfg, client, "", true, restoreClock, &stdout, &stderr),
-		"the database was already restored: a failed artifact is reported, not fatal")
+	err := restoreFromReplica(t.Context(), cfg, client, "", true, restoreClock, &stdout, &stderr)
+
+	// F6: the restore is not a failure — the database is in place and nothing is
+	// undone — but it is not a plain success either, because the local state is
+	// incomplete. It carries the "partly done" code so a script can tell.
+	var incomplete incompleteArtifacts
+	require.ErrorAs(t, err, &incomplete, "a failed artifact is reported, not fatal")
+	assert.Equal(t, 2, incomplete.ExitCode())
 
 	assert.Contains(t, stdout.String(), "restored "+databaseFile(cfg))
 	assert.Contains(t, stdout.String(), "artifacts: fetched 0, skipped 1 already present, 1 failed")
@@ -927,4 +933,69 @@ func TestRestore_ConsumesAHotRollbackJournalBeforeTheMoves(t *testing.T) {
 	// committed state and needs no journal beside it.
 	assert.NoFileExists(t, previous+"-journal")
 	assert.Equal(t, []string{"Committed topic"}, readTopicNames(t, previous))
+}
+
+// partialOutcome is a command result that carries its own exit code, standing in for
+// an incomplete restore without needing a bucket.
+type partialOutcome struct{ code int }
+
+func (p partialOutcome) Error() string {
+	return "the database was restored, but 1 artifact could not be fetched"
+}
+func (p partialOutcome) ExitCode() int { return p.code }
+
+// F6: one command needs three answers. The dispatcher must return the code the result
+// asks for instead of collapsing everything that is not nil into 1.
+func TestExitCodeFor_CarriesACommandsOwnExitCode(t *testing.T) {
+	var stderr bytes.Buffer
+
+	code := exitCodeFor("restore", partialOutcome{code: 2}, &stderr)
+
+	assert.Equal(t, 2, code, "a result that names its own code must get it")
+	assert.Contains(t, stderr.String(), "restore: the database was restored",
+		"the outcome still has to be reported, not only counted")
+}
+
+// The mapping the other commands already relied on must not move.
+func TestExitCodeFor_KeepsTheExistingMapping(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		var stderr bytes.Buffer
+		assert.Equal(t, 0, exitCodeFor("list", nil, &stderr))
+		assert.Empty(t, stderr.String())
+	})
+
+	t.Run("help", func(t *testing.T) {
+		var stderr bytes.Buffer
+		assert.Equal(t, 0, exitCodeFor("list", errHelp, &stderr), "asking for help is not a failure")
+		assert.Empty(t, stderr.String(), "the flag package already wrote the usage text")
+	})
+
+	t.Run("usage", func(t *testing.T) {
+		var stderr bytes.Buffer
+		assert.Equal(t, 1, exitCodeFor("list", errUsage, &stderr))
+		assert.Empty(t, stderr.String(), "the flag package already wrote the message")
+	})
+
+	t.Run("failure", func(t *testing.T) {
+		var stderr bytes.Buffer
+		assert.Equal(t, 1, exitCodeFor("list", errors.New("boom"), &stderr))
+		assert.Contains(t, stderr.String(), "list: boom")
+	})
+}
+
+// A restore whose artifacts are all present stays a plain success: the new code must
+// not leak into the complete case.
+func TestRestore_CompletesWithNoErrorWhenEveryArtifactIsPresent(t *testing.T) {
+	cfg := replicaTestConfig(t)
+	artifacts := seedArtifacts(t, cfg, "present.pdf")
+
+	client := newFakeDownloader()
+	client.seed(replicaDBPrefix+"study-20240102T030405Z.db", snapshotBytesWithTopic(t, "Artifacts topic"))
+	payload, metadata := artifactPaths(t, cfg, artifacts[0].ID)
+	client.seed(replicaArtifactPrefix+artifacts[0].ID+"/payload", mustReadFile(t, payload))
+	client.seed(replicaArtifactPrefix+artifacts[0].ID+"/meta.json", mustReadFile(t, metadata))
+
+	var stdout, stderr bytes.Buffer
+	require.NoError(t, restoreFromReplica(t.Context(), cfg, client, "", true, restoreClock, &stdout, &stderr))
+	assert.Contains(t, stdout.String(), "artifacts: fetched 0, skipped 1 already present, 0 failed")
 }
