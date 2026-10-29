@@ -326,7 +326,7 @@ those writes land in the pre-restore copy, and the two states diverge without
 either side reporting an error.
 
 ```bash
-study-system backup -dry-run     # the exact upload set and byte count, writing nothing
+study-system backup -dry-run     # the exact upload set and byte count; uploads nothing
 study-system backup              # replicate
 study-system restore             # print the plan: key, size, target, where the old one goes
 study-system restore -yes        # install it

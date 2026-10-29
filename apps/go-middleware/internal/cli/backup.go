@@ -190,8 +190,10 @@ after it validates and carries the application schema, so a snapshot that fails 
 never uploaded. Objects already in the bucket are skipped, and after the new snapshot
 is up, all but the newest 14 snapshots under db/ are deleted.
 
-data/ is the working state and this command only reads it: it never migrates, moves
-or rewrites anything there, and it works on a copy.
+data/ is the working state and this command never migrates, moves or rewrites the
+database. It does open it, though, and opening a WAL database leaves SQLite's own
+study.db-shm and a zero-byte study.db-wal beside it when the server is not running —
+the same side effect search already has. No durable file is modified.
 
 -dry-run takes the snapshot into a temporary directory, reports its exact size, and
 prints the objects and the byte total it would upload and delete. It uploads and
@@ -531,7 +533,8 @@ func objectAction(object replicaObject, dryRun bool) string {
 	}
 }
 
-// reportDryRun prints exactly what a real run would do, and writes nothing.
+// reportDryRun prints exactly what a real run would do, and uploads and deletes
+// nothing.
 //
 // The snapshot it measures is real, which is the only way the byte total can be
 // exact; it is taken into a temporary directory and discarded by the caller.

@@ -57,7 +57,7 @@ server keeps working with no R2 configuration at all.
 | T4 | S2, S3, S5 | worker | `0a61914` |
 | T5 | S3, S10 | worker | `ff3ff02`, `4f4aad7` |
 | T6 | S4, S8 | inline | pending |
-| T7 | S10, all | inline | pending |
+| T7 | S10, all | verifier | this commit |
 
 - **T1** — `platform/config`: `STUDY_R2_ACCOUNT_ID`, `STUDY_R2_BUCKET`,
   `STUDY_R2_ACCESS_KEY_ID`, `STUDY_R2_SECRET_ACCESS_KEY`, `STUDY_R2_ENDPOINT`,
@@ -375,3 +375,36 @@ server keeps working with no R2 configuration at all.
   leaves a `.study-restore-*.db` with no sweep), F5 (the plan prints `previous: none` when only
   sidecars exist), F6 (a partial artifact failure exits 0 — a product decision), and the verifier's
   four regression tests, which are handed over below rather than lost.
+- **L36** (evidence, T7 — the rehearsal): `gentle-ai-verify` ran the whole cycle against a local
+  S3 double it wrote itself, in `mktemp` directories, reading a **copy** of the real `data/` and
+  never writing to the original (source `study.db` sha256 verified unchanged afterwards). The
+  cycle: `backup -dry-run` reported 11 objects / 30,133,700 bytes and left the double's storage
+  **empty**; `backup` uploaded those 11; a second `backup` uploaded only the snapshot and skipped
+  the 10 artifacts as already present; the stored snapshot was opened with sqlite and held
+  **3 topics, 9 flashcards, 1180 chunks, 1180 chunk_embeddings** — identical to the copy, with
+  `integrity_check ok`; the database and its sidecars were then moved away to simulate the
+  disaster; `restore` without `-yes` printed the plan, exited **1** and left a byte-identical
+  tree; `restore -yes` restored a database whose sha256 **equals the snapshot's**
+  (`dc019bad…`), with the same row counts, no sidecars at the live path, and all 10 artifact
+  files byte-identical to the source manifest. A supplemental run with a database already present
+  exercised the path the main run could not: the plan named `previous: …pre-restore-…`, that copy
+  held the marker the live database did not, and the checkpoint's `TRUNCATE` was observed as a
+  0-byte `-wal` travelling with it. **The end-to-end claim now rests on a rehearsal, not on
+  inference.**
+- **L37** (defect found by the rehearsal, fixed): the rehearsal refuted two user-facing claims, and
+  a `-h` that lies is worse than one that omits. `backup -h` said "this command only reads it", but
+  opening a WAL database leaves `study.db-shm` (32 KB) and a zero-byte `study.db-wal` beside it when
+  the server is not running — the same side effect `search` already has. The synopsis now says so,
+  and the README's `-dry-run` line says "uploads nothing" instead of "writing nothing". The help
+  test was changed to **assert the disclosure** rather than the old slogan, so the next person
+  cannot quietly restore the false claim.
+- **L38** (explicitly not proven): stated here so the PR does not imply more than it has. **Real
+  Cloudflare R2**: SigV4 acceptance, real error codes and bodies, TLS, and any tolerance in its
+  signature checking — none of it has been exercised, because no credentials exist here. **R2
+  behaviour**: `ListObjectsV2` pagination past 1000 keys (the double always answered
+  `IsTruncated=false`), and eventual consistency. **Untouched paths**: retention's `DELETE` (only
+  two snapshots existed, nothing was pruned), `restore -from KEY`, the client's `HEAD`/404-on-missing
+  paths, and multipart or large-object limits. **Concurrency**: S4's single-writer bound is
+  documented and not enforced; nothing tested two writers. One observation recorded as benign: the
+  snapshot is `journal_mode=delete` while the live database is `wal`, and `db.Open` re-applies WAL
+  on the next application open.

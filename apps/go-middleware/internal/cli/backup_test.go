@@ -267,8 +267,12 @@ func TestRun_BackupHelpDocumentsTheDryRunAndTheLocalWorkingState(t *testing.T) {
 	// The dry run's choice is printed, not left for a reader to infer: it takes a
 	// snapshot into a temporary directory so the byte total is exact.
 	assert.Contains(t, stdout, "temporary directory")
-	// S5: data/ stays the working state and this command only reads it.
-	assert.Contains(t, stdout, "data/ is the working state and this command only reads it")
+	// S5: data/ stays the working state and no durable file is modified. The help also
+	// says what opening the database leaves behind, because an end-to-end rehearsal
+	// showed study.db-shm appearing beside it: a help text claiming the command "only
+	// reads" would be false, so this asserts the disclosure rather than the slogan.
+	assert.Contains(t, stdout, "data/ is the working state and this command never migrates")
+	assert.Contains(t, stdout, "study.db-shm")
 }
 
 func TestRun_HelpListsTheBackupCommand(t *testing.T) {
