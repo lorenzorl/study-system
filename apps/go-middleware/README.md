@@ -344,8 +344,18 @@ checkpointed, so a crash in the middle cannot lose rows that existed only there.
 Artifacts the replica holds and this machine does not are fetched afterwards, and an
 artifact that is already stored is never overwritten. A failed artifact download is
 reported per artifact on stderr and does not undo the database restore that already
-succeeded — including the exit code, which stays zero: a partial artifact failure is
-visible in the output, not in the status.
+succeeded, but it does change the exit code: a restore missing files is not a plain
+success.
+
+| Exit | Meaning |
+| --- | --- |
+| `0` | Every artifact the replica holds is present locally. |
+| `1` | Nothing was restored: the plan was refused, the snapshot failed validation, or the swap failed. |
+| `2` | The database was restored and at least one artifact is missing. |
+
+Both simpler answers are wrong. `0` tells a script "all good" while files are missing.
+`1` says the restore did not happen when the irreplaceable half did. When the cause was
+temporary, re-running the command is the fix: it skips what is already present.
 
 ### One writer
 

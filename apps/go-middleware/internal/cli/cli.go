@@ -24,6 +24,39 @@ var (
 	errUsage = errors.New("usage")
 )
 
+// exitCoder is a command result that carries its own exit code.
+//
+// It exists for the outcome that is neither success nor failure. A restore that
+// installed the database and could not fetch every artifact is the case that forced
+// it: exiting 0 would tell a script everything is fine while files are missing, and
+// exiting 1 would say the restore did not happen when the irreplaceable half did.
+// One command needs three answers, so a command may answer for itself.
+type exitCoder interface {
+	ExitCode() int
+}
+
+// exitCodeFor maps a command's result to the process exit code, and writes the
+// message for the outcomes that are reported. It is separate from Run so the mapping
+// is testable without a command that reaches the network.
+func exitCodeFor(name string, err error, stderr io.Writer) int {
+	var coded exitCoder
+
+	switch {
+	case err == nil:
+		return 0
+	case errors.Is(err, errHelp):
+		return 0
+	case errors.Is(err, errUsage):
+		return 1
+	case errors.As(err, &coded):
+		fmt.Fprintf(stderr, "%s: %v\n", name, err)
+		return coded.ExitCode()
+	default:
+		fmt.Fprintf(stderr, "%s: %v\n", name, err)
+		return 1
+	}
+}
+
 // command is one subcommand.
 type command struct {
 	name    string
@@ -84,17 +117,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		}
 
 		err := cmd.run(ctx, rest[1:], opts, stdout, stderr)
-		switch {
-		case err == nil:
-			return 0
-		case errors.Is(err, errHelp):
-			return 0
-		case errors.Is(err, errUsage):
-			return 1
-		default:
-			fmt.Fprintf(stderr, "%s: %v\n", cmd.name, err)
-			return 1
-		}
+		return exitCodeFor(cmd.name, err, stderr)
 	}
 
 	fmt.Fprintf(stderr, "unknown command %q\n\n", rest[0])

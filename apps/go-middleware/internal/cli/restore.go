@@ -196,7 +196,10 @@ database they belonged to is gone.
 After the database is in place, the artifacts the replica holds that are missing here
 are downloaded. An artifact that is already stored is never overwritten: it is
 immutable and addressed by its generated id. A failed download is reported per
-artifact and does not undo the database restore that already succeeded.`
+artifact and does not undo the database restore that already succeeded, but it does
+change the exit code, because a restore that is missing files is not a plain success:
+exit 0 means everything came back, exit 1 means nothing was restored, and exit 2 means
+the database is in place and at least one artifact is missing.`
 
 // restoreFromReplica is the command without its flags or its configuration loading,
 // so the tests can drive it with a fake downloader and a fixed clock.
@@ -282,11 +285,42 @@ func restoreFromReplica(
 	}
 
 	// Only now, with the database already in place, are the artifacts fetched: the
-	// database is what the command is for, and a failing artifact must not turn a
-	// completed restore into a failed one.
-	fetchMissingArtifacts(ctx, cfg, client, stdout, stderr)
+	// database is what the command is for, and a failing artifact must not undo it.
+	// It does have to be reported, though, and not only on stderr: an incomplete
+	// restore that exits 0 is a script told "all good" with files missing.
+	failed, listed := fetchMissingArtifacts(ctx, cfg, client, stdout, stderr)
+	if !listed || failed > 0 {
+		return incompleteArtifacts{failed: failed, couldNotList: !listed}
+	}
 	return nil
 }
+
+// incompleteArtifacts reports a restore that installed the database and did not finish
+// the artifact phase.
+//
+// It is deliberately not a failure in the sense the other errors are: nothing is
+// undone, the database is in place, and re-running would not fix a bucket that cannot
+// be reached. What it needs is to be visible to something that is not a human reading
+// stderr, so it carries exit code 2 — "partly done" — and the caller can tell it apart
+// from 0 (complete) and 1 (did not happen).
+type incompleteArtifacts struct {
+	failed       int
+	couldNotList bool
+}
+
+func (e incompleteArtifacts) Error() string {
+	switch {
+	case e.couldNotList:
+		return "the database was restored, but the replica's artifacts could not be listed, so none were fetched"
+	case e.failed == 1:
+		return "the database was restored, but 1 artifact could not be fetched"
+	default:
+		return fmt.Sprintf("the database was restored, but %d artifacts could not be fetched", e.failed)
+	}
+}
+
+// ExitCode is 2: the database is restored and the local state is partly incomplete.
+func (e incompleteArtifacts) ExitCode() int { return 2 }
 
 // checkpointLiveWAL truncates the live database's write-ahead log so that no
 // committed row exists only in a sidecar when the moves begin.
@@ -719,27 +753,31 @@ func removeSnapshotFiles(path string) {
 // It runs only after the database is in place, and it never fails the command: a
 // fetching problem is reported per artifact because the database restore it follows
 // has already succeeded and cannot be undone by anything here (S2).
+//
+// It reports what it could not do rather than only printing it: listed is false when
+// the phase could not run at all, and failed counts the artifacts it could not bring
+// back. The caller turns either one into the "partly done" exit code.
 func fetchMissingArtifacts(
 	ctx context.Context,
 	cfg *config.Config,
 	client downloader,
 	stdout, stderr io.Writer,
-) {
+) (failed int, listed bool) {
 	store, err := storage.New(cfg.StorageRoot, cfg.MaxUploadBytes)
 	if err != nil {
 		fmt.Fprintf(stderr, "warning: artifacts were not fetched: %v\n", err)
-		return
+		return 0, false
 	}
 
 	objects, err := client.List(ctx, replicaArtifactPrefix)
 	if err != nil {
 		fmt.Fprintf(stderr, "warning: artifacts were not fetched: list %s: %v\n", replicaArtifactPrefix, err)
-		return
+		return 0, false
 	}
 
 	provided, ids := artifactFilesByID(objects)
 
-	fetched, skipped, failed := 0, 0, 0
+	fetched, skipped := 0, 0
 
 	for _, id := range ids {
 		dir, err := localArtifactDir(store, id)
@@ -763,6 +801,8 @@ func fetchMissingArtifacts(
 
 	fmt.Fprintf(stdout, "artifacts: fetched %d, skipped %d already present, %d failed\n",
 		fetched, skipped, failed)
+
+	return failed, true
 }
 
 // artifactFilesByID groups the artifact objects the replica holds by identifier, and

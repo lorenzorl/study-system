@@ -435,3 +435,20 @@ server keeps working with no R2 configuration at all.
   restore refused without `-yes` now also clears a killed run's leftovers, because the sweep must
   precede the download and the download precedes the gate — the live database and its sidecars are
   untouched, which the existing test still asserts.
+- **L40** (decision, F6 — the exit code): the open question from L38 is answered: a restore
+  that installs the database but cannot fetch every artifact now **exits 2**. Both simpler
+  answers were wrong. `0` told a script "all good" with files missing, which is the exact
+  silent-divergence class this feature exists to remove. `1` said the restore did not happen
+  when the irreplaceable half — the database — did, and would push an operator into re-running
+  a restore that already succeeded, or into believing the study history was lost. Three
+  outcomes needed three codes, so `exitCoder` was added to the dispatcher: a command result may
+  carry its own exit code, and `exitCodeFor` (extracted from `Run` so the mapping is testable
+  without a network) honours it while every existing outcome keeps its code — `nil` and
+  `errHelp` are 0, `errUsage` and a plain error are 1, and only the two reported outcomes write
+  to stderr. `fetchMissingArtifacts` now returns what it could not do instead of only printing
+  it: `failed` counts artifacts it could not bring back, and `listed` is false when the phase
+  could not run at all — both become the partial outcome. The old test asserted the opposite
+  semantics under the name `…WithoutFailingTheRestore` and was renamed to
+  `…AsAPartialSuccess`, with its assertion moved from "no error" to "an outcome whose exit code
+  is 2". A new test pins that the complete case is still a plain success, so the new code
+  cannot leak into it.
