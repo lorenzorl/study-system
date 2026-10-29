@@ -55,7 +55,7 @@ server keeps working with no R2 configuration at all.
 | T2 | S7, S9 | worker | `5bf3c83`, `02e8050` |
 | T3 | S6, S10 | worker | `d1a756b` |
 | T4 | S2, S3, S5 | worker | `0a61914` |
-| T5 | S3, S10 | worker | `ff3ff02` |
+| T5 | S3, S10 | worker | `ff3ff02`, `4f4aad7` |
 | T6 | S4, S8 | inline | pending |
 | T7 | S10, all | inline | pending |
 
@@ -351,3 +351,27 @@ server keeps working with no R2 configuration at all.
   the data-destroying path deserves its own deliberation and test, and the verifier also handed over
   four green regression tests (sidecar move failures at renames 2–4, a second restore in the same
   second, orphan sidecars, a hot rollback journal) that cover gaps the current suite does not reach.
+- **L34** (evidence, F2 and F7 fixed): committed as `4f4aad7`. **F2 — the data-loss window — is
+  closed by removing its premise rather than narrowing it.** After the `-yes` gate and immediately
+  before the first move, `PRAGMA wal_checkpoint(TRUNCATE)` folds the log into the database, so the
+  window between the database move and the sidecar moves has nothing unique left to lose. The
+  checkpoint deliberately runs *after* `-yes`, because it writes to the live database and "without
+  -yes nothing changes" is an asserted property; it is skipped when no database exists; and a
+  failure is a **warning, not a refusal**, because a locked or damaged database is exactly when a
+  restore is needed. `db.Open` is used rather than `composition.OpenDatabase` so the checkpoint
+  cannot migrate a schema on a database about to be replaced. The test was proved load-bearing by
+  mutation, not by passing: with the checkpoint removed it fails on
+  "the WAL must be truncated before the moves, or a crash here loses its rows", and `restore.go`
+  was restored byte-identically (`sha256 08ef35d6…`). Two existing tests then **failed**, and that
+  failure was the point: they asserted the weaker, older property that the previous `-wal` travelled
+  with its bytes. They now assert the stronger one — the WAL-only row is inside the previous
+  database file, and the sidecar holds nothing unique. **F7 is fixed too**: the synopsis tells the
+  operator to stop the server first and says what happens if they do not.
+- **L35** (incident, subagents unavailable): three writer delegations failed in a row with the same
+  opaque "assistant reported an error", two of them independent tasks, so it is not task size. The
+  worktree was verified untouched after each failure (`git status` empty, build and tests green), so
+  nothing was half-written. Reported as unavailable rather than retried into ceremony, and F2 and F7
+  were then done inline. Still open from L33: F3 (no parent-directory fsync), F4 (a killed run
+  leaves a `.study-restore-*.db` with no sweep), F5 (the plan prints `previous: none` when only
+  sidecars exist), F6 (a partial artifact failure exits 0 — a product decision), and the verifier's
+  four regression tests, which are handed over below rather than lost.
