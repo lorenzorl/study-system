@@ -230,7 +230,6 @@ const {
   isSessionComplete: isReviewComplete,
   completedCount: reviewCompletedCount,
   totalCount: reviewTotalCount,
-  hasCards: reviewHasCards,
   reviewResult,
   currentIndex: currentReviewIndex,
   answerRevealed,
@@ -293,9 +292,16 @@ useSwipe(sessionEl, {
 })
 
 /**
- * Set once the component is gone, so the due session's own load cannot write to the
- * store — or leave a keydown listener behind — after the page unmounted. The load is
- * an `await` and the route can change while it is in flight (`R3-async-mount-race`).
+ * Set once the component is gone, so the due session's own load cannot start a
+ * session — or leave a keydown listener behind — after the page unmounted. The load
+ * is an `await` and the route can change while it is in flight
+ * (`R3-async-mount-race`).
+ *
+ * Declared limit (`R4-no-abort-on-unmount`): this stops what happens *after* the
+ * await, not the request. `fetchDueCards` writes the store's own `dueCards`,
+ * `loading` and `error` as it settles, and the store offers no abort signal; the
+ * page therefore cannot promise "no store mutation", only "no session, no
+ * listener".
  */
 let unmounted = false
 
@@ -313,22 +319,22 @@ onMounted(() => {
  * or a reload reviews today's cards instead of reporting a concept nobody asked for
  * (backlog D2).
  *
- * It fetches only when the store has no cards, so opening the session from the
- * launcher's continue row costs no second request.
+ * It always fetches, even when the store still holds cards from a previous visit
+ * (`R3-003`): "has cards" is not "the cards are current", and reusing them showed a
+ * queue the user had already graded. One request is the cheaper price.
  */
 async function resolveDueSession() {
-  if (!reviewHasCards.value) await fetchDueCards()
+  await fetchDueCards()
 
   // A failed load is an error, not an empty deck: the page must not claim a session
   // it could not load (`R3-due-fetch-failure-masked`).
   if (unmounted || reviewError.value) return
 
   startSession()
-  window.addEventListener("keydown", handleReviewKeydown)
+  attachSessionKeys()
 }
 
-/** The keydown listener belongs to whichever of the two sessions this render is. */
-function attachSessionKeys() {
+/** The keydown listener belongs to whichever of the two sessions this render is. */function attachSessionKeys() {
   if (reviewIsSessionActive.value) {
     window.addEventListener("keydown", handleReviewKeydown)
     return
@@ -402,7 +408,7 @@ async function retryReview() {
   if (unmounted || reviewError.value) return
 
   startSession()
-  window.addEventListener("keydown", handleReviewKeydown)
+  attachSessionKeys()
 }
 
 function goBackToDue() {

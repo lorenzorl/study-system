@@ -74,18 +74,22 @@
     <!--
       A failed count is not "nothing to resume". Hiding the row said both things at
       once (`R4-2` of the review of D2), so the failure gets the same slot with the
-      retry that fixes it.
+      retry that fixes it — and the store's own message, like every other error
+      surface on this page (`R3-001`).
     -->
     <section v-else-if="reviewError" class="resources__continue">
       <h2 class="resources__section-title">Seguir donde quedaste</h2>
       <div class="continue">
-        <span class="continue__title">
-          No se pudieron cargar los pendientes de hoy.
-        </span>
+        <span class="continue__title">{{ reviewError }}</span>
+        <!--
+          Disabled while a retry is in flight: two clicks used to be two
+          concurrent requests with no order between them (`R4-retry-click-fanout`).
+        -->
         <Button
           type="button"
           variant="outline"
           class="min-h-[44px] min-w-[44px]"
+          :disabled="reviewLoading"
           @click="retryDueCards"
         >
           Reintentar
@@ -225,7 +229,11 @@ const { resources, loading, error } = storeToRefs(resourcesStore)
 // the one surface that resumes it: the launcher links there instead of owning a
 // second, fixture-driven session of its own (backlog D2).
 const reviewStore = useReviewStore()
-const { dueCards, error: reviewError } = storeToRefs(reviewStore)
+const {
+  dueCards,
+  error: reviewError,
+  loading: reviewLoading,
+} = storeToRefs(reviewStore)
 const continueResource = computed<ContinueResource | null>(() =>
   continueEntryFor(dueCards.value),
 )
@@ -293,8 +301,16 @@ function openContinue() {
   router.push({ name: "review" })
 }
 
-/** The count failed; the row stays and asks again rather than disappearing. */
+/**
+ * The count failed; the row stays and asks again rather than disappearing.
+ *
+ * Re-entrant on purpose: the button is disabled while a retry is in flight, and
+ * this guard covers the same window for anything that reaches the handler anyway
+ * (`R4-retry-click-fanout`).
+ */
 function retryDueCards() {
+  if (reviewLoading.value) return
+
   reviewStore.fetchDueCards()
 }
 

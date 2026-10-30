@@ -219,6 +219,46 @@ The two doc suggestions were my own duplication: §8 carried the
 `Decided 2026-10-30:` heading twice, and the props comment still said the
 parameters were required after they became optional.
 
+### C6 (closed) — the review of the C5 fix left six findings, and two of them corrected C5
+
+Lineage `review-71bb6586ffe63576`, tier medium, 9 files, 230 lines, lenses
+resilience and reliability. Approved; authority burned. All six closed in the
+commit that follows. This candidate was scoped to `6cff49e..58166d5` — the source
+commit alone — because the default projection (the whole unpublished range) would
+have re-reviewed the already-approved D2 change and hit
+`lens_context_budget_exceeded` on the minified bundles again.
+
+| Id | Lens | Severity | Location |
+| --- | --- | --- | --- |
+| `R3-003` | reliability | WARNING | `FlashcardSessionPage.vue` (`resolveDueSession`) |
+| `R3-001` + `R4-generic-error-copy` | reliability, resilience | WARNING, SUGGESTION | `ResourcesPage.vue` (the failure row) |
+| `R4-retry-click-fanout` | resilience | WARNING | `ResourcesPage.vue` (`retryDueCards`) |
+| `R3-002` | reliability | WARNING | `FlashcardSessionPage.vue` (`attachSessionKeys`) |
+| `R4-no-abort-on-unmount` | resilience | SUGGESTION | `FlashcardSessionPage.vue` (the `unmounted` comment) |
+
+**C5 was wrong in two places, and this is the correction.** (1) C5 said the page
+"reuses the cards the launcher already counted (`hasCards` gates the fetch), so the
+entry still costs one request". That shortcut is a bug: *has cards* is not *the
+cards are current*, so a queue the user had already graded could come back as
+pending. The page always fetches now; one request is the cheaper price. (2) C5 said
+the `unmounted` guard means "no store mutation". It does not: `fetchDueCards`
+writes `dueCards`, `loading` and `error` as it settles and the store offers no
+abort signal, so the guard stops the session and the listener, nothing more. The
+comment says exactly that now.
+
+**The rest.** The launcher's failure row printed a fixed sentence and threw the
+store's own message away, while every other error surface on that page prints it;
+it prints `reviewError` now. The retry is re-entrant-safe: disabled while a retry
+is in flight, plus a guard in the handler. And the keydown listener is registered
+in one place — `resolveDueSession` and `retryReview` both end in
+`attachSessionKeys()` instead of repeating the two-line choice.
+
+**Declared limits:** the always-fetch and the retry guard have no test that could
+catch their removal. The unit suite is node/SSR (no mount lifecycle, no clicks) and
+Playwright starts each page with an empty store, so "the store already had cards
+and the page fetched anyway" is not a state it can reach. The listener dedupe is behaviour-preserving and
+covered by the entry's click test.
+
 ---
 
 ## 🔴 Open defects

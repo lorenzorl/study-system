@@ -249,13 +249,16 @@ describe("ResourcesPage render", () => {
 
   // `R4-2` of the review of the D2 change: a failed due fetch used to hide the row
   // and say nothing, so "nothing to resume" and "we could not ask" looked the same.
+  // `R3-001` / `R4-generic-error-copy` of the next review: the row also threw the
+  // store's own message away and printed a fixed sentence, while every other error
+  // surface on this page prints what the store reported.
   it("says the pending count could not be loaded, and offers a retry", async () => {
     const html = await renderPage(() => {}, {
       error: "No se pudo conectar al servidor.",
     })
 
     expect(html).toContain("Seguir donde quedaste")
-    expect(html).toContain("No se pudieron cargar los pendientes de hoy.")
+    expect(html).toContain("No se pudo conectar al servidor.")
     expect(html).toContain("Reintentar")
     expect(html).not.toContain("Repasar")
   })
