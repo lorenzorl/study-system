@@ -71,6 +71,28 @@
       </div>
     </section>
 
+    <!--
+      A failed count is not "nothing to resume". Hiding the row said both things at
+      once (`R4-2` of the review of D2), so the failure gets the same slot with the
+      retry that fixes it.
+    -->
+    <section v-else-if="reviewError" class="resources__continue">
+      <h2 class="resources__section-title">Seguir donde quedaste</h2>
+      <div class="continue">
+        <span class="continue__title">
+          No se pudieron cargar los pendientes de hoy.
+        </span>
+        <Button
+          type="button"
+          variant="outline"
+          class="min-h-[44px] min-w-[44px]"
+          @click="retryDueCards"
+        >
+          Reintentar
+        </Button>
+      </div>
+    </section>
+
     <div v-if="loading" class="resources__state">
       <span class="resources__spinner" aria-hidden="true"></span> Cargando...
     </div>
@@ -203,7 +225,7 @@ const { resources, loading, error } = storeToRefs(resourcesStore)
 // the one surface that resumes it: the launcher links there instead of owning a
 // second, fixture-driven session of its own (backlog D2).
 const reviewStore = useReviewStore()
-const { dueCards } = storeToRefs(reviewStore)
+const { dueCards, error: reviewError } = storeToRefs(reviewStore)
 const continueResource = computed<ContinueResource | null>(() =>
   continueEntryFor(dueCards.value),
 )
@@ -262,14 +284,18 @@ function statusOf(resource: Resource): string {
 /**
  * `Seguir` opens the real due session.
  *
- * The session store is started before the navigation for the same reason
- * `pages/due-cards` does it: the review route renders its own session when it has
- * no concept, and starting it here means it does not re-fetch what this page just
- * counted.
+ * The route owns the session: it starts it when it has none, and it reuses the
+ * cards this page already counted instead of fetching them again. Starting the
+ * store here as well meant two owners of one piece of state, and a started session
+ * left behind whenever the navigation did not commit (`R4-2`).
  */
 function openContinue() {
-  reviewStore.startSession()
   router.push({ name: "review" })
+}
+
+/** The count failed; the row stays and asks again rather than disappearing. */
+function retryDueCards() {
+  reviewStore.fetchDueCards()
 }
 
 // ── Capture panel ────────────────────────────────────────────────────────────

@@ -32,10 +32,4 @@ describe("continueEntryFor", () => {
 
     expect(entry?.total).toBe(1)
   })
-
-  // The action navigates by entry id, so the id is part of the contract and not a
-  // label that can drift with the copy.
-  it("identifies the entry as the review session", () => {
-    expect(continueEntryFor([card("f1")])?.id).toBe("review")
-  })
 })

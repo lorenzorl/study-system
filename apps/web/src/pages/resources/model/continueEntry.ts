@@ -12,6 +12,10 @@ import type { ContinueResource } from "./types"
  *
  * `done` is always 0: the entry says how much is pending, and the session counts
  * from the beginning once it opens.
+ *
+ * There is no id: the zone holds at most one entry and the action is the review
+ * route, so an identifier would be a field nothing consumes. The commit that adds a
+ * second kind of resume is the commit that adds one.
  */
 export function continueEntryFor(
   dueCards: readonly DueCard[],
@@ -19,7 +23,6 @@ export function continueEntryFor(
   if (dueCards.length === 0) return null
 
   return {
-    id: "review",
     kindLabel: "Repaso",
     title: "Pendientes de hoy",
     done: 0,

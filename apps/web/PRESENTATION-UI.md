@@ -282,21 +282,19 @@ Decided 2026-10-21:
 
 Decided 2026-10-30:
 
-Decided 2026-10-30:
-
 1. **One review surface.** The review modal is dropped; `/study/review` is the
    session, reached from the launcher's continue entry and from `/study/due`. Two
    surfaces for one interaction is what `backlog.md` D2 was made of.
 
 Open:
 
-3. **Deck ownership**: a deck may cover a whole topic, not a concept. Until that
+1. **Deck ownership**: a deck may cover a whole topic, not a concept. Until that
    is settled, decks are modelled as belonging to a concept like everything else.
-4. **Exam source**: questions generated from the concept's cards, or an authored
+2. **Exam source**: questions generated from the concept's cards, or an authored
    set. This changes the model (an exam may have no 1:1 card mapping).
-5. **Staleness**: a deck generated from notes that changed afterwards. Showing it
+3. **Staleness**: a deck generated from notes that changed afterwards. Showing it
    on the card ("fuentes cambiadas") is cheap; deciding what to do about it is not.
-6. **Where the `Resource` type lives** — **decided 2026-10-22**: `entities/resource`
+4. **Where the `Resource` type lives** — **decided 2026-10-22**: `entities/resource`
    owns the wire shape of `GET /api/resources` (§15), and the launcher's view
    model stays page-local in `pages/resources/model/types.ts` until a second
    surface reads it. That is the decision `ARCHITECTURE.md` §14 asked for before

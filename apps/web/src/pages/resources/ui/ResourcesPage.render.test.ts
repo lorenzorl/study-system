@@ -18,14 +18,21 @@ const DAY = 86_400_000
 
 type Store = ReturnType<typeof useResourcesStore>
 
+/** The review store's state as the launcher sees it when it renders. */
+interface DueState {
+  cards?: DueCard[]
+  error?: string
+}
+
 function renderPage(
   seed: (store: Store) => void,
-  dueCards: DueCard[] = [],
+  due: DueState = {},
 ): Promise<string> {
   const pinia = createPinia()
   setActivePinia(pinia)
   seed(useResourcesStore())
-  useReviewStore().dueCards = dueCards
+  useReviewStore().dueCards = due.cards ?? []
+  useReviewStore().error = due.error ?? null
 
   const app = createSSRApp(ResourcesPage)
   app.use(pinia)
@@ -223,7 +230,9 @@ describe("ResourcesPage render", () => {
   // is the due endpoint. Before this the slot was a hardcoded `null`, so the review
   // flow had no entry from the home screen at all.
   it("offers the review session as the one continue entry, with the due count", async () => {
-    const html = await renderPage(() => {}, [dueCard("f1"), dueCard("f2")])
+    const html = await renderPage(() => {}, {
+      cards: [dueCard("f1"), dueCard("f2")],
+    })
 
     expect(html).toContain("Seguir donde quedaste")
     expect(html).toContain("Repaso · Pendientes de hoy")
@@ -236,5 +245,18 @@ describe("ResourcesPage render", () => {
 
     expect(html).not.toContain("Seguir donde quedaste")
     expect(html).not.toContain("Pendientes de hoy")
+  })
+
+  // `R4-2` of the review of the D2 change: a failed due fetch used to hide the row
+  // and say nothing, so "nothing to resume" and "we could not ask" looked the same.
+  it("says the pending count could not be loaded, and offers a retry", async () => {
+    const html = await renderPage(() => {}, {
+      error: "No se pudo conectar al servidor.",
+    })
+
+    expect(html).toContain("Seguir donde quedaste")
+    expect(html).toContain("No se pudieron cargar los pendientes de hoy.")
+    expect(html).toContain("Reintentar")
+    expect(html).not.toContain("Repasar")
   })
 })

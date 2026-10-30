@@ -230,6 +230,7 @@ const {
   isSessionComplete: isReviewComplete,
   completedCount: reviewCompletedCount,
   totalCount: reviewTotalCount,
+  hasCards: reviewHasCards,
   reviewResult,
   currentIndex: currentReviewIndex,
   answerRevealed,
@@ -250,11 +251,12 @@ const {
  *
  * The concept route (`/topic/:topicId/concept/:conceptId/flashcards`) passes both
  * props; `/study/review` passes neither, and that is the whole difference between
- * the concept session and the due session. They are read as possibly absent even
- * though the declaration is required, because the declaration describes the
- * concept route only — the review route is the other way this page is reached.
+ * the concept session and the due session. That is why the props are declared
+ * optional: "no concept" is a supported way to reach this page, not a missing
+ * value.
  */
 const hasConceptParams = computed(() => !!props.topicId && !!props.conceptId)
+
 /**
  * Which of the two sessions this render is. The due session is also the one the
  * page falls into when it is entered with no concept, which is why it does not
@@ -267,9 +269,13 @@ const isDueMode = computed(
 /**
  * Before the page's own fetch settles there is no session yet, so the due branch
  * has to report loading. Without this the first frame is an empty deck.
+ *
+ * A failed load is not pending: `reviewError` wins so the error and its retry are
+ * what the page shows, instead of a spinner that never resolves
+ * (`R3-due-fetch-failure-masked`).
  */
 const dueModePending = computed(
-  () => isDueMode.value && !reviewIsSessionActive.value,
+  () => isDueMode.value && !reviewIsSessionActive.value && !reviewError.value,
 )
 
 const sessionEl = ref<HTMLElement | null>(null)
@@ -286,26 +292,55 @@ useSwipe(sessionEl, {
   onSwipeRight: () => prevCard(),
 })
 
-onMounted(async () => {
-  // `/study/review` carries no concept, so the page owns its due session and loads
-  // it itself: a deep link or a reload reviews today's cards instead of reporting a
-  // concept nobody asked for (backlog D2). When the launcher or the due list already
-  // started the session, its cards are in and nothing is fetched twice.
+/**
+ * Set once the component is gone, so the due session's own load cannot write to the
+ * store — or leave a keydown listener behind — after the page unmounted. The load is
+ * an `await` and the route can change while it is in flight (`R3-async-mount-race`).
+ */
+let unmounted = false
+
+onMounted(() => {
   if (isDueMode.value && !reviewIsSessionActive.value) {
-    await fetchDueCards()
-    startSession()
+    void resolveDueSession()
+    return
   }
 
-  if (reviewIsSessionActive.value) {
-    window.addEventListener("keydown", handleReviewKeydown)
-  } else {
-    topicSelection.selectTopic(props.topicId)
-    conceptSelection.selectConcept(props.conceptId)
-    window.addEventListener("keydown", handleKeydown)
-  }
+  attachSessionKeys()
 })
 
+/**
+ * `/study/review` carries no concept, so the page owns its due session: a deep link
+ * or a reload reviews today's cards instead of reporting a concept nobody asked for
+ * (backlog D2).
+ *
+ * It fetches only when the store has no cards, so opening the session from the
+ * launcher's continue row costs no second request.
+ */
+async function resolveDueSession() {
+  if (!reviewHasCards.value) await fetchDueCards()
+
+  // A failed load is an error, not an empty deck: the page must not claim a session
+  // it could not load (`R3-due-fetch-failure-masked`).
+  if (unmounted || reviewError.value) return
+
+  startSession()
+  window.addEventListener("keydown", handleReviewKeydown)
+}
+
+/** The keydown listener belongs to whichever of the two sessions this render is. */
+function attachSessionKeys() {
+  if (reviewIsSessionActive.value) {
+    window.addEventListener("keydown", handleReviewKeydown)
+    return
+  }
+
+  topicSelection.selectTopic(props.topicId)
+  conceptSelection.selectConcept(props.conceptId)
+  window.addEventListener("keydown", handleKeydown)
+}
+
 onBeforeUnmount(() => {
+  unmounted = true
   window.removeEventListener("keydown", handleKeydown)
   window.removeEventListener("keydown", handleReviewKeydown)
 })
@@ -358,8 +393,16 @@ function goBackToConcept() {
 
 // ── Due-Review mode handlers ──────────────────────────────────────────────────
 
-function retryReview() {
-  fetchDueCards()
+/**
+ * Retrying a failed load is also how the page enters its session: the first attempt
+ * refused to claim one (`R3-due-fetch-failure-masked`).
+ */
+async function retryReview() {
+  await fetchDueCards()
+  if (unmounted || reviewError.value) return
+
+  startSession()
+  window.addEventListener("keydown", handleReviewKeydown)
 }
 
 function goBackToDue() {

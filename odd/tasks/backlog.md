@@ -170,6 +170,55 @@ database that exists but cannot be opened now fails instead of planning empty.
 Safe direction — silence there meant sending a whole book to the model — but it
 is not a refactor, so it is written down here rather than only in the commit.
 
+### C5 (closed) — the review of the D2 change left nine findings, all closed
+
+Lineage `review-7e48e635cd3a6ff8`, tier medium, 20 files, 1330 lines, lenses
+resilience, readability and reliability. Approved; authority burned. The nine
+findings were advisory (none opened a correction), and all nine were fixed in the
+commit that follows.
+
+| Id | Lens | Severity | Location |
+| --- | --- | --- | --- |
+| `R3-due-fetch-failure-masked` | reliability | WARNING | `pages/flashcard-session/ui/FlashcardSessionPage.vue` (due-mode head) |
+| `R3-async-mount-race` | reliability | WARNING | same file (`onMounted`) |
+| `R4-1` | resilience | WARNING | same file (`onMounted`) |
+| `R4-2` | resilience | WARNING | `pages/resources/ui/ResourcesPage.vue` (`openContinue`) |
+| `R2-003` | readability | WARNING | `pages/resources/model/continueEntry.test.ts` (the id test) |
+| `R2-001`, `R3-duplicated-decision-heading` | readability, reliability | SUGGESTION | `apps/web/PRESENTATION-UI.md` §8 |
+| `R2-002`, `R3-stale-props-comment` | readability, reliability | SUGGESTION | `FlashcardSessionPage.vue` (the props comment) |
+
+**The two that mattered were one class of defect: a failed load and an empty
+result were the same screen.** On the session page, `dueModePending` did not know
+about `reviewError`, so a failed fetch kept the spinner and never showed the
+error; and the page claimed a session it had not loaded. Now `reviewError` wins
+over pending, `startSession()` runs only when the load succeeded (including on a
+retry, which is also how the page enters its session), and the launcher keeps its
+continue row on failure with `No se pudieron cargar los pendientes de hoy.` plus
+`Reintentar` instead of hiding it — "nothing to resume" and "we could not ask"
+stop looking identical.
+
+**One owner for the session.** `openContinue` used to call `startSession()` and
+then navigate, so a navigation that did not commit left a started session behind,
+and the session had two owners. The route owns it now, and the page reuses the
+cards the launcher already counted (`hasCards` gates the fetch), so the entry
+still costs one request.
+
+**The async mount is guarded.** `resolveDueSession` awaits the fetch, so it sets
+an `unmounted` flag in `onBeforeUnmount` and writes nothing after it — no store
+mutation and no keydown listener left behind. **Declared limit:** no test covers
+this one. The unit suite is node/SSR and never runs the mount lifecycle, and an
+interrupted fetch is not reliably reproducible in Playwright; the guard is
+asserted by construction.
+
+**The dead field is gone.** `ContinueResource.id` was pinned by a test whose
+comment claimed the action navigated by it — it did not, and nothing read it. The
+field and that test are deleted; the zone holds at most one entry, and the commit
+that adds a second kind of resume is the commit that adds an identifier.
+
+The two doc suggestions were my own duplication: §8 carried the
+`Decided 2026-10-30:` heading twice, and the props comment still said the
+parameters were required after they became optional.
+
 ---
 
 ## 🔴 Open defects

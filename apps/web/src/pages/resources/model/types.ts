@@ -66,7 +66,6 @@ export type Resource =
 
 /** The "continue" zone shows at most one item (§6), so this is not a list. */
 export interface ContinueResource {
-  id: string
   /** The activity being continued, e.g. `Repaso`. */
   kindLabel: string
   title: string

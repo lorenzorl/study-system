@@ -311,6 +311,20 @@ describe("FlashcardSessionPage — the review route", () => {
     expect(html).toContain("No hay tarjetas para repasar.")
     expect(buttonNames(html)).toContain("← Volver")
   })
+
+  // `R3-due-fetch-failure-masked` of the review of the D2 change: a failed load used
+  // to keep the page in its pending state, so "still loading" and "the load failed"
+  // were the same screen and the error was never shown.
+  it("shows the failure instead of staying pending, and offers a retry", async () => {
+    const html = await renderReviewRoute(() => {
+      useReviewStore().error = "No se pudieron cargar los repasos."
+    })
+
+    expect(html).toContain("No se pudieron cargar los repasos.")
+    expect(buttonNames(html)).toContain("Reintentar")
+    expect(html).not.toContain("Cargando...")
+    expect(html).not.toContain("No hay tarjetas para repasar.")
+  })
 })
 
 describe("FlashcardSessionPage — the migrated controls", () => {
