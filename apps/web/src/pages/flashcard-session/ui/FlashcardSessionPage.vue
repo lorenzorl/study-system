@@ -372,7 +372,10 @@ onBeforeUnmount(() => {
 
 function retry() {
   topicsStore.clearError()
-  loadTopicsIfEmpty()
+  // A retry forces the load. It must not go through `loadTopicsIfEmpty`: that guard
+  // answers "is it empty and idle", and a retry that it declines would clear the
+  // error and leave the page on its not-found state (`R3-retry-guard-swallows-retry`).
+  topicsStore.loadTopics()
 }
 
 function handleKeydown(e: KeyboardEvent) {

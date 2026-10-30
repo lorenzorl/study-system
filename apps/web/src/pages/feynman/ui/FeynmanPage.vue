@@ -17,7 +17,15 @@
       <span class="spinner"></span> Cargando...
     </div>
 
-    <div v-else-if="topicsError" class="feynman__empty feynman__empty--error">
+    <!--
+      `&& !concept`: an error left over from an earlier failed load must not win
+      over a concept that does resolve (`R3-feynman-error-overrides-found`). The
+      error is only the answer when there is nothing to show.
+    -->
+    <div
+      v-else-if="topicsError && !concept"
+      class="feynman__empty feynman__empty--error"
+    >
       <p>{{ topicsError }}</p>
       <Button variant="outline" class="min-h-[44px]" @click="retry">
         Reintentar
@@ -115,7 +123,10 @@ onMounted(() => {
  */
 function retry() {
   topicsStore.clearError()
-  loadTopicsIfEmpty()
+  // A retry forces the load. It must not go through `loadTopicsIfEmpty`: that guard
+  // answers "is it empty and idle", and a retry that it declines would clear the
+  // error and leave the page on its not-found state (`R3-retry-guard-swallows-retry`).
+  topicsStore.loadTopics()
 }
 
 function explain() {

@@ -54,9 +54,17 @@ export const useTopicsStore = defineStore("topics", () => {
   /**
    * Nothing to render yet, and nobody has asked: the page shows its loading state
    * instead of claiming the topic or concept does not exist.
+   *
+   * `topics.length === 0` is part of the rule, not a detail (`R3-pending-wedge-nonempty-unloaded`):
+   * a store that already holds topics has something to show, and without this the
+   * page would spin forever over real data whenever a load had not settled.
    */
   const isPending = computed(
-    () => !loaded.value && !loading.value && !error.value,
+    () =>
+      !loaded.value &&
+      !loading.value &&
+      !error.value &&
+      topics.value.length === 0,
   )
 
   function clearError(): void {

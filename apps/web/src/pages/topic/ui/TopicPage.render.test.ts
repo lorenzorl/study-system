@@ -132,6 +132,16 @@ describe("TopicPage render", () => {
     expect(html).not.toContain("Tema no encontrado.")
   })
 
+  // `R3-pending-wedge-nonempty-unloaded`: pending is "nothing to render", not "no
+  // load has settled". A store that already holds topics has something to show,
+  // whatever `loaded` says, or the page spins forever over real data.
+  it("shows the topics it has even before a load has settled", async () => {
+    const html = await render({ loaded: false })
+
+    expect(html).toContain("Atención")
+    expect(html).not.toContain("Cargando...")
+  })
+
   // D1's pre-mount paint: until the selection is set, the page has no topic to
   // name, so it renders the not-found state and its one way out. Reachable for a
   // frame on a cold visit; the mount handler replaces it as soon as it runs (see

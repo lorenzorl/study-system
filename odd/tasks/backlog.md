@@ -333,6 +333,39 @@ resubmit the refused bytes.
 **Zero baselines changed**, so the two fixes moved no pixels: light mode is
 byte-identical, which is what the 16 captures assert.
 
+### C9 (closed) — the review of the D6 change left six findings, two of them real
+
+Lineage `review-7113465a36c7e5fe`, tier medium, 10 files, 249 lines, lenses
+reliability and resilience. Approved; authority burned.
+
+| Id | Lens | Severity | Location |
+| --- | --- | --- | --- |
+| `R3-retry-guard-swallows-retry` | reliability | WARNING | `FlashcardSessionPage.vue` (`retry`) |
+| `R3-pending-wedge-nonempty-unloaded` | reliability | SUGGESTION | `useTopicsStore.ts` (`isPending`) |
+| `R3-feynman-error-overrides-found` | reliability | SUGGESTION | `FeynmanPage.vue` (the error branch) |
+| `R3-retry-fetch-unproved`, `R4-mount-fetch-failure-uncovered`, `R4-retry-guard-narrowing` | reliability, resilience | SUGGESTION | the two fetches and the retry |
+
+**The WARNING was a regression I introduced in the same commit.** `retry()` went
+through `loadTopicsIfEmpty()`, which answers "is it empty and idle" — not "load it".
+A retry the guard declines clears the error and leaves the page on its not-found
+state: the button appears to do nothing. Both pages force `loadTopics()` again.
+
+**The wedge.** `isPending` was `!loaded && !loading && !error`, which is true over a
+store that already holds topics but never settled — the page would spin forever over
+real data. `topics.length === 0` is part of the rule, and both pages now have a test
+that renders with `loaded: false` over a populated store.
+
+**The stale error.** `FeynmanPage`'s error branch sat before the concept branch, so an
+error left over from an earlier failed load hid a concept that does resolve. The
+branch is `topicsError && !concept`: the error is the answer only when there is
+nothing to show.
+
+**The three coverage SUGGESTIONs are the limits C6/C7 already declared** (no harness
+for the mount lifecycle or for a click), confirmed again from both lenses.
+
+**No baseline moved**, so none of the three fixes changed a pixel — they only change
+which state wins.
+
 ---
 
 ## 🔴 Open defects

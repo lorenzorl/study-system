@@ -134,6 +134,17 @@ describe("FeynmanPage render", () => {
     expect(html).not.toContain("Concepto no encontrado.")
   })
 
+  // `R3-feynman-error-overrides-found`: an error left over from an earlier failed
+  // load used to win over a concept that does resolve, so the form disappeared
+  // while the data was there. The error only wins when there is nothing to show.
+  it("shows the concept it has, even when a stale error is still set", async () => {
+    const html = await render({ error: "No se pudo cargar." })
+
+    expect(html).toContain("Filtro atencional")
+    expect(html).toContain("<textarea")
+    expect(html).not.toContain("No se pudo cargar.")
+  })
+
   // INVARIANT: the one case the migration is expected to turn red.
   it("renders its control through the shared/ui button", async () => {
     const html = await render()
