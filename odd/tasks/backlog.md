@@ -210,28 +210,56 @@ four real pages out of eight, and the concept action rows and the Feynman submit
 no pixel coverage at all. Fixing this is the same one change per page (load the store
 when it is empty), then four baselines regenerated against real content.
 
-### D2 — The review modal has no reachable route, so the flashcards flow cannot be used
+### D2 (closed 2026-10-30) — The review modal had no reachable route, so the flashcards flow could not be used
 
-`ReviewModal` is mounted only by `ResourcesPage`, and neither of its two entry
-paths can fire:
+`ReviewModal` was mounted only by `ResourcesPage`, and neither of its two entry
+paths could fire:
 
-- `continueResource` is hardcoded `null`, so the resume ("continuar") action is
+- `continueResource` was hardcoded `null`, so the resume ("continuar") action was
   unreachable.
 - `toMaterialResources` maps every API resource to kind `material`, so
-  `openResource`'s `flashcards` branch never runs.
+  `openResource`'s `flashcards` branch never ran.
 
-Consequence for the visual net: `/study/review` (`review-darwin.png`) is a capture
+Consequence for the visual net: `/study/review` (`review-darwin.png`) was a capture
 of "Concepto no encontrado." — another error-state baseline, the same class as D1's
-`topic-darwin.png`. Regenerating it can never show the modal, because the route
-never mounts one.
+`topic-darwin.png`. Regenerating it could never show the modal, because the route
+never mounted one.
 
 Found by T5, which migrated the modal to the `dialog` primitive and could verify it
 only through a manual browser mount (dynamic import against the dev server), not
 through the app's own navigation.
 
-**How to close:** give the review flow a real entry (the continue/resume decision is
-the open one — see the resources launcher), then add one `interactive states`
-capture for the open modal and regenerate `review-darwin.png`.
+**The decision, taken by the owner before any source write:** the app keeps **one**
+review surface. There were two implementations of the same interaction — the modal
+(synchronous, fixture-driven, `grade` emitted to nobody) and the FSRS session at
+`/study/review` (grades against the API, shows the next review date) — and a second
+surface with no data source is exactly what D2 was made of.
+
+**What closed it, three parts:**
+
+1. **The launcher's continue entry has a real source.** `pages/resources/model/continueEntry.ts`
+   turns `GET /api/study/due` into the one "Seguir donde quedaste" row (`Repaso ·
+   Pendientes de hoy`, `0 / N`), and its action starts the session and routes to it.
+   `continueResource` is a computed over the due cards, not a hardcoded `null`.
+2. **`/study/review` owns its session.** The route carries no concept, so the page
+   loads today's cards itself and enters due mode; a deep link or a reload reviews
+   them instead of reporting a concept nobody asked for. The concept route
+   (`/topic/:t/concept/:c/flashcards`) is unchanged, and the two modes are now one
+   computed (`isDueMode`) instead of a flag another page had to set first.
+3. **The modal is gone.** `widgets/review-modal` (component, `useCardSession`, both
+test files) and `pages/resources/model/cardFixtures.ts` were deleted with its
+wiring, so the widget inventory has no unreachable surface. The grade row that
+lived in both places now lives in exactly one file.
+
+**The visual net.** `review-darwin.png` is a real card now, `resources-darwin.png`
+shows the continue row, and `interactive states` gained `review-revealed.png` — the
+answer revealed with the four grades, which is also the pixel coverage D3 said that
+row had nowhere (D3's colour half is still open).
+
+**What is still true:** the `flashcards` kind still has no endpoint, so no flashcard
+resource card can appear in the launcher; its chip renders an empty list, as S3 of
+`resource-launcher-api.md` accepted. The due session, not a card, is how cards are
+reached.
 
 ### D3 — The grade row's colours bypass the palette, and the net cannot see it
 
@@ -253,12 +281,14 @@ Two consequences worth naming:
   controls T6 *did* migrate there would pass every gate.
 
 **How to close:** add the three grade colours to the palette in `index.html` and its
-dark block, then migrate the row against those tokens (or keep it hand-rolled and
-add an `interactive states` capture of a revealed card, which is the cheaper half).
+dark block, then migrate the row against those tokens. The pixel half is done:
+`review-revealed.png` (added when D2 closed) captures the row in a real browser, so
+a regression there now fails the net.
 
-**Also here:** `ReviewModal.render.test.ts` still asserts `toContain("disabled")` on
-its own hand-rolled grade buttons — the L16 trap, harmless only while that row stays
-hand-rolled, silently wrong the day it migrates.
+**Also here:** the `toContain("disabled")` trap the modal's render test carried is
+gone with the modal (D2). The lesson stays: the assertion has to be on the
+attribute, which is what `ResourcesPage.render.test.ts` and
+`FlashcardSessionPage.render.test.ts` now do.
 
 ### D4 — Two token aliases are literal colours, and the migration made them load-bearing
 

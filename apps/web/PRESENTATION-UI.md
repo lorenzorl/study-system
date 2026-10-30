@@ -35,7 +35,7 @@ worth clicking:
 
 | Kind | Badge | Status line | Primary action | Surface |
 | --- | --- | --- | --- | --- |
-| Flashcards | ⏰ | 5 pendientes hoy / al día | Repasar | Modal |
+| Flashcards | ⏰ | 5 pendientes hoy / al día | Repasar | Session (`/study/review`) |
 | Deck | ▤ | 12 diapositivas · generado hace 2 días | Presentar | Tab |
 | Exam | ✎ | no rendido / 8/10 / vencido | Empezar | Tab |
 | Material | ▦ | Libro · agregado hace 3 días | Abrir | Where it lives |
@@ -60,16 +60,24 @@ the action disabled with the reason, because a button that does nothing reads as
 a bug.
 
 The other three kinds have no endpoint yet. Their model, filter and surfaces stay
-in place and they render nothing until one exists: that is why the "continue" slot
-is currently empty (no endpoint reports a resumable session) and why the review
-modal still renders fixture cards (no endpoint lists a resource's cards).
+in place and they render nothing until one exists, so a flashcard resource card
+cannot appear in the list. Cards are reached through the due session instead, and
+that is what the launcher's one "continue" entry offers: `GET /api/study/due`
+counted into `Repaso · Pendientes de hoy`, whose action starts the session and
+routes to it (`pages/resources/model/continueEntry.ts`).
+
+The review modal this proposal drew is **not** built, and it is not an oversight.
+There is one review surface: `/study/review`. The modal was a second,
+fixture-driven implementation of the same interaction with no data source, and it
+could not be reached from anywhere in the app; it was deleted when the continue
+entry got a real source (`odd/tasks/backlog.md` D2).
 
 ## 3. Surface map
 
 | Surface | Job | Lifetime |
 | --- | --- | --- |
 | Launcher (`/`) | Continue, then browse resources by topic, with a kind filter; the capture form opens from here | Long, user-driven |
-| Review modal | One card at a time, keyboard-first | Short, task-bounded |
+| Review session (`/study/review`) | One card at a time, keyboard-first; the due queue | Session-length |
 | Deck page (`/present/:deckId`) | Present a deck (Reveal, full-bleed) | Session-length |
 | Topics (`/topics`, `/topic/:topicId`, `/topic/:topicId/concept/:conceptId`) | Browse topics and concepts; paste a note to sync flashcards | Long, user-driven |
 | Flashcard session | The concept's cards, or the due queue (`/study/due`) | Session-length |
@@ -175,7 +183,13 @@ have done structurally.
 page's own `Salir` button, which routes back to the launcher, or the browser's
 back button.
 
-### 4.5 Review modal
+### 4.5 Review session (`/study/review`)
+
+Designed as an overlay over the launcher; shipped as the route. The layout below
+is the one it inherited — a card, a reveal, four grades — but the frame is the
+page, not a modal: the route owns its due session (it loads today's cards and
+starts itself when it carries no concept), so a deep link or a reload reviews
+them. Leaving is `← Volver` to `/study/due`; there is no `Esc` to bind.
 
 ```text
         ┌──────────────────────────────────────────────────────┐
@@ -218,7 +232,7 @@ surface: it meets the user where they decide to study.
    header nav ──┐
    URL ─────────┴─▶ Launcher (/)
                       │ SEGUIR / filtro / búsqueda
-                      ├── ⏰ tarjetas ──▶ Modal de repaso ──Esc──▶ Launcher
+                      ├── ⏰ Repaso ──▶ /study/review ──Volver──▶ /study/due
                       ├── ▤ diapositivas ──▶ /present/:deckId ──Salir──▶ Launcher
                       └── ✎ examen ──▶ (sin ruta todavía)
    header nav ────▶ Temas (/topics) ──▶ Tema ──▶ Concepto ──▶ Sesión / Feynman
@@ -249,7 +263,6 @@ resource; it only routes to one. Exams are modelled but unrouted.
 | Shell + nav | `app/ui/App.vue` | app |
 | Launcher, continue slot, resource card, filter + search | `pages/resources` (`ui/ResourcesPage.vue`, `model/filter.ts`, `model/types.ts`) | pages |
 | Capture form (file, text, URL) | `features/capture-material` | features |
-| Review modal | `widgets/review-modal` | widgets |
 | Deck view | `pages/presentation` + `widgets/deck-viewer` | pages + widgets |
 | Topic and concept pages | `pages/dashboard`, `pages/topic`, `pages/concept` | pages |
 | Sync-note form | `features/sync-note` (paste markdown on the topics page) | features |
@@ -266,6 +279,14 @@ Decided 2026-10-21:
 2. **Aggregation — concept × kind.** One card per resource. A topic with three
    concepts and two kinds produces six cards, and that is accepted: precision
    beats compactness while the corpus is small.
+
+Decided 2026-10-30:
+
+Decided 2026-10-30:
+
+1. **One review surface.** The review modal is dropped; `/study/review` is the
+   session, reached from the launcher's continue entry and from `/study/due`. Two
+   surfaces for one interaction is what `backlog.md` D2 was made of.
 
 Open:
 
