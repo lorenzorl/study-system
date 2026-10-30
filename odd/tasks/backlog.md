@@ -495,17 +495,34 @@ padding, border and 44px floor although `shared/ui/input` exists; and `Flashcard
 has no pixel coverage anywhere (backlog D2), so its migration is pinned only by a
 render test.
 
-### D6 — Three loose ends D1 left behind
+### D6 (closed 2026-10-30) — Three loose ends D1 left behind
 
-1. **`pages/flashcard-session` has the same mount gap.** Only its `retry` calls
-   `loadTopics()`, so a cold `/topic/:t/concept/:c/flashcards` cannot resolve. It was
-   outside D1's surfaces.
-2. **Both fixed pages paint "no encontrado" for one frame** before `onMounted` runs and
-   the store reports `loading`. Moving the load into setup would remove the flash, but
-   it changes what the SSR render tests can observe — a separate decision.
-3. **`FeynmanPage` has no error UI and no retry.** A failed load leaves it on the
+1. **`pages/flashcard-session` had the same mount gap.** Only its `retry` called
+   `loadTopics()`, so a cold `/topic/:t/concept/:c/flashcards` could not resolve. It
+   was outside D1's surfaces.
+2. **The fixed pages painted "no encontrado" for one frame** before `onMounted` ran
+   and the store reported `loading`.
+3. **`FeynmanPage` had no error UI and no retry.** A failed load left it on the
    not-found paragraph with nothing to press. That was unchanged behaviour, but D1
-   made the page reachable, so it is now observable.
+   made the page reachable, so it became observable.
+
+**Closed, and the second one differently than this entry proposed.** The entry said
+the flash could only be removed by moving the load into `setup`, at the cost of what
+the SSR tests can observe. It does not: the store gained `loaded` and a derived
+`isPending` (`!loaded && !loading && !error`), so *empty and never settled* is
+pending rather than missing. `loading` alone could never answer that question — it is
+false both before the first request and after the last one. The load stays in
+`onMounted`, the pages keep their SSR observability, and the four page tests seed
+`loaded: true` when they mean "a settled store".
+
+`FeynmanPage` now has the three states before its form — pending, failure with
+`Reintentar`, and not-found — and the concept session uses the shared
+`createLoadIfEmpty` guard, so a cold deep link fills the store and a warm path does
+not fetch twice.
+
+**The cost, said plainly:** `loaded` is a new public field on the store, and four
+page tests now have to seed it. That is the price of distinguishing "we have not
+asked" from "we asked and there is nothing", which no existing field could express.
 
 **Also worth knowing:** the re-arm semantics mean a permanently failing `/api/topics`
 refetches once per mount rather than once per session. Intentional (a dead end is worse

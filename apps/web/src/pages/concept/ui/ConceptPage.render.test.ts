@@ -48,6 +48,10 @@ interface Seed {
   error?: string | null
   conceptId?: string | null
   cards?: Flashcard[]
+  /** The store's contents; empty is the cold-visit case. */
+  topics?: Topic[]
+  /** Whether a load has ever settled. `true` unless a test wants the first frame. */
+  loaded?: boolean
 }
 
 async function render(seed: Seed = {}): Promise<string> {
@@ -55,9 +59,10 @@ async function render(seed: Seed = {}): Promise<string> {
   setActivePinia(pinia)
 
   const topics = useTopicsStore()
-  topics.topics = TOPICS
+  topics.topics = seed.topics ?? TOPICS
   topics.loading = seed.loading ?? false
   topics.error = seed.error ?? null
+  topics.loaded = seed.loaded ?? true
 
   useTopicSelection().selectTopic("t1")
   useConceptSelection().selectConcept(seed.conceptId === undefined ? "c1" : seed.conceptId)
@@ -145,6 +150,15 @@ describe("ConceptPage render", () => {
 
     expect(html).toContain("Concepto no encontrado.")
     expect(buttonLabelled(html, "← Volver al Tema")).toBeTruthy()
+  })
+
+  // D6: same first frame as `TopicPage` — an empty store that never settled is
+  // pending, not a missing concept.
+  it("says it is loading when the store never settled, instead of not-found", async () => {
+    const html = await render({ topics: [], loaded: false, conceptId: null })
+
+    expect(html).toContain("Cargando...")
+    expect(html).not.toContain("Concepto no encontrado.")
   })
 
   // INVARIANT: the one case the migration is expected to turn red. Every control

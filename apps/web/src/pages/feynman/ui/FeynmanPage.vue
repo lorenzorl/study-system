@@ -7,7 +7,24 @@
     controls the primitives absorb, and the field is its own unit.
   -->
   <div class="feynman">
-    <div v-if="concept" class="feynman__content">
+    <!--
+      Three states before the form, and each one says something different
+      (`backlog.md` D6). Before this the page had only "found" and "not found", so a
+      pending first frame and a failed request both read as a missing concept, with
+      nothing to press.
+    -->
+    <div v-if="topicsLoading || topicsPending" class="feynman__empty">
+      <span class="spinner"></span> Cargando...
+    </div>
+
+    <div v-else-if="topicsError" class="feynman__empty feynman__empty--error">
+      <p>{{ topicsError }}</p>
+      <Button variant="outline" class="min-h-[44px]" @click="retry">
+        Reintentar
+      </Button>
+    </div>
+
+    <div v-else-if="concept" class="feynman__content">
       <div class="feynman__header">
         <h2 class="feynman__name">{{ concept.title }}</h2>
       </div>
@@ -62,6 +79,8 @@ const props = defineProps<{
 }>()
 
 const topicsStore = useTopicsStore()
+const { loading: topicsLoading, error: topicsError, isPending: topicsPending } =
+  storeToRefs(topicsStore)
 const topicSelection = useTopicSelection()
 const conceptSelection = useConceptSelection()
 const { currentTopicId } = storeToRefs(topicSelection)
@@ -86,6 +105,18 @@ onMounted(() => {
   topicSelection.selectTopic(props.topicId)
   conceptSelection.selectConcept(props.conceptId)
 })
+
+/**
+ * The page's only way back from a failed load (`backlog.md` D6).
+ *
+ * Clearing the error is what makes the pending state honest again: the store has
+ * already settled once, so `isPending` is false and the retry shows the spinner
+ * instead of the not-found paragraph.
+ */
+function retry() {
+  topicsStore.clearError()
+  loadTopicsIfEmpty()
+}
 
 function explain() {
   if (!userExplanation.value.trim() || !concept.value) return
@@ -186,5 +217,27 @@ function explain() {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 0.5rem;
+}
+
+/* The failure stacks its message over its retry; the other two are one line. */
+.feynman__empty--error {
+  flex-direction: column;
+}
+
+.spinner {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--background-modifier-border);
+  border-top: 2px solid var(--interactive-accent);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>

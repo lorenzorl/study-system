@@ -33,13 +33,29 @@ const TOPICS: Topic[] = [
  */
 const DISABLED = /(?:^|\s)disabled(?=[\s>=/])/
 
-async function render(selectConcept = true): Promise<string> {
+interface Seed {
+  selectConcept?: boolean
+  /** The store's contents; empty is the cold-visit case. */
+  topics?: Topic[]
+  loading?: boolean
+  error?: string | null
+  /** Whether a load has ever settled. `true` unless a test wants the first frame. */
+  loaded?: boolean
+}
+
+async function render(seed: Seed = {}): Promise<string> {
   const pinia = createPinia()
   setActivePinia(pinia)
 
-  useTopicsStore().topics = TOPICS
+  const topics = useTopicsStore()
+  topics.topics = seed.topics ?? TOPICS
+  topics.loading = seed.loading ?? false
+  topics.error = seed.error ?? null
+  topics.loaded = seed.loaded ?? true
   useTopicSelection().selectTopic("t1")
-  useConceptSelection().selectConcept(selectConcept ? "c1" : null)
+  useConceptSelection().selectConcept(
+    seed.selectConcept === false ? null : "c1",
+  )
 
   const app = createSSRApp(FeynmanPage, { topicId: "t1", conceptId: "c1" })
   app.use(pinia)
@@ -92,11 +108,30 @@ describe("FeynmanPage render", () => {
   })
 
   it("renders the not-found state when there is no concept to explain", async () => {
-    const html = await render(false)
+    const html = await render({ selectConcept: false })
 
     expect(html).toContain("Concepto no encontrado.")
     expect(html).not.toContain("<textarea")
     expect(buttons(html)).toHaveLength(0)
+  })
+
+  // D6, the third loose end of D1: this page had no error state and no retry, so a
+  // failed load left it on the not-found paragraph with nothing to press — and the
+  // user could not tell "it is not there" from "we could not ask".
+  it("keeps a failed load readable and offers a retry", async () => {
+    const html = await render({ error: "No se pudo cargar.", topics: [] })
+
+    expect(html).toContain("No se pudo cargar.")
+    expect(buttonLabelled(html, "Reintentar")).toBeTruthy()
+    expect(html).not.toContain("Concepto no encontrado.")
+    expect(html).not.toContain("<textarea")
+  })
+
+  it("says it is loading when the store never settled, instead of not-found", async () => {
+    const html = await render({ topics: [], loaded: false })
+
+    expect(html).toContain("Cargando...")
+    expect(html).not.toContain("Concepto no encontrado.")
   })
 
   // INVARIANT: the one case the migration is expected to turn red.

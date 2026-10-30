@@ -39,6 +39,10 @@ interface Seed {
   loading?: boolean
   error?: string | null
   select?: boolean
+  /** The store's contents; empty is the cold-visit case. */
+  topics?: Topic[]
+  /** Whether a load has ever settled. `true` unless a test wants the first frame. */
+  loaded?: boolean
 }
 
 async function render(seed: Seed = {}): Promise<string> {
@@ -46,9 +50,10 @@ async function render(seed: Seed = {}): Promise<string> {
   setActivePinia(pinia)
 
   const topics = useTopicsStore()
-  topics.topics = TOPICS
+  topics.topics = seed.topics ?? TOPICS
   topics.loading = seed.loading ?? false
   topics.error = seed.error ?? null
+  topics.loaded = seed.loaded ?? true
 
   useTopicSelection().selectTopic(seed.select === false ? null : "t1")
   useConceptSelection().resetConcept()
@@ -115,6 +120,16 @@ describe("TopicPage render", () => {
 
     expect(html).toContain("No se pudo cargar.")
     expect(buttonLabelled(html, "Reintentar")).toBeTruthy()
+  })
+
+  // D6: a cold deep link painted "Tema no encontrado." for one frame, before
+  // `onMounted` had asked for anything. An empty store that never settled is
+  // pending, not missing.
+  it("says it is loading when the store never settled, instead of not-found", async () => {
+    const html = await render({ topics: [], loaded: false })
+
+    expect(html).toContain("Cargando...")
+    expect(html).not.toContain("Tema no encontrado.")
   })
 
   // D1's pre-mount paint: until the selection is set, the page has no topic to

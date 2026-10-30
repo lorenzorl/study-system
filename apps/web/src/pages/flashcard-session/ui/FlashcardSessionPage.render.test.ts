@@ -62,6 +62,9 @@ const ONE_DUE_CARD: DueCard[] = [
 /** The concept mode the page resolves to once a topic and a concept are chosen. */
 function selectConcept(cards: Flashcard[]): void {
   useTopicsStore().topics = TOPICS
+  // The load has settled, so the page has an answer: without this the page would
+  // be pending (`backlog.md` D6) and every concept-mode case would read "Cargando".
+  useTopicsStore().loaded = true
   useTopicSelection().selectTopic("t1")
   useConceptSelection().selectConcept("c1")
   useFlashcardCache().setCachedFlashcards("c1", cards)
@@ -184,10 +187,24 @@ describe("FlashcardSessionPage render — concept mode", () => {
   })
 
   it("says the concept was not found and offers the way back", async () => {
-    const html = await renderPage()
+    // A settled load with no concept: the not-found state is an answer, so the store
+    // has to have answered (`loaded`), or the page would be pending instead.
+    const html = await renderPage(() => {
+      useTopicsStore().loaded = true
+    })
 
     expect(html).toContain("Concepto no encontrado.")
     expect(buttonNamed(html, "← Volver").tag).toBeTruthy()
+  })
+
+  // D6, the first loose end of D1: this page had no mount-time load, so a cold
+  // `/topic/:t/concept/:c/flashcards` resolved against an empty store. Its first
+  // frame is pending, not missing.
+  it("says it is loading when the store never settled, instead of not-found", async () => {
+    const html = await renderPage()
+
+    expect(html).toContain("Cargando...")
+    expect(html).not.toContain("Concepto no encontrado.")
   })
 
   it("explains that the concept has no cards and offers the panel", async () => {
@@ -337,7 +354,11 @@ describe("FlashcardSessionPage — the migrated controls", () => {
   // their hand-rolled markup (see the component), and they only exist after the
   // card is flipped, which SSR cannot reach.
   it("renders the empty state's action through the shared/ui button", async () => {
-    const html = await renderPage()
+    // A settled store with no concept: the not-found state, which is the one this
+    // test reads the control from. An unsettled store is pending and has none.
+    const html = await renderPage(() => {
+      useTopicsStore().loaded = true
+    })
     const rendered = buttons(html)
 
     expect(rendered).toHaveLength(1)

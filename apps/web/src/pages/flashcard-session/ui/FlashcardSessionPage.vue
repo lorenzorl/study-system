@@ -112,7 +112,10 @@
     <!-- ═══ Concept Mode (existing) ═══ -->
     <template v-else>
       <!-- Loading -->
-      <div v-if="loading" class="flashcard-session__state loading-state">
+      <div
+        v-if="loading || topicsPending"
+        class="flashcard-session__state loading-state"
+      >
         <span class="spinner"></span> Cargando...
       </div>
 
@@ -196,7 +199,7 @@
 import { ref, computed, onMounted, onBeforeUnmount } from "vue"
 import { useRouter } from "vue-router"
 import { storeToRefs } from "pinia"
-import { useSwipe } from "@/shared/lib"
+import { createLoadIfEmpty, useSwipe } from "@/shared/lib"
 import { Button } from "@/shared/ui/button"
 import { FlashcardCard } from "@/entities/flashcard"
 import { useTopicsStore } from "@/entities/topic"
@@ -216,7 +219,15 @@ const topicsStore = useTopicsStore()
 const topicSelection = useTopicSelection()
 const conceptSelection = useConceptSelection()
 
-const { loading, error } = storeToRefs(topicsStore)
+const { loading, error, isPending: topicsPending } = storeToRefs(topicsStore)
+
+// The same rule as `TopicPage`, `ConceptPage` and `FeynmanPage` (`backlog.md` D1,
+// D6): `concept` is resolved out of the topics store, so a cold visit needs the
+// store filled, and a warm one must not fetch twice.
+const loadTopicsIfEmpty = createLoadIfEmpty({
+  isEmpty: () => topicsStore.topics.length === 0 && !topicsStore.loading,
+  load: () => topicsStore.loadTopics(),
+})
 const { currentTopicId } = storeToRefs(topicSelection)
 const { currentFlashcards: flashcards } = storeToRefs(conceptSelection)
 
@@ -343,6 +354,11 @@ function attachSessionKeys() {
 
   topicSelection.selectTopic(props.topicId)
   conceptSelection.selectConcept(props.conceptId)
+  // D6's first loose end: this page had the same mount gap `TopicPage` had, so a
+  // cold `/topic/:t/concept/:c/flashcards` resolved against an empty store. The
+  // guard is the shared rule, so a warm path (launcher → topic → concept) does not
+  // fetch again.
+  loadTopicsIfEmpty()
   window.addEventListener("keydown", handleKeydown)
 }
 
@@ -356,7 +372,7 @@ onBeforeUnmount(() => {
 
 function retry() {
   topicsStore.clearError()
-  topicsStore.loadTopics()
+  loadTopicsIfEmpty()
 }
 
 function handleKeydown(e: KeyboardEvent) {

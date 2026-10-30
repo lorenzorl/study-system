@@ -12,7 +12,7 @@
     target) and `ml-auto`, which is all the page ever owned about its position.
   -->
   <div class="topic-view">
-    <div v-if="loading" class="topic-view__state loading-state">
+    <div v-if="loading || topicsPending" class="topic-view__state loading-state">
       <span class="spinner"></span> Cargando...
     </div>
 
@@ -100,7 +100,7 @@ const conceptSelection = useConceptSelection()
 const createConceptStore = useCreateConcept()
 
 const { currentTopic } = storeToRefs(topicSelection)
-const { loading: topicsLoading, error: topicsError } =
+const { loading: topicsLoading, error: topicsError, isPending: topicsPending } =
   storeToRefs(topicsStore)
 const { loading: creatingConcept, error: createConceptError } =
   storeToRefs(createConceptStore)

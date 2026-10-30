@@ -15,7 +15,7 @@
     cards).
   -->
   <div class="concept-view">
-    <div v-if="loading" class="concept-view__state loading-state">
+    <div v-if="loading || topicsPending" class="concept-view__state loading-state">
       <span class="spinner"></span> Cargando...
     </div>
 
@@ -100,7 +100,7 @@ const topicSelection = useTopicSelection()
 const conceptSelection = useConceptSelection()
 const flashcardCache = useFlashcardCache()
 
-const { loading, error } = storeToRefs(topicsStore)
+const { loading, error, isPending: topicsPending } = storeToRefs(topicsStore)
 const { currentTopicId } = storeToRefs(topicSelection)
 
 const concept = useCurrentConcept(currentTopicId)
