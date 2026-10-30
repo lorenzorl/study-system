@@ -5,6 +5,8 @@ import { createPinia, setActivePinia } from "pinia"
 import { createMemoryHistory, createRouter } from "vue-router"
 import { useResourcesStore } from "@/entities/resource"
 import type { Resource } from "@/entities/resource"
+import { useReviewStore } from "@/entities/review"
+import type { DueCard } from "@/entities/review"
 import ResourcesPage from "./ResourcesPage.vue"
 
 // The repo's vitest environment is `node`: no jsdom, no @vue/test-utils. Rendering
@@ -16,10 +18,14 @@ const DAY = 86_400_000
 
 type Store = ReturnType<typeof useResourcesStore>
 
-function renderPage(seed: (store: Store) => void): Promise<string> {
+function renderPage(
+  seed: (store: Store) => void,
+  dueCards: DueCard[] = [],
+): Promise<string> {
   const pinia = createPinia()
   setActivePinia(pinia)
   seed(useResourcesStore())
+  useReviewStore().dueCards = dueCards
 
   const app = createSSRApp(ResourcesPage)
   app.use(pinia)
@@ -33,11 +39,25 @@ function renderPage(seed: (store: Store) => void): Promise<string> {
           name: "presentation",
           component: { template: "<div />" },
         },
+        // The continue entry navigates to the review session on click; the route
+        // exists so `useRouter()` has somewhere to resolve it.
+        { path: "/study/review", name: "review", component: { template: "<div />" } },
       ],
     }),
   )
 
   return renderToString(app)
+}
+
+function dueCard(id: string): DueCard {
+  return {
+    flashcard_id: id,
+    question: `pregunta ${id}`,
+    answer: `respuesta ${id}`,
+    concept_title: "Filtro atencional",
+    topic_name: "Atención",
+    next_review: "2026-10-20T10:00:00Z",
+  }
 }
 
 function material(overrides: Partial<Resource> = {}): Resource {
@@ -197,5 +217,24 @@ describe("ResourcesPage render", () => {
 
     expect(html).toContain("Cargando")
     expect(html).not.toContain("0 recursos")
+  })
+
+  // D2: the launcher's one "continue" entry is the review session, and its source
+  // is the due endpoint. Before this the slot was a hardcoded `null`, so the review
+  // flow had no entry from the home screen at all.
+  it("offers the review session as the one continue entry, with the due count", async () => {
+    const html = await renderPage(() => {}, [dueCard("f1"), dueCard("f2")])
+
+    expect(html).toContain("Seguir donde quedaste")
+    expect(html).toContain("Repaso · Pendientes de hoy")
+    expect(html).toContain("0 / 2")
+    expect(html).toContain("Repasar")
+  })
+
+  it("keeps the continue zone hidden when nothing is due", async () => {
+    const html = await renderPage(() => {})
+
+    expect(html).not.toContain("Seguir donde quedaste")
+    expect(html).not.toContain("Pendientes de hoy")
   })
 })

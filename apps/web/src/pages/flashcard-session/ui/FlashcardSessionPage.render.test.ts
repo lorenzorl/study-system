@@ -68,11 +68,29 @@ function selectConcept(cards: Flashcard[]): void {
 }
 
 function renderPage(seed: () => void = () => {}): Promise<string> {
+  return renderWith(
+    { topicId: "t1", conceptId: "c1" },
+    seed,
+  )
+}
+
+/**
+ * The page as `/study/review` mounts it: the route carries no concept, so the
+ * component receives no props and has to own its own due session.
+ */
+function renderReviewRoute(seed: () => void = () => {}): Promise<string> {
+  return renderWith({}, seed)
+}
+
+function renderWith(
+  props: Record<string, string>,
+  seed: () => void = () => {},
+): Promise<string> {
   const pinia = createPinia()
   setActivePinia(pinia)
   seed()
 
-  const app = createSSRApp(FlashcardSessionPage, { topicId: "t1", conceptId: "c1" })
+  const app = createSSRApp(FlashcardSessionPage, props)
   app.use(pinia)
   app.use(
     createRouter({
@@ -258,6 +276,40 @@ describe("FlashcardSessionPage render — due-review mode", () => {
     expect(buttonNames(html)).toEqual(
       expect.arrayContaining(["Repasar de nuevo", "Volver al Panel"]),
     )
+  })
+})
+
+// D2: `/study/review` is the due session's own route. It carries no concept, so
+// the page must not fall into concept mode and report a concept that was never
+// asked for — that is the "Concepto no encontrado." baseline the visual net used
+// to photograph. `onMounted` does not run here, which is why this pins the state
+// the page *enters* with: it resolves its own session, so it is loading, not lost.
+// The session actually starting is covered by the browser capture in `e2e`.
+describe("FlashcardSessionPage — the review route", () => {
+  it("does not report a missing concept when the route names none", async () => {
+    const html = await renderReviewRoute()
+
+    expect(html).not.toContain("Concepto no encontrado.")
+    expect(html).toContain("Cargando...")
+  })
+
+  it("still shows the due session once its cards are in", async () => {
+    const html = await renderReviewRoute(() => {
+      useReviewStore().startSession()
+      useReviewStore().dueCards = ONE_DUE_CARD
+    })
+
+    expect(html).toContain("1 / 1")
+    expect(html).toContain("¿Qué es el filtro atencional?")
+  })
+
+  it("says there is nothing due, and offers the way back to the panel", async () => {
+    const html = await renderReviewRoute(() => {
+      useReviewStore().startSession()
+    })
+
+    expect(html).toContain("No hay tarjetas para repasar.")
+    expect(buttonNames(html)).toContain("← Volver")
   })
 })
 

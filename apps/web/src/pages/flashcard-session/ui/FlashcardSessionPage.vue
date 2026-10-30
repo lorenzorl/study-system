@@ -9,7 +9,8 @@
     hand-rolled: their identity is one colour per grade, no variant expresses it,
     and those colours already live in this file's CSS — moving them into utility
     classes would put new colour values in a component, which the palette rule in
-    `index.html` forbids. The `review-modal` grade row was left the same way.
+    `index.html` forbids. That is the same rule that kept them out of a modal, so
+    there is one grade row in the app and it lives here.
 
     `min-h-[44px]` is the touch target this page has always had. It is a class and
     not a rule because the primitives are sized by utilities; a migration does not
@@ -17,9 +18,12 @@
   -->
   <div class="flashcard-session" ref="sessionEl">
     <!-- ═══ Due-Review Mode (FSRS) ═══ -->
-    <template v-if="reviewIsSessionActive">
+    <template v-if="isDueMode">
       <!-- Review loading -->
-      <div v-if="reviewLoading" class="flashcard-session__state loading-state">
+      <div
+        v-if="reviewLoading || dueModePending"
+        class="flashcard-session__state loading-state"
+      >
         <span class="spinner"></span> Cargando...
       </div>
 
@@ -201,10 +205,12 @@ import { useConceptSelection, useCurrentConcept } from "@/features/select-concep
 import { useReviewSession } from "@/features/review-card"
 
 const props = defineProps<{
-  topicId: string
-  conceptId: string
+  // Optional because this page is two routes. The concept route passes both; the
+  // review route (`/study/review`) passes neither, and that absence is what makes
+  // it the due session.
+  topicId?: string
+  conceptId?: string
 }>()
-
 const router = useRouter()
 const topicsStore = useTopicsStore()
 const topicSelection = useTopicSelection()
@@ -230,6 +236,7 @@ const {
   showFeedback,
   isSubmitting,
   fetchDueCards,
+  startSession,
   restartReview,
   endSession,
   onCardFlip,
@@ -237,6 +244,33 @@ const {
   handleReviewKeydown,
   formatNextReview,
 } = useReviewSession()
+
+/**
+ * Whether this page was mounted for a concept.
+ *
+ * The concept route (`/topic/:topicId/concept/:conceptId/flashcards`) passes both
+ * props; `/study/review` passes neither, and that is the whole difference between
+ * the concept session and the due session. They are read as possibly absent even
+ * though the declaration is required, because the declaration describes the
+ * concept route only — the review route is the other way this page is reached.
+ */
+const hasConceptParams = computed(() => !!props.topicId && !!props.conceptId)
+/**
+ * Which of the two sessions this render is. The due session is also the one the
+ * page falls into when it is entered with no concept, which is why it does not
+ * depend on the store having been started by someone else first.
+ */
+const isDueMode = computed(
+  () => !hasConceptParams.value || reviewIsSessionActive.value,
+)
+
+/**
+ * Before the page's own fetch settles there is no session yet, so the due branch
+ * has to report loading. Without this the first frame is an empty deck.
+ */
+const dueModePending = computed(
+  () => isDueMode.value && !reviewIsSessionActive.value,
+)
 
 const sessionEl = ref<HTMLElement | null>(null)
 const currentIndex = ref(0)
@@ -252,7 +286,16 @@ useSwipe(sessionEl, {
   onSwipeRight: () => prevCard(),
 })
 
-onMounted(() => {
+onMounted(async () => {
+  // `/study/review` carries no concept, so the page owns its due session and loads
+  // it itself: a deep link or a reload reviews today's cards instead of reporting a
+  // concept nobody asked for (backlog D2). When the launcher or the due list already
+  // started the session, its cards are in and nothing is fetched twice.
+  if (isDueMode.value && !reviewIsSessionActive.value) {
+    await fetchDueCards()
+    startSession()
+  }
+
   if (reviewIsSessionActive.value) {
     window.addEventListener("keydown", handleReviewKeydown)
   } else {
@@ -304,6 +347,9 @@ function restartSession() {
 }
 
 function goBackToConcept() {
+  // Only reachable from the concept session, which is the mode that has both.
+  if (!props.topicId || !props.conceptId) return
+
   router.push({
     name: "concept",
     params: { topicId: props.topicId, conceptId: props.conceptId },
@@ -333,7 +379,8 @@ function goBackToDue() {
  * The grade buttons keep their own rules on purpose. Their identity is one colour
  * per grade (`--text-error`, plus three that predate the palette), which no button
  * variant expresses, and the primitive would add a hover background they never
- * had. `review-modal`'s grade row was left hand-rolled for the same reason.
+ * had. The grade row is the app's only one: the launcher's modal that used to carry
+ * a second copy is gone (backlog D2), for the same reason its colours are literals.
  */
 .flashcard-session {
   display: flex;

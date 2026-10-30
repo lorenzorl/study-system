@@ -240,4 +240,41 @@ test.describe("interactive states", () => {
       maxDiffPixelRatio: PIXEL_TOLERANCE,
     })
   })
+
+  // D2. `/study/review` used to photograph "Concepto no encontrado.": the route
+  // named no concept, and the page only entered its due mode when another page had
+  // started the session first. It owns that session now, so the route capture above
+  // shows a real card — and this one is the state that only exists behind a click.
+  //
+  // It is also the only pixel coverage the grade row has anywhere (`backlog` D3):
+  // the four grades are hand-rolled colours, they live behind the flip, and no
+  // fixture reached them until this capture did.
+  test("renders the review card revealed, with its grades", async ({ page }) => {
+    await page.goto("/study/review")
+
+    // The route starts its own session: the card exists because the page fetched
+    // and started it, not because a previous navigation did.
+    await page.getByRole("button", { name: "Mostrar respuesta" }).click()
+    await expect(page.getByRole("button", { name: "Bien (3)" })).toBeVisible()
+
+    expect(CONSOLE_ERRORS).toEqual([])
+
+    await expect(page).toHaveScreenshot("review-revealed.png", {
+      fullPage: true,
+      animations: "disabled",
+      maxDiffPixelRatio: PIXEL_TOLERANCE,
+    })
+  })
+
+  // The entry D2 was missing. The route capture of `/` proves the continue row
+  // renders; this proves the click lands on the session. It is behaviour, not
+  // pixels, and it is the only check that would fail if the entry's action went
+  // back to doing nothing.
+  test("opens the review session from the launcher's continue entry", async ({ page }) => {
+    await page.goto("/")
+    await page.getByRole("button", { name: "Repasar" }).click()
+
+    await expect(page.getByRole("button", { name: "Mostrar respuesta" })).toBeVisible()
+    expect(CONSOLE_ERRORS).toEqual([])
+  })
 })

@@ -2,9 +2,9 @@
   <!--
     The card is the control: the whole surface flips it, so the frame stays the
     card's own — a 180px box with the two faces absolutely positioned inside it —
-    and the primitive adds the button behaviour. `review-modal` reaches the card's
-    own `<button>` to focus it, so the root stays a button and not a wrapper
-    around one.
+    and the primitive adds the button behaviour. The root stays a button and not a
+    wrapper around one: the reveal is the card's own `aria-label`, which is what the
+    browser capture and the keyboard flow both reach.
   -->
   <Button
     :class="['flashcard-card', { 'flashcard-card--flipped': isFlipped }]"

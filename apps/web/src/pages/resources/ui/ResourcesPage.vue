@@ -46,9 +46,9 @@
       </Button>
     </div>
 
-    <!-- At most one "continue" entry (§6): two would be a list. No progress
-         endpoint exists yet, so the slot stays empty and the section stays
-         hidden rather than showing a fixture. -->
+    <!-- At most one "continue" entry (§6): two would be a list. Its source is the
+         due endpoint, so the slot appears only when there is something to resume
+         and never shows a fixture. -->
     <section v-if="continueResource" class="resources__continue">
       <h2 class="resources__section-title">Seguir donde quedaste</h2>
       <div class="continue">
@@ -64,7 +64,7 @@
         <Button
           type="button"
           class="min-h-[44px] min-w-[44px]"
-          @click="openContinue($event)"
+          @click="openContinue"
         >
           {{ continueResource.primaryActionLabel }}
         </Button>
@@ -137,16 +137,6 @@
       </p>
     </template>
 
-    <!-- The review modal overlays the launcher; it owns its own session state. -->
-    <ReviewModal
-      v-if="reviewOpen"
-      :key="reviewKey"
-      :cards="reviewCards"
-      :title="reviewTitle"
-      :initial-index="reviewInitialIndex"
-      @close="closeReview"
-    />
-
     <!-- The capture form owns its fields and reports `saved`; the store it uses
          owns the requests and has already reloaded the list by then, so closing
          is all that is left. -->
@@ -159,17 +149,16 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from "vue"
+import { computed, onMounted, ref } from "vue"
 import { storeToRefs } from "pinia"
 import { useRouter } from "vue-router"
 import { useResourcesStore } from "@/entities/resource"
+import { useReviewStore } from "@/entities/review"
 import { CaptureMaterialForm } from "@/features/capture-material"
 import { Badge } from "@/shared/ui/badge"
 import { Button } from "@/shared/ui/button"
-import { ReviewModal } from "@/widgets/review-modal"
-import type { ReviewCard } from "@/widgets/review-modal"
 import { useCapturePanel } from "../model/capturePanel"
-import { fixtureCardsFor } from "../model/cardFixtures"
+import { continueEntryFor } from "../model/continueEntry"
 import { deckRouteFor } from "../model/deckRoute"
 import { filterResources } from "../model/filter"
 import { materialStatus, toMaterialResources } from "../model/materials"
@@ -209,9 +198,15 @@ const router = useRouter()
 const resourcesStore = useResourcesStore()
 const { resources, loading, error } = storeToRefs(resourcesStore)
 
-// No endpoint reports a resumable session yet, so the slot stays empty and the
-// section stays hidden instead of showing a fixture.
-const continueResource = ref<ContinueResource | null>(null)
+// The one "continue" entry, counted from what is actually due. `GET /api/study/due`
+// is the only endpoint that reports a resumable session, and the review session is
+// the one surface that resumes it: the launcher links there instead of owning a
+// second, fixture-driven session of its own (backlog D2).
+const reviewStore = useReviewStore()
+const { dueCards } = storeToRefs(reviewStore)
+const continueResource = computed<ContinueResource | null>(() =>
+  continueEntryFor(dueCards.value),
+)
 
 // Filter state is per session, never persisted (§6).
 const query = ref("")
@@ -235,6 +230,7 @@ const countLabel = computed(() =>
 
 onMounted(() => {
   resourcesStore.loadResources()
+  reviewStore.fetchDueCards()
 })
 
 function retry() {
@@ -261,44 +257,19 @@ function statusOf(resource: Resource): string {
   }
 }
 
-// ── Review modal ─────────────────────────────────────────────────────────────
+// ── Review session ───────────────────────────────────────────────────────────
 
-const reviewOpen = ref(false)
-const reviewCards = ref<ReviewCard[]>([])
-const reviewTitle = ref("")
-const reviewInitialIndex = ref(0)
-// Bumped per open, so every session starts from a fresh `useCardSession`.
-const reviewKey = ref(0)
-// The element that opened the modal, so focus can go back to it on close.
-let reviewOpener: HTMLElement | null = null
-
-function openReview(options: {
-  cards: ReviewCard[]
-  title: string
-  initialIndex: number
-  event: MouseEvent
-}) {
-  // A resource without cards would open a completed session over an empty deck.
-  if (options.cards.length === 0) return
-
-  const target = options.event.currentTarget
-  reviewOpener = target instanceof HTMLElement ? target : null
-  reviewCards.value = options.cards
-  reviewTitle.value = options.title
-  reviewInitialIndex.value = options.initialIndex
-  reviewKey.value += 1
-  reviewOpen.value = true
-}
-
-async function closeReview() {
-  reviewOpen.value = false
-
-  const opener = reviewOpener
-  reviewOpener = null
-
-  // Focus returns only after the overlay is gone, or it would move into the modal.
-  await nextTick()
-  opener?.focus()
+/**
+ * `Seguir` opens the real due session.
+ *
+ * The session store is started before the navigation for the same reason
+ * `pages/due-cards` does it: the review route renders its own session when it has
+ * no concept, and starting it here means it does not re-fetch what this page just
+ * counted.
+ */
+function openContinue() {
+  reviewStore.startSession()
+  router.push({ name: "review" })
 }
 
 // ── Capture panel ────────────────────────────────────────────────────────────
@@ -312,19 +283,6 @@ const {
 function openCapture(event: MouseEvent) {
   const opener = event.currentTarget
   showCapture(opener instanceof HTMLElement ? opener : null)
-}
-
-/** `Seguir` resumes where the continue entry left off (`done` cards seen). */
-function openContinue(event: MouseEvent) {
-  const current = continueResource.value
-  if (!current) return
-
-  openReview({
-    cards: fixtureCardsFor(current.id),
-    title: current.title,
-    initialIndex: current.done,
-    event,
-  })
 }
 
 /**
@@ -373,12 +331,8 @@ function openResource(resource: Resource, event: MouseEvent) {
   }
 
   if (resource.kind === "flashcards") {
-    openReview({
-      cards: fixtureCardsFor(resource.id),
-      title: resource.title,
-      initialIndex: 0,
-      event,
-    })
+    // No endpoint reports flashcard resources, so this kind never reaches the
+    // launcher: the due session is the continue entry's job, not a card's.
     return
   }
 
