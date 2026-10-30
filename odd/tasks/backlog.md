@@ -540,18 +540,45 @@ baseline moved** — the change is entirely about what the dark block can now do
 `review-revealed-dark.png` (added with D3) is the capture that would catch it going
 back.
 
-### D5 — `shared/ui/card` still has no consumer
+### D5 (closed 2026-10-30) — `shared/ui/card` had no consumer, and it is deleted
 
-The four entity cards cannot use it (the card *is* the button — see L19), and
-`pages/resources` renders its own card frame. The primitive set therefore ships a
-`card` nobody calls. The honest options are to give it a consumer in T8 (where the
-launcher's cards keep the click target inward) or to delete it; shipping a primitive
-no component uses is the one outcome that teaches nothing.
+The four entity cards could not use it (the card *is* the button — see L19): the
+whole surface is the click target, so the root has to be a `<button>`, and `card`
+renders a `<div>`. `pages/resources` renders its own card frame. The primitive set
+therefore shipped a `card` nobody called.
 
-**Also here:** `pages/resources` still hand-rolls its search field with its own
-padding, border and 44px floor although `shared/ui/input` exists; and `FlashcardCard`
-has no pixel coverage anywhere (backlog D2), so its migration is pinned only by a
-render test.
+**Decided by the owner: delete it.** All seven files (`Card`, `CardHeader`,
+`CardTitle`, `CardDescription`, `CardContent`, `CardFooter`, `CardAction`) and the
+slice's `index.ts` are gone, and `ARCHITECTURE.md` §3.1 no longer lists it and says
+why. The alternative — migrating the launcher's `<article class="resource-card">`
+onto `Card` — was rejected as the more expensive of the two for the same outcome: it
+would fight the primitive's utilities exactly as T7 did on the entity cards, and it
+would move `resources-darwin.png`.
+
+**Zero baselines changed**, which is the proof that nothing rendered it.
+
+**Two things this entry carried are split off, not lost:**
+
+- The launcher's hand-rolled search field is now `D7`.
+- The note "`FlashcardCard` has no pixel coverage anywhere" **was already false**:
+  `review-darwin.png` and `review-revealed.png` (added when D2 closed) both show
+  that card, front and revealed. Recorded here so it is not re-opened as a task.
+
+### D7 — The launcher hand-rolls its search field while `shared/ui/input` exists
+
+`pages/resources` declares `.resources__search` with its own `padding`, `border`,
+`border-radius`, `min-height: 44px` and placeholder colour, while
+`shared/ui/input` exists and three forms already use it (`capture-material`,
+`create-topic`, `create-concept`). It is the last form control in the app that
+belongs to a page instead of the primitive set.
+
+**Why it is separate from D5:** the card needed a decision; this needs a migration.
+
+**How to close:** replace the `<input class="resources__search">` with `Input` plus
+the classes the page actually owns (`min-h-[44px]`, `flex: 1 1 140px`), delete the
+dead CSS, and re-read `resources-darwin.png`. The 44px floor is a class, not a rule,
+for the reason the migration recorded: the primitives are sized by utilities and a
+migration does not shrink a 44px target to the primitive's 36px.
 
 ### D6 (closed 2026-10-30) — Three loose ends D1 left behind
 
@@ -588,14 +615,62 @@ than a retry), unit-pinned, and worth revisiting if the endpoint gets flaky.
 
 ## 🟡 Missing policy
 
-### P1 — Nothing prunes stored artifacts
+### P1 — Nothing prunes stored artifacts (open, documented, awaiting a product decision)
 
-Every `cmd/ingest` run accumulates a PDF in `data/artifacts` forever. With a
-100 MiB per-artifact ceiling and a single user this is not urgent, but there is
-no retention policy at all: not by age, not by count, and no delete command.
+Every ingest run accumulates a PDF in `data/artifacts/<id>/` (`payload` +
+`meta.json`) forever, with a 100 MiB ceiling per artifact. There is **no retention
+policy at all** — not by age, not by count — and **no command** to see or delete
+one. The disk grows monotonically, and because `backup` replicates the artifacts to
+R2, so does the remote copy.
 
-Note that `storage.Store.Delete(id)` already exists. What is missing is the
-*policy*, not the tool.
+**Owner's call, 2026-10-30: leave it as it is for now, and keep this written down so
+the analysis does not have to be redone.** Everything below is what that analysis
+produced.
+
+**The tools already exist; only the policy is missing.** Verified in the code:
+
+- `storage.Store.List()` returns every artifact, **oldest first**.
+- `storage.Store.Delete(id)` removes the artifact and its whole workspace.
+- `Delete` is called in exactly **one** place: `rag/app/text.go:201`, as a rollback
+  when the `documents` row fails to be written. So the code already knows orphans
+  exist; it only handles that one case.
+- `documents.artifact_id` is `NOT NULL`, so **every document names its artifact** —
+  which is what makes an orphan sweep safe by construction.
+
+**There is a precedent for the shape of a policy.** `pruneSnapshots`
+(`cli/backup.go`) keeps the newest 14 snapshots, runs only after the new snapshot is
+uploaded, never fails the run (a delete that does not go through is housekeeping to
+report, not a failed backup), and warns on stderr. A `--dry-run` reports
+`would delete N snapshots beyond the newest 14` before doing anything.
+
+**The four policies, and what each costs:**
+
+| Policy | Deletes | Consequence |
+| --- | --- | --- |
+| Manual — `artifacts list` / `artifacts rm <id>` | what the operator picks | no risk, no automation; the disk still grows if nobody looks |
+| **Orphans** — no `documents` row names it | only unreachable bytes | safe by construction; does not slow normal growth |
+| By count — keep the newest N | artifacts still in use | deletes the source of a live document: **data loss** |
+| By age — older than X days | same | same, and arbitrary: an old book is still valid |
+
+**The recommendation, when it is picked up:** manual first, then the orphan sweep.
+The command answers "get this 80 MB PDF out of here now"; the sweep clears what
+failed runs leave behind, which is the garbage that actually accumulates unseen.
+Count and age delete good data and are the owner's call, not a default.
+
+**Two things to settle before writing code:**
+
+1. **Does the sweep touch the R2 replica?** Pruning locally only means `restore`
+   brings back artifacts the machine no longer has; pruning both means the remote
+   delete is not atomic with the local one and needs its own failure rule. R2
+   snapshot retention today is best-effort and eventually consistent.
+2. **Where the command lives.** `cli` already has `backup`/`restore`/`convert`, so
+   an `artifacts` command is the natural home, and its `--dry-run` should follow
+   `pruneSnapshots`' precedent.
+
+**Risk classification, so nobody starts this casually:** deleting stored data is
+high-risk item 1 — hard to detect and hard to undo. It gets an independent verifier
+and a native review on the source candidate, not the automatic path the UI changes
+of 2026-10-30 took.
 
 ---
 

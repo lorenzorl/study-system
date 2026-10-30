@@ -58,10 +58,19 @@ one boundary the app still needs.
 
 ### 3.1 Styling: the token bridge and `shared/ui`
 
-`shared/ui/` holds the shadcn-vue primitives (`button`, `input`, `label`, `card`,
-`dialog`). They are domain-free infrastructure, importable by any layer, and each
-is reached by its folder: `@/shared/ui/button`. Nothing else in the app renders
-them yet — the migration of existing pages is a separate, later decision.
+`shared/ui/` holds the shadcn-vue primitives (`button`, `input`, `label`, `badge`,
+`dialog`, `tabs`, `textarea`). They are domain-free infrastructure, importable by
+any layer, and each is reached by its folder: `@/shared/ui/button`. Since the
+migration of the existing pages they are what the app renders: a page's plain
+action is the `button`, the search fields and forms take `input`/`textarea`, and
+the modal frames take `dialog`.
+
+**`card` was deleted, deliberately** (`backlog.md` D5). It shipped with no
+consumer, and none of the entity cards could use it: in those, the card *is* the
+button — the whole surface is the click target, so the root has to be a
+`<button>`, and `card` renders a `<div>`. A primitive nobody calls is inventory
+that lies about what the system uses; the commit that needs one is the commit that
+adds it back.
 
 **`index.html` still owns the palette.** Its `:root` block declares
 `--text-normal`, `--background-primary`, `--interactive-accent`, … and remains
