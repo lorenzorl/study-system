@@ -334,7 +334,8 @@ async function resolveDueSession() {
   attachSessionKeys()
 }
 
-/** The keydown listener belongs to whichever of the two sessions this render is. */function attachSessionKeys() {
+/** The keydown listener belongs to whichever of the two sessions this render is. */
+function attachSessionKeys() {
   if (reviewIsSessionActive.value) {
     window.addEventListener("keydown", handleReviewKeydown)
     return

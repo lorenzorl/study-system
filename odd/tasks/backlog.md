@@ -259,6 +259,49 @@ Playwright starts each page with an empty store, so "the store already had cards
 and the page fetched anyway" is not a state it can reach. The listener dedupe is behaviour-preserving and
 covered by the entry's click test.
 
+### C7 (closed) — the review of the C6 fix: one real defect, and the limits it confirmed
+
+Lineage `review-aee105ce1d991058`, tier medium, 4 files, 101 lines, lenses
+resilience and reliability. Approved; authority burned. Candidate scoped to
+`a93abe6..e0a0341`, the source commit alone.
+
+**The first relay attempt was refused at admission**, not by the provider: the
+host sent a truncated reviewer payload ("no complete JSON object … scan ended at
+byte 4258") and gentle-ai preserved it under
+`.git/gentle-ai/rejected-results/review-aee105ce1d991058/`. Nothing was consumed
+(`submitted_reviewers: 0`). STATUS reoffered the same two slots with the same
+subject hashes, the group was relaunched, and it completed. The relay is
+intermittent, not broken; the rule that worked is "reoffer the same bound slot,
+never resubmit the refused bytes".
+
+| Id | Lens | Severity | Location |
+| --- | --- | --- | --- |
+| `R3-comment-line-merge` | reliability | SUGGESTION | `FlashcardSessionPage.vue` (above `attachSessionKeys`) |
+| `R3-coverage-always-fetch` + `R4-001` | reliability, resilience | WARNING | same file (`resolveDueSession`) |
+| `R3-coverage-retry-guard` | reliability | WARNING | `ResourcesPage.vue` (`retryDueCards`) |
+| `R3-keydown-regression-risk` + `R4-002` | reliability, resilience | WARNING | `FlashcardSessionPage.vue` (`attachSessionKeys`) |
+
+**The one real defect was mine and invisible to every gate:** an edit of mine had
+removed the newline between a JSDoc comment and `function attachSessionKeys()`, so
+they sat on the same source line. It compiles, tests pass, screenshots match — and
+it reads as a broken file. Fixed by restoring the newline. **Side effect worth
+knowing:** Vue's scoped-CSS id is derived from the file content, so a whitespace
+change in a `.vue` file changes the `data-v-*` hashes and therefore *both* built
+asset names. The bundle has to be rebuilt for a comment fix.
+
+**The four WARNINGs confirmed the two limits C6 declared**, from both lenses
+independently: the always-fetch and the retry guard have no test that could catch
+their removal, for the reasons C6 wrote down. They are recorded, not fixed — the
+harness that would catch them does not exist in this repo, and inventing one to
+satisfy a finding would be ceremony.
+
+**One coupling to keep in mind:** the dedupe made `attachSessionKeys()` read
+`reviewIsSessionActive` to choose the listener, and `resolveDueSession` sets that
+flag one line above the call. It is correct today and fragile tomorrow: a caller
+that registers keys before starting the session gets the concept listener and a
+`selectTopic(undefined)`. If a third caller appears, the function should take the
+mode as an argument instead of reading the store.
+
 ---
 
 ## 🔴 Open defects
