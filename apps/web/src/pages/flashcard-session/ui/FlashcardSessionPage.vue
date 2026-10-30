@@ -372,9 +372,13 @@ onBeforeUnmount(() => {
 
 function retry() {
   topicsStore.clearError()
-  // A retry forces the load. It must not go through `loadTopicsIfEmpty`: that guard
-  // answers "is it empty and idle", and a retry that it declines would clear the
-  // error and leave the page on its not-found state (`R3-retry-guard-swallows-retry`).
+  // A retry forces the load, and does not go through `loadTopicsIfEmpty`: that guard
+  // answers "is it empty and idle", and a retry it declined would clear the error and
+  // leave the page on its not-found state (`R3-retry-guard-swallows-retry`). The
+  // `loading` check is the other half (`R3-retry-unconditional-inflight`): without it
+  // a second click starts a second request, the same fan-out the launcher's retry
+  // already guards against.
+  if (topicsStore.loading) return
   topicsStore.loadTopics()
 }
 

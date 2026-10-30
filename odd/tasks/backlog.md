@@ -366,6 +366,31 @@ for the mount lifecycle or for a click), confirmed again from both lenses.
 **No baseline moved**, so none of the three fixes changed a pixel — they only change
 which state wins.
 
+### C10 (closed) — the review of the C9 fixes: three suggestions, one worth acting on
+
+Lineage `review-591c02dd01934e17`, tier medium, 6 files, 84 lines, lens
+reliability (one lens, which is the proportion this candidate deserved).
+
+| Id | Severity | Location |
+| --- | --- | --- |
+| `R3-retry-unconditional-inflight` | SUGGESTION | both `retry` handlers |
+| `R3-retry-fix-feynman-unproved`, `R3-retry-fix-flashcard-unproved` | SUGGESTION | same two handlers |
+
+**The symmetric defect.** C9 fixed "the guard swallows the retry" by forcing
+`loadTopics()` — and that reintroduced "a second click starts a second request", the
+same fan-out the launcher's `retryDueCards` already guards against. Both handlers now
+check `topicsStore.loading` first: forced, but not fan-out.
+
+**The two coverage findings are the same declared limit** this backlog has recorded
+since C6: the unit suite is node/SSR, a retry is a click, and there is no harness for
+one. They are recorded, not fixed.
+
+**The honest note about this cycle:** the findings are now suggestions about a
+three-line handler. Eight review cycles in a row found something real in the commit
+immediately before them, which says a lot about how fixes are written and something
+about when to stop: the next candidate is a one-line guard, and reviewing it would be
+the ritual the RDD contract warns about rather than an outside view.
+
 ---
 
 ## 🔴 Open defects
