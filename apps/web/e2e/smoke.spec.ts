@@ -278,3 +278,31 @@ test.describe("interactive states", () => {
     expect(CONSOLE_ERRORS).toEqual([])
   })
 })
+
+/**
+ * The dark palette.
+ *
+ * `index.html` flips every token under `prefers-color-scheme: dark`, and until
+ * backlog D3 the grade row was the one surface that could not follow it: its four
+ * fills were literals inside the component, so the flip reached the text and the
+ * backgrounds but not the buttons. This capture is the only proof that it reaches
+ * them — every other capture in this file runs in the light scheme, which is
+ * Playwright's default, and a light-only net cannot see a dark-mode regression.
+ */
+test.describe("dark scheme", () => {
+  test.use({ colorScheme: "dark" })
+
+  test("renders the review card revealed in the dark palette", async ({ page }) => {
+    await page.goto("/study/review")
+    await page.getByRole("button", { name: "Mostrar respuesta" }).click()
+    await expect(page.getByRole("button", { name: "Bien (3)" })).toBeVisible()
+
+    expect(CONSOLE_ERRORS).toEqual([])
+
+    await expect(page).toHaveScreenshot("review-revealed-dark.png", {
+      fullPage: true,
+      animations: "disabled",
+      maxDiffPixelRatio: PIXEL_TOLERANCE,
+    })
+  })
+})

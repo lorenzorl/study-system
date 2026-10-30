@@ -6,11 +6,11 @@
     `variant="outline"` is the secondary action (retry, back, leave, the two
     navigation arrows) and the default variant is the accent-filled primary one
     ("Repasar de nuevo", "Estudiar de nuevo"). The four grade buttons stay
-    hand-rolled: their identity is one colour per grade, no variant expresses it,
-    and those colours already live in this file's CSS — moving them into utility
-    classes would put new colour values in a component, which the palette rule in
-    `index.html` forbids. That is the same rule that kept them out of a modal, so
-    there is one grade row in the app and it lives here.
+    hand-rolled: their identity is one colour per grade, and no variant expresses
+    four distinct fills. The colours are the palette's (`--text-error`,
+    `--text-warning`, `--text-success`, `--text-info`), not this file's, so the
+    dark block in `index.html` retunes them like any other token (backlog D3).
+    There is one grade row in the app and it lives here.
 
     `min-h-[44px]` is the touch target this page has always had. It is a class and
     not a rule because the primitives are sized by utilities; a migration does not
@@ -427,10 +427,12 @@ function goBackToDue() {
  * the key hints.
  *
  * The grade buttons keep their own rules on purpose. Their identity is one colour
- * per grade (`--text-error`, plus three that predate the palette), which no button
- * variant expresses, and the primitive would add a hover background they never
- * had. The grade row is the app's only one: the launcher's modal that used to carry
- * a second copy is gone (backlog D2), for the same reason its colours are literals.
+ * per grade, which no button variant expresses, and the primitive would add a
+ * hover background they never had. All four colours are palette tokens
+ * (`--text-error`, `--text-warning`, `--text-success`, `--text-info`), so this
+ * file declares no colour value and the dark block retunes the row with the rest
+ * of the app (backlog D3). The grade row is the app's only one: the launcher's
+ * modal that used to carry a second copy is gone (backlog D2).
  */
 .flashcard-session {
   display: flex;
@@ -466,7 +468,7 @@ function goBackToDue() {
   font-size: 0.85rem;
   font-weight: 500;
   transition: opacity 0.15s ease, background-color 0.15s ease;
-  color: var(--text-on-accent, #fff);
+  color: var(--text-on-accent);
 }
 
 .flashcard-session__grade-btn:disabled {
@@ -475,23 +477,23 @@ function goBackToDue() {
 }
 
 .flashcard-session__grade-btn--again {
-  background: var(--text-error, #e74c3c);
-  border-color: var(--text-error, #e74c3c);
+  background: var(--text-error);
+  border-color: var(--text-error);
 }
 
 .flashcard-session__grade-btn--hard {
-  background: #e67e22;
-  border-color: #e67e22;
+  background: var(--text-warning);
+  border-color: var(--text-warning);
 }
 
 .flashcard-session__grade-btn--good {
-  background: #27ae60;
-  border-color: #27ae60;
+  background: var(--text-success);
+  border-color: var(--text-success);
 }
 
 .flashcard-session__grade-btn--easy {
-  background: #2980b9;
-  border-color: #2980b9;
+  background: var(--text-info);
+  border-color: var(--text-info);
 }
 
 /* ── Feedback ────────────────────────────────────────────────────────────── */

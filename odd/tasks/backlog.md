@@ -393,7 +393,7 @@ resource card can appear in the launcher; its chip renders an empty list, as S3 
 `resource-launcher-api.md` accepted. The due session, not a card, is how cards are
 reached.
 
-### D3 — The grade row's colours bypass the palette, and the net cannot see it
+### D3 (closed 2026-10-30) — The grade row's colours bypassed the palette, and the net could not see it
 
 `FlashcardSessionPage` hardcodes three colours for its grade buttons — `#e67e22`
 (Difícil), `#27ae60` (Bien), `#2980b9` (Fácil) — instead of taking them from the
@@ -412,27 +412,44 @@ Two consequences worth naming:
   `/topic/:t/concept/:c/flashcards` renders an empty state. A regression in the
   controls T6 *did* migrate there would pass every gate.
 
-**How to close:** add the three grade colours to the palette in `index.html` and its
-dark block, then migrate the row against those tokens. The pixel half is done:
-`review-revealed.png` (added when D2 closed) captures the row in a real browser, so
-a regression there now fails the net.
+**Closed.** The three fills are palette tokens now — `--text-warning`,
+`--text-success`, `--text-info` in `index.html`, light and dark — and the row
+declares no colour value at all (`--text-error` for "Otra vez", the other three by
+name). The dark block retunes them to lighter variants (`#f5a623`, `#3ddc84`,
+`#4aa3e0`) because the text on them is dark in that scheme: `--text-on-accent` is a
+new palette ref (`var(--background-primary)`) and the row's dead `#fff` fallback is
+gone. The row still cannot be a `Button` — no variant expresses four distinct fills
+— but its colours are the palette's, which was the requirement.
+
+**The net can see it now, in both schemes.** `review-revealed.png` covers the light
+row; `review-revealed-dark.png` is new and is the only capture in the suite that
+runs under `colorScheme: "dark"`. Without it the dark half of this fix would be an
+assertion with no evidence — a light-only net cannot see a dark regression. **Zero
+existing baselines changed**, which is the proof that light mode is byte-identical.
+
+**Still not covered:** the concept-mode session (`/topic/:t/concept/:c/flashcards`)
+has no capture, because no smoke fixture populates the flashcard cache and the page
+renders its empty state. That half of the original entry stands.
 
 **Also here:** the `toContain("disabled")` trap the modal's render test carried is
 gone with the modal (D2). The lesson stays: the assertion has to be on the
 attribute, which is what `ResourcesPage.render.test.ts` and
 `FlashcardSessionPage.render.test.ts` now do.
 
-### D4 — Two token aliases are literal colours, and the migration made them load-bearing
+### D4 (closed 2026-10-30) — Two token aliases were literal colours, and the migration made them load-bearing
 
-`src/app/styles.css` declares `--primary-foreground: #fff` and
+`src/app/styles.css` declared `--primary-foreground: #fff` and
 `--destructive-foreground: #fff` as literals, while ARCHITECTURE §3.1 says those
 tokens are "references onto those variables, never new values". Until T7 that was
-cosmetic; now every migrated primary button takes its text colour from
-`--primary-foreground`, so a `prefers-color-scheme: dark` flip renders white text on
+cosmetic; since then every migrated primary button takes its text colour from
+`--primary-foreground`, so a `prefers-color-scheme: dark` flip rendered white text on
 the accent instead of `--background-primary`.
 
-**How to close:** point both at palette entries from `index.html` (the light and dark
-blocks), then re-read the `due-cards` and `resources` baselines.
+**Closed.** Both are `var(--background-primary)` now: a ref, so the dark block
+reaches them. In light mode that resolves to the same `#fff` it replaced, so **no
+baseline moved** — the change is entirely about what the dark block can now do, and
+`review-revealed-dark.png` (added with D3) is the capture that would catch it going
+back.
 
 ### D5 — `shared/ui/card` still has no consumer
 

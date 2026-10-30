@@ -42,7 +42,12 @@
   --popover: var(--background-primary);
   --popover-foreground: var(--text-normal);
   --primary: var(--interactive-accent);
-  --primary-foreground: #fff;
+  /*
+   * Refs, not values (ARCHITECTURE §3.1). These were `#fff`, which froze white text
+   * on the accent in both schemes: the dark block in `index.html` could retune
+   * `--interactive-accent` but not what sat on top of it (backlog D4).
+   */
+  --primary-foreground: var(--background-primary);
   --secondary: var(--background-secondary);
   --secondary-foreground: var(--text-normal);
   --muted: var(--background-secondary);
@@ -50,7 +55,7 @@
   --accent: var(--background-modifier-hover);
   --accent-foreground: var(--text-normal);
   --destructive: var(--text-error);
-  --destructive-foreground: #fff;
+  --destructive-foreground: var(--background-primary);
   --border: var(--background-modifier-border);
   --input: var(--background-modifier-border);
   --ring: var(--interactive-accent);
