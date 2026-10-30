@@ -302,6 +302,37 @@ that registers keys before starting the session gets the concept listener and a
 `selectTopic(undefined)`. If a third caller appears, the function should take the
 mode as an argument instead of reading the store.
 
+### C8 (closed) — the review of the D3/D4 change left two findings
+
+Lineage `review-a4f5589fd4d51720`, tier medium, 6 files, 130 lines, lenses
+readability and reliability. Approved; authority burned. Both findings closed.
+
+| Id | Lens | Severity | Location |
+| --- | --- | --- | --- |
+| `R2-001` | readability | WARNING | `src/app/styles.css` (the D4 comment) |
+| `R3-fallback-removal-coupling` | reliability | SUGGESTION | `FlashcardSessionPage.vue` (`--text-on-accent`) |
+
+**The first was my comment lying by grammar.** It said "These were `#fff`" — plural —
+over a single declaration, because two tokens changed and only one got the note. It
+is singular now and points at `--destructive-foreground`, seven lines down.
+
+**The second was a failure mode I introduced by tidying.** Removing the `#fff`
+fallback from `var(--text-on-accent)` made the declaration depend entirely on the
+palette: if that token ever went missing, `color` becomes invalid at computed-value
+time and falls back to *inherited* `--text-normal` — white on the fill, invisible
+labels. The fallback is back, but as a ref: `var(--text-on-accent,
+var(--background-primary))`. No literal, and a missing token lands on a readable
+colour instead of a silent one.
+
+**The relay failed twice on this lineage**, and neither refusal consumed a slot:
+first a schema violation (`unknown field "claim_basis"`) on the reliability reviewer,
+which had already admitted readability — STATUS then reoffered the reliability slot
+alone and it completed. The rule from C7 held: reoffer the exact slot, never
+resubmit the refused bytes.
+
+**Zero baselines changed**, so the two fixes moved no pixels: light mode is
+byte-identical, which is what the 16 captures assert.
+
 ---
 
 ## 🔴 Open defects

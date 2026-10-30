@@ -468,7 +468,12 @@ function goBackToDue() {
   font-size: 0.85rem;
   font-weight: 500;
   transition: opacity 0.15s ease, background-color 0.15s ease;
-  color: var(--text-on-accent);
+  /*
+   * The fallback is the palette ref, not a literal: `--text-on-accent` is defined in
+   * `index.html`, and a token that went missing must land on a readable colour
+   * instead of inheriting `--text-normal` onto the fill (`R3-fallback-removal-coupling`).
+   */
+  color: var(--text-on-accent, var(--background-primary));
 }
 
 .flashcard-session__grade-btn:disabled {
