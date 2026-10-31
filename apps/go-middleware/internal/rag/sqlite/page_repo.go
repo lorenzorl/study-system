@@ -55,11 +55,41 @@ func (r *PageOutcomeRepository) SaveOutcome(ctx context.Context, outcome domain.
 
 // ListOutcomes returns every recorded outcome of a job, by page number ascending.
 func (r *PageOutcomeRepository) ListOutcomes(ctx context.Context, jobID string) ([]domain.PageOutcome, error) {
-	rows, err := r.db.QueryContext(ctx,
+	return r.queryOutcomes(ctx,
 		`SELECT job_id, page_number, status, method, error, text, updated_at
 		 FROM job_pages WHERE job_id = ? ORDER BY page_number ASC`,
 		jobID,
 	)
+}
+
+// ListPageTextsInRange returns the recorded outcomes of a job whose page number
+// falls inside [from, to], by page number ascending.
+//
+// The BETWEEN is the point of the call: the endpoint behind it serves a book of
+// hundreds of pages, so narrowing in SQL is what keeps a twelve-page request from
+// reading the whole book. Pages the job never recorded are simply absent, because
+// a gap in the outcomes is a page nobody has processed yet, not a failure.
+func (r *PageOutcomeRepository) ListPageTextsInRange(
+	ctx context.Context,
+	jobID string,
+	from, to int,
+) ([]domain.PageOutcome, error) {
+	return r.queryOutcomes(ctx,
+		`SELECT job_id, page_number, status, method, error, text, updated_at
+		 FROM job_pages WHERE job_id = ? AND page_number BETWEEN ? AND ?
+		 ORDER BY page_number ASC`,
+		jobID, from, to,
+	)
+}
+
+// queryOutcomes runs one outcome listing and scans it. Both listings select the
+// same columns in the same order, so one scan keeps them from drifting apart.
+func (r *PageOutcomeRepository) queryOutcomes(
+	ctx context.Context,
+	query string,
+	args ...any,
+) ([]domain.PageOutcome, error) {
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list page outcomes: %w", err)
 	}
@@ -90,7 +120,7 @@ func (r *PageOutcomeRepository) ListOutcomes(ctx context.Context, jobID string) 
 		outcome.Method = domain.PageMethod(method)
 
 		if outcome.UpdatedAt, err = parseInstant(updatedAt); err != nil {
-			return nil, fmt.Errorf("page %d of job %s: %w", outcome.PageNumber, jobID, err)
+			return nil, fmt.Errorf("page %d of job %s: %w", outcome.PageNumber, outcome.JobID, err)
 		}
 
 		outcomes = append(outcomes, outcome)

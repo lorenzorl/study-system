@@ -92,3 +92,15 @@ type DocumentListUseCase interface {
 	// encodes it as [].
 	Execute(ctx context.Context) ([]app.DocumentSummary, error)
 }
+
+// DocumentPagesUseCase answers the recorded text of a document's page range.
+//
+// The range is passed as two numbers, not as raw query parameters: deciding what
+// "from" means is the application's contract, and the transport only decides
+// whether the request carried integers at all.
+type DocumentPagesUseCase interface {
+	// Execute returns the recorded pages of the range. An unknown document, or a
+	// document whose ingestion never ran, is apperror.ErrNotFound; a range outside
+	// the contract is an *app.PageRangeError, which is a 400.
+	Execute(ctx context.Context, documentID string, from, to int) (app.DocumentPages, error)
+}

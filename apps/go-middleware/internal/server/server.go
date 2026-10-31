@@ -136,6 +136,10 @@ func Run(ctx context.Context, cfg *config.Config, port int) error {
 		searchUC,
 		raghttp.NewUploadDocumentHandler(store, rag.DocumentRepo(), submitter, clients.Embedding != nil),
 		raghttp.NewDocumentStatusHandler(statusUC),
+		// The page read is the sibling of the status read: both answer a question
+		// about a document that already exists, and the agent cites a card's source
+		// through it.
+		raghttp.NewPagesHandler(rag.Pages()),
 		raghttp.NewDocumentsHandler(rag.ListDocuments()),
 		raghttp.NewIngestTextHandler(textIngest, cfg.MaxUploadBytes),
 		// NewIngestURLHandler installs the production address rule itself; there is

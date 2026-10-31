@@ -184,6 +184,14 @@ func (r *RAG) Status(processor *ragapp.BackgroundProcessor, embeddingModel strin
 		r.documents, r.jobs, r.pages, r.chunks, r.embeddings, failures, embeddingModel)
 }
 
+// Pages builds the page-range read: the recorded text of one document's pages.
+//
+// It needs nothing outside the database — no store, no model, no client — because
+// the text it serves was recorded when the pages were converted.
+func (r *RAG) Pages() *ragapp.DocumentPagesUseCase {
+	return ragapp.NewDocumentPagesUseCase(r.documents, r.jobs, r.pages)
+}
+
 // ListDocuments builds the corpus list: every document with its page and chunk
 // counts.
 func (r *RAG) ListDocuments() *ragapp.ListDocumentsUseCase {
