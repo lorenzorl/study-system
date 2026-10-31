@@ -20,10 +20,14 @@ export function useReviewSession() {
     isSessionComplete,
     completedCount,
     reviewResult,
+    currentIndex,
   } = storeToRefs(reviewStore)
 
   // ── Review-mode state (local to the session UI) ─────────────────────────────
-  const currentIndex = ref(0)
+  // There is exactly one `currentIndex` and it belongs to the store, because the
+  // store is what `currentCard` reads. A second copy here (a `ref(0)` advanced by
+  // `grade`) desynchronised the two: the counter moved and the card did not, and
+  // every click recorded a real review against the card already on screen.
   const answerRevealed = ref(false)
   const answerRevealedAt = ref(0)
   const showFeedback = ref(false)
@@ -44,7 +48,6 @@ export function useReviewSession() {
 
   function restartReview() {
     reviewStore.startSession()
-    currentIndex.value = 0
   }
 
   function endSession() {
@@ -73,9 +76,10 @@ export function useReviewSession() {
         answerRevealed.value = false
         isSubmitting.value = false
 
-        if (currentIndex.value < totalCount.value - 1) {
-          currentIndex.value++
-        }
+        // The store owns the queue position, so the session advances through it.
+        // `advanceCard` stops at the last card and `isSessionComplete` is what
+        // ends the session.
+        reviewStore.advanceCard()
       }, 1500)
     } catch {
       // Error handled by reviewStore.error
