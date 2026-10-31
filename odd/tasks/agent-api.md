@@ -45,13 +45,24 @@ con shell, así que `curl` contra la API es el transporte.
 El `obsidian_id` pasa a ser **opcional**; cuando falta, se deriva. Ningún cliente
 existente cambia su comportamiento.
 
+**S5 — El skill se distribuye como Pi package.**
+
+> "como hago para que alguien que tenga instalado pi la pueda descargar facilmente"
+
+Consecuencia: el skill vive en `skills/study-system/` **dentro de este repo**, así
+que se instala con `pi install git:…@v1` y su tag no puede discrepar del tag de la
+API que documenta. Nada de valores de despliegue dentro del skill: la URL y el
+token se leen de `~/.config/study-system/env`, y el primer paso es un smoke test que
+falla fuerte si el destino no es el servidor esperado.
+
 ## Tasks
 
 | ID | Alcance | Specs | Commit |
 | --- | --- | --- | --- |
 | T1 | `GET /api/rag/documents/{documentID}/pages`: puerto angosto en `rag/app`, consulta por rango en `rag/sqlite`, handler, DTO, ruta, composición y tests | S1, S2, S3 | `cad3371` |
 | T2 | `obsidian_id` opcional y derivado en `study/domain` + `study/app`, con validación y tests | S3, S4 | `b75cee4` |
-| T3 | Documentación (tabla de API del README) y cierre: `go vet`, `go test ./...`, `pnpm test` | S1–S4 | — |
+| T3 | Documentación (tabla de API del README) y cierre: `go vet`, `go test ./...`, `pnpm test` | S1–S4 | `fdda476` |
+| T4 | El skill distribuible: `skills/study-system/` con `SKILL.md`, `references/api.md`, `references/cards.md`, y la sección de instalación en el README raíz | S1, S2, S5 | — |
 
 ### Slices (delivery strategy)
 
@@ -126,3 +137,23 @@ corrida de escritura devolvió `FOREIGN KEY constraint failed` porque copié `st
 mientras el servidor tenía la base en WAL, así que la copia no tenía el concepto recién creado.
 La derivación había funcionado (el log muestra el `card-…`). El arnés se rehizo con
 `sqlite3 .backup`, que sí incluye el WAL.
+
+**L5 (2026-10-31) — el skill, autorizado textualmente:**
+
+> "como hago para que alguien que tenga instalado pi la pueda descargar facilmente"
+
+> "si escribelo asi"
+
+Decisión de distribución: **Pi package dentro de este repo, instalable por git con
+tag**. Descartado npm por ahora (publicar y bumpear en cada cambio de contrato sin
+tener usuarios externos) y descartada la carpeta suelta en `~/.agents/skills/`
+(portable a otros agentes, pero sin versión ni `pi update`). El argumento decisivo no
+es la comodidad: el skill documenta contratos de API, así que el tag del skill y el
+de la API tienen que ser el mismo número.
+
+Forma entregada: `skills/study-system/SKILL.md` (frontmatter con `name`,
+`description` y `compatibility`, sin `license` porque el repo no tiene LICENSE),
+`references/api.md` (los endpoints con payloads y mensajes de error textuales) y
+`references/cards.md` (las reglas de una tarjeta que vale la pena, con ejemplos
+buenos y malos). El `SKILL.md` no lleva ni la URL ni el token: los lee de
+`$STUDY_ENV_FILE`, que por defecto es `~/.config/study-system/env`.
