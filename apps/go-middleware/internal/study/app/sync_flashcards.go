@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -35,15 +36,25 @@ func NewSyncFlashcardsUseCase(
 
 // Execute upserts flashcards for a concept and auto-creates CardState entries
 // for newly inserted flashcards. Returns the count of cards processed.
+//
+// A card may arrive without an ObsidianID: an agent proposing from the corpus has
+// no note to mirror and cannot know one. Those cards are identified here, before
+// anything is written, so that writing the same proposal twice updates one card
+// instead of appending a second.
 func (uc *SyncFlashcardsUseCase) Execute(ctx context.Context, conceptID string, cards []domain.Flashcard) (int, error) {
-	count, err := uc.flashcardRepo.UpsertByObsidianID(ctx, conceptID, cards)
+	identified, err := identifyCards(conceptID, cards)
+	if err != nil {
+		return 0, err
+	}
+
+	count, err := uc.flashcardRepo.UpsertByObsidianID(ctx, conceptID, identified)
 	if err != nil {
 		return 0, fmt.Errorf("upsert flashcards: %w", err)
 	}
 
 	now := domain.Now()
 
-	for _, card := range cards {
+	for _, card := range identified {
 		f, err := uc.flashcardRepo.FindByObsidianID(ctx, card.ObsidianID)
 		if err != nil {
 			return count, fmt.Errorf("find flashcard by obsidian id %q: %w", card.ObsidianID, err)
@@ -70,4 +81,35 @@ func (uc *SyncFlashcardsUseCase) Execute(ctx context.Context, conceptID string, 
 	}
 
 	return count, nil
+}
+
+// identifyCards gives every card that arrived without an ObsidianID the identity
+// this server derives, and refuses the ones that cannot have one.
+//
+// The validation is scoped to the derived path on purpose. A caller that supplies
+// its own id is the note sync, whose acceptance rules predate this path; refusing
+// its cards here would change a contract nobody asked to change. A card with no
+// question cannot be identified at all, and one with no answer is a question the
+// review queue can never resolve, so both are refused before the write.
+func identifyCards(conceptID string, cards []domain.Flashcard) ([]domain.Flashcard, error) {
+	identified := make([]domain.Flashcard, len(cards))
+	copy(identified, cards)
+
+	for index, card := range identified {
+		if card.ObsidianID != "" {
+			continue
+		}
+
+		if strings.TrimSpace(card.Question) == "" {
+			return nil, fmt.Errorf("a card without an id needs a question: %w", apperror.ErrInvalidInput)
+		}
+
+		if strings.TrimSpace(card.Answer) == "" {
+			return nil, fmt.Errorf("a card without an id needs an answer: %w", apperror.ErrInvalidInput)
+		}
+
+		identified[index].ObsidianID = domain.CardIdentity(conceptID, card.Question)
+	}
+
+	return identified, nil
 }
