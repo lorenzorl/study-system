@@ -176,7 +176,7 @@ will be lexical-only because it cannot reach the embedding API.
 | `POST` | `/api/concepts` | Create a concept under a topic |
 | `GET` | `/api/concepts` | Topic-to-concept tree |
 | `POST` | `/api/sync/concept` | Upsert topic + concept from an Obsidian note path |
-| `POST` | `/api/sync/flashcards` | Batch-upsert flashcards by `obsidian_id` |
+| `POST` | `/api/sync/flashcards` | Batch-upsert flashcards for a concept by `obsidian_id`; the id may be omitted, and then the server derives it from the concept and the question |
 | `POST` | `/api/sync/resource` | Upsert an external study resource by `source_uri` |
 | `GET` | `/api/resources` | Every stored resource with its topic name, newest first; the array is `[]` when none exists |
 | `GET` | `/api/study/due` | Flashcards whose next review is due |
@@ -185,6 +185,7 @@ will be lexical-only because it cannot reach the embedding API.
 | `GET` | `/api/rag/documents` | The corpus: `id`, `title`, `created_at` and the page and chunk counts of each document |
 | `POST` | `/api/rag/documents` | Upload a PDF and queue background processing; `multipart/form-data` with one `file` part |
 | `GET` | `/api/rag/documents/{id}/status` | Processing status of an uploaded document |
+| `GET` | `/api/rag/documents/{id}/pages` | The text of a page range (`from`, `to`, at most 50 pages), with the outcome each page recorded |
 
 ## Configuration
 
@@ -610,6 +611,31 @@ mounts it under `/api/rag/` with `httpx.CORS` as the outermost wrapper.
   `STUDY_OPENROUTER_API_KEY` set the server upgrades to the hybrid use case, and
   it still degrades to lexical-only when the configured model has no stored
   vectors.
+
+### Page text by range
+
+`GET /api/rag/documents/{id}/pages?from=25&to=34` returns the text the run
+recorded for those pages. It exists so a citation can be checked: a client that
+proposes a card from a passage needs the passage, and `(document_id,
+page_number)` on its own is a citation nobody can verify. The text is read from
+`job_pages`, which records it during ingestion — it is never re-extracted, so the
+answer is exactly what the indexing saw and costs nothing to serve.
+
+| Parameter | Required | Rule |
+| --- | --- | --- |
+| `from` | yes | Trimmed decimal. `0` or below is `400 "from must be at least 1"`. |
+| `to` | yes | Must be `>= from`, at most `from + 49`, and not past the document's last page; each refusal is `400` naming the bound it missed. |
+
+- **Response.** `200` with `{document_id, title, total_pages, pages}`, where each
+  page is `{page_number, status, method, text, error}`, ascending. `error` is
+  omitted when empty.
+- **A gap is not a failure.** Only pages with a recorded outcome appear. A page
+  missing from the answer is a page the run never finished, and the range's
+  `total_pages` is what tells a caller the difference between "not recorded" and
+  "beyond the document".
+- **The cap is part of the contract.** Fifty pages is the ceiling for one call,
+  because the endpoint is the door to a 359-page book of roughly 917 KB of text.
+- **Unknown document, or one with no ingestion job**, is `404`.
 
 ## Document upload and processing status
 

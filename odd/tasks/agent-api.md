@@ -49,9 +49,22 @@ existente cambia su comportamiento.
 
 | ID | Alcance | Specs | Commit |
 | --- | --- | --- | --- |
-| T1 | `GET /api/rag/documents/{documentID}/pages`: puerto angosto en `rag/app`, consulta por rango en `rag/sqlite`, handler, DTO, ruta, composición y tests | S1, S2, S3 | — |
-| T2 | `obsidian_id` opcional y derivado en `study/domain` + `study/app`, con validación y tests | S3, S4 | — |
+| T1 | `GET /api/rag/documents/{documentID}/pages`: puerto angosto en `rag/app`, consulta por rango en `rag/sqlite`, handler, DTO, ruta, composición y tests | S1, S2, S3 | `cad3371` |
+| T2 | `obsidian_id` opcional y derivado en `study/domain` + `study/app`, con validación y tests | S3, S4 | `b75cee4` |
 | T3 | Documentación (tabla de API del README) y cierre: `go vet`, `go test ./...`, `pnpm test` | S1–S4 | — |
+
+### Slices (delivery strategy)
+
+| Slice | Unidad | Commit | Foco de revisión | Líneas |
+| --- | --- | --- | --- | --- |
+| **A — la lectura citable** | T1 | `cad3371` | Los límites del rango y el orden en que se aplican; que el puerto angosto no toque `domain.PageOutcomeRepository`; que `ListOutcomes` no cambie | ~1000 |
+| **B — la identidad derivada** | T2 | `b75cee4` | La normalización (espaciado y mayúsculas sí, palabras y puntuación no) y que la validación quede acotada al camino derivado | ~280 |
+
+**Slice A pasa el techo de ~400 líneas a propósito, y es el único que lo hace.** Es un
+comportamiento solo: la ruta no existe hasta que existen el puerto, el adaptador, el caso
+de uso, el DTO y el registro. Separar los tests o el adaptador produciría un commit que no
+compila, y el repo ya aceptó ese criterio una vez (`PRESENTATION-UI.md` §9, slice 2). Slice B
+no lo necesita y no lo hace.
 
 ### Decisiones de diseño, para que no se re-decidan
 
@@ -91,3 +104,25 @@ acordados: `pages` por rango y escritura con `obsidian_id` derivado en el servid
 **L3 (2026-10-30) — hallazgo que motiva T1:** `data/DDD.md` es el único camino al
 texto por página, y solo existe porque ese libro pasó por `convert`. Un documento
 subido por la web no lo tiene. `job_pages.text` sí lo guarda para todos.
+
+**L4 (2026-10-31) — evidencia de cierre de T1 y T2.**
+
+| Check | Resultado |
+| --- | --- |
+| Test-first T1 | RED: tres suites nuevas fallando al compilar por símbolos inexistentes. GREEN: 23 tests (app 9, http 12, sqlite 2) |
+| Test-first T2 | RED: `undefined: domain.CardIdentity` en las dos suites. GREEN: 11 tests nuevos, y los dos tests previos de sync intactos |
+| `go vet ./...` | limpio |
+| `go test ./...` | todos los paquetes `ok` |
+| `go build ./...` | OK, incluidos `cmd/server` y `cmd/cli` |
+| `gofmt -l internal/ cmd/` | sin salida |
+| Differential check T1 | `ListOutcomes` comparte el nuevo `queryOutcomes`: mismo resultado contra `git archive HEAD` en un árbol aparte (8 passes en ambos) |
+| En vivo, lectura | `pages?from=25&to=27` → `200`, `total_pages 359`, páginas 25–27 con el texto real de Evans |
+| En vivo, rechazos | `from=0` → `400 "from must be at least 1"`; `1..359` → `400 "at most 50 pages…"`; `355..400` → `400 "to must be at most 359…"`; `from` ausente → `400 "from is required"`; documento inexistente → `404` |
+| En vivo, escritura | Contra una copia aislada de la base (`.backup`, puerto 8099): cuatro POST de la misma propuesta —incluida una variante con otro espaciado y mayúsculas y una respuesta corregida— dejan **una** fila con la respuesta corregida, y crean su `card_states` con `next_review` inmediato |
+| En vivo, rechazo de escritura | Una tarjeta sin respuesta → `400 "invalid input"` y cero filas escritas |
+
+**Un 500 que fue de mi arnés, no del código, y queda anotado para no repetirlo:** la primera
+corrida de escritura devolvió `FOREIGN KEY constraint failed` porque copié `study.db` con `cp`
+mientras el servidor tenía la base en WAL, así que la copia no tenía el concepto recién creado.
+La derivación había funcionado (el log muestra el `card-…`). El arnés se rehizo con
+`sqlite3 .backup`, que sí incluye el WAL.
