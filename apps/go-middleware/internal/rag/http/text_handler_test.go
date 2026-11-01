@@ -237,6 +237,7 @@ func TestRouter_RegistersTheTextIngestRoute(t *testing.T) {
 		&mockSearchUseCase{results: []domain.SearchResult{}},
 		httppkg.NewUploadDocumentHandler(nil, nil, nil, false),
 		httppkg.NewDocumentStatusHandler(nil),
+		httppkg.NewPagesHandler(nil),
 		httppkg.NewDocumentsHandler(&fakeDocumentListUseCase{}),
 		newTextHandler(useCase),
 		newURLHandler(&fakeIngestTextUseCase{}),

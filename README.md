@@ -121,6 +121,35 @@ the PDF adapter tests use the fixture in `internal/rag/infra/pdf/testdata`.
 - `odd/tasks/` — feature documents with their specs, tasks and logs.
   `odd/tasks/web-app.md` records this migration.
 
+## The agent skill
+
+`skills/study-system/` is a Pi skill that reads a page range of the corpus, drafts
+flashcards from it with the document and page each one came from, and writes only
+the cards you accept. It talks to a running server over HTTP, so it works from any
+machine that can reach one — including a phone running Pi in Termux.
+
+```bash
+pi install git:github.com/lorenzorl/study-system@v2.1.0
+```
+
+The tag names the release the skill was written against, which is also the release
+that added the two endpoints it calls. Bump both together, or the skill will
+describe an API the server does not serve.
+
+The skill needs a server URL and, when the server sits behind Cloudflare Access, a
+service token. Both live in `~/.config/study-system/env` with `chmod 600`:
+
+```bash
+STUDY_BASE_URL=https://study.example.com
+STUDY_ACCESS_CLIENT_ID=...
+STUDY_ACCESS_CLIENT_SECRET=...
+```
+
+Its first step is a smoke test against `GET /api/rag/documents`: if that fails it
+stops and says why, instead of proposing cards against the wrong server. The skill
+reads and proposes; writing is gated on your explicit acceptance, and it never
+edits or deletes cards that already exist.
+
 ## The Obsidian plugin is gone
 
 This app was an Obsidian plugin until the migration recorded in

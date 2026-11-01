@@ -5,16 +5,18 @@ import "net/http"
 // NewRouter builds the RAG context's HTTP handler.
 //
 // It registers the retrieval route, the three document-creation routes, the
-// corpus-list route, and the processing-status route, using the same stdlib
-// method+path pattern the study context uses. Cross-cutting transport concerns
-// such as CORS are deliberately NOT applied here: the composition root wraps this
-// handler, so a context never encodes platform policy.
+// corpus-list route, and the two per-document reads — status and page text —,
+// using the same stdlib method+path pattern the study context uses. Cross-cutting
+// transport concerns such as CORS are deliberately NOT applied here: the
+// composition root wraps this handler, so a context never encodes platform
+// policy.
 //
-// The web app is the intended consumer.
+// The web app and the agent running on the client are the intended consumers.
 func NewRouter(
 	search SearchUseCase,
 	upload *UploadDocumentHandler,
 	status *DocumentStatusHandler,
+	pages *PagesHandler,
 	documents *DocumentsHandler,
 	text *IngestTextHandler,
 	url *IngestURLHandler,
@@ -34,6 +36,10 @@ func NewRouter(
 	// paths land in the same use case.
 	mux.Handle("POST /api/rag/documents/url", url)
 	mux.Handle("GET /api/rag/documents/{documentID}/status", status)
+	// The page route sits next to the status route: both answer a question about
+	// a document that already exists, and the page read is the one a client cites
+	// from.
+	mux.Handle("GET /api/rag/documents/{documentID}/pages", pages)
 
 	return mux
 }

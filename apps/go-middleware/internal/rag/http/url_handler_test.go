@@ -527,6 +527,7 @@ func TestRouter_RegistersTheURLIngestRoute(t *testing.T) {
 		&mockSearchUseCase{results: []domain.SearchResult{}},
 		httppkg.NewUploadDocumentHandler(nil, nil, nil, false),
 		httppkg.NewDocumentStatusHandler(nil),
+		httppkg.NewPagesHandler(nil),
 		httppkg.NewDocumentsHandler(&fakeDocumentListUseCase{}),
 		newTextHandler(&fakeIngestTextUseCase{}),
 		newURLHandler(useCase),

@@ -178,3 +178,38 @@ type DocumentSummaryResponse struct {
 	// Chunks is how many chunks the document has in the lexical index.
 	Chunks int `json:"chunks"`
 }
+
+// DocumentPagesResponse is the body returned by
+// GET /api/rag/documents/{documentID}/pages.
+//
+// It carries the document's identity and length next to the pages, so a caller
+// that cites a page can state which document and how long it is without a second
+// request.
+type DocumentPagesResponse struct {
+	DocumentID string `json:"document_id"`
+	Title      string `json:"title"`
+
+	// TotalPages is the document's page count as its latest run recorded it,
+	// which is the number a citation is checked against.
+	TotalPages int `json:"total_pages"`
+
+	// Pages is the recorded pages of the requested range, ascending by page
+	// number. A page the run never recorded is absent, so this may be shorter than
+	// the range the caller asked for.
+	Pages []PageTextResponse `json:"pages"`
+}
+
+// PageTextResponse is one page of that body.
+//
+// The text is verbatim and possibly long: this endpoint exists so a client can
+// read the passage a card is proposed from, so trimming or summarising it here
+// would remove the evidence the citation points at.
+type PageTextResponse struct {
+	PageNumber int    `json:"page_number"`
+	Status     string `json:"status"`
+	Method     string `json:"method"`
+	Text       string `json:"text"`
+
+	// Error is why the page produced no usable text, omitted when it did.
+	Error string `json:"error,omitempty"`
+}
