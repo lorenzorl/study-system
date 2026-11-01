@@ -129,8 +129,12 @@ the cards you accept. It talks to a running server over HTTP, so it works from a
 machine that can reach one — including a phone running Pi in Termux.
 
 ```bash
-pi install git:github.com/<your-account>/study-system@v1
+pi install git:github.com/lorenzorl/study-system@v2.1.0
 ```
+
+The tag names the release the skill was written against, which is also the release
+that added the two endpoints it calls. Bump both together, or the skill will
+describe an API the server does not serve.
 
 The skill needs a server URL and, when the server sits behind Cloudflare Access, a
 service token. Both live in `~/.config/study-system/env` with `chmod 600`:
