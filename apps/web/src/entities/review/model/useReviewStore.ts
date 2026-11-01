@@ -66,8 +66,14 @@ export const useReviewStore = defineStore("review", () => {
     }
   }
 
+  // Starting a session means starting at the first card with nothing graded. The
+  // index reset lives here because this is the store that owns the index; a caller
+  // that reset its own copy instead would leave the two disagreeing (the defect
+  // `useReviewSession` used to have).
   function startSession() {
     isSessionActive.value = true
+    currentIndex.value = 0
+    completedCount.value = 0
   }
 
   function endSession() {
