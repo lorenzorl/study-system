@@ -109,7 +109,7 @@ README's API table gains their rows (and the missing `/sections` row).
 | T1 | W1 — S1-S5 | inline | `feat(study): record which page ranges were read` — `40e2338` |
 | T2 | W2 — S6-S12 | inline | `feat(study): store the plan the agent produces` — `8761dbe`; independent verifier + native review (high-risk item 1) |
 | T3 | W3 — S13, S15 | inline (writer) | `feat(study): project what to do today` — `294ba69` |
-| T4 | W3 UI — S14 | inline | `feat(web): open the app on what to do today` |
+| T4 | W3 UI — S14 | inline (writer) | `feat(web): open the app on what to do today` — `959529f` |
 
 ## Log
 
@@ -157,3 +157,35 @@ reported `undefined: NewSetReadingProgressHandler` and the new test mocks while
 built before those files existed and never picked them up. Restarting the server and
 re-saving the new files cleared it. Evidence over the index; the compiler is the
 authority.
+
+**L8 — independent verification of W2 (`8761dbe`), and what it changed.** Three
+findings were real and are fixed in `552fc08`:
+
+- S7's single transaction had no test: swallowing the item-insert error left the whole
+  suite green. The new contract test makes the second item fail on a duplicate position
+  and asserts the rollback; verified by mutation (with the error swallowed, the test
+  fails).
+- S8's "nothing is stored" was only asserted against mocks. The contract tests digest
+  every plan and item row, send all eleven refusals and assert the digest unchanged.
+- S10's ordering test inserted items already in position order, so an `ORDER BY
+  from_page` regression would have passed it.
+- S12 was self-contradictory: the skill's intro still said "writes nothing to the
+  server" while its non-negotiable rule said the plan is the only write.
+
+Three suggestions were accepted as they stand:
+
+- `study_plan_items.state` is `TEXT` with no CHECK, following `ingestion_jobs.status`
+  and `range_gaps.state`: the vocabulary grows without a migration, and the HTTP path
+  rejects an unknown word.
+- No database constraint stops a plan with no items; `SavePlanUseCase` refuses `items:
+  []` and no app path can create one. A CHECK cannot express "at least one row in
+  another table" without a trigger, which this schema does not use.
+- A superseded plan is kept but no route reads it (L4). Recovering one is SQL until a
+  screen needs it; the alternative — deleting it — is the moral debt W2 explicitly
+  refuses.
+
+**L9 — the review gate.** `gentle_review assess` over `master..HEAD` (51 files, 5,716
+lines): risk medium, `reviewDue: false`, reason `under_budget`, writer profile
+`large`. Per the entry rule no native review is started: it is not due, and the
+independent verifier already covered the slice whose Risk line names item 1. Native
+review of a smaller candidate remains available whenever someone asks for one.
