@@ -8,6 +8,7 @@ import { FlashcardSessionPage } from "@/pages/flashcard-session"
 import { FeynmanPage } from "@/pages/feynman"
 import { DueCardsPage } from "@/pages/due-cards"
 import { PresentationPage } from "@/pages/presentation"
+import { ExplainPage } from "@/pages/explain"
 
 /**
  * The app's routes.
@@ -33,6 +34,15 @@ const routes = [
     path: "/today",
     name: "today",
     component: TodayPage,
+  },
+  // Explain one page range in your own words and read the gaps it left. The URL
+  // names the document and the range, and `?id=` names the stored explanation, so a
+  // reload re-reads the gaps instead of paying for the model again (S9). It is
+  // reachable by URL only until `/today` links to it (U4).
+  {
+    path: "/explain/:documentId/:from/:to",
+    name: "explain",
+    component: ExplainPage,
   },
   {
     path: "/topics",
