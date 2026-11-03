@@ -58,3 +58,21 @@ type ReviewLogRepository interface {
 	Create(ctx context.Context, log *ReviewLog) error
 	FindByFlashcardID(ctx context.Context, flashcardID string) ([]ReviewLog, error)
 }
+
+// RangeExplanationRepository manages persistence of RangeExplanation entities.
+type RangeExplanationRepository interface {
+	// Create writes the explanation and its gaps in one transaction, so a failure
+	// can never leave an explanation without the gaps it was stored for.
+	Create(ctx context.Context, explanation *RangeExplanation) error
+
+	// FindByID returns the explanation with its gaps in stored order, or
+	// apperror.ErrNotFound on a miss.
+	FindByID(ctx context.Context, id string) (*RangeExplanation, error)
+}
+
+// RangeGapRepository manages persistence of RangeGap entities.
+type RangeGapRepository interface {
+	// ListByExplanationID returns the gaps of one explanation in stored order, as
+	// an empty slice when it has none.
+	ListByExplanationID(ctx context.Context, explanationID string) ([]RangeGap, error)
+}

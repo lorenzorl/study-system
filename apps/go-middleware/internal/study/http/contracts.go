@@ -56,3 +56,16 @@ type GetDueCardsUseCase interface {
 type SubmitReviewUseCase interface {
 	Execute(ctx context.Context, flashcardID string, grade, durationMs int) (domain.CardState, error)
 }
+
+// ExplainRangeUseCase explains a page range and stores the gaps it left out.
+//
+// The range is passed as the application's own input, not as raw JSON: deciding
+// what a valid explanation is belongs to the application layer, and the transport
+// only decides whether the body was JSON with a text at all.
+type ExplainRangeUseCase interface {
+	// Execute returns the stored explanation with its accepted gaps. A refused
+	// explanation is an *app.ExplanationRefusal (a 400 carrying its sentence), a
+	// refused or unknown range is apperror.ErrInvalidInput or apperror.ErrNotFound,
+	// and a model failure is a plain error, which is a 500 and nothing stored.
+	Execute(ctx context.Context, input app.ExplainRangeInput) (domain.RangeExplanation, error)
+}

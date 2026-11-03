@@ -52,7 +52,6 @@ func Run(ctx context.Context, cfg *config.Config, port int) error {
 	}
 	defer sqlDB.Close()
 
-	study := composition.NewStudy(sqlDB)
 	rag := composition.NewRAG(sqlDB)
 
 	// The store is built even without a key: it is where an upload would stream,
@@ -111,6 +110,13 @@ func Run(ctx context.Context, cfg *config.Config, port int) error {
 	// Each context owns its routes and neither knows it shares the process with
 	// the other. CORS stays the outermost wrapper, so no context encodes platform
 	// policy.
+
+	// The study context is built here and not with the database: explaining a range
+	// reads the ingestion context's recorded page text and calls the model, and
+	// neither exists before this point. The page text stays behind the study
+	// context's port, so study never imports the page store.
+	study := composition.NewStudyWithRangeExplanations(sqlDB, rag.Pages(), clients.Model)
+
 	studyRoutes := studyhttp.NewRouter(
 		study.SyncConcept,
 		study.SyncFlashcards,
@@ -121,6 +127,7 @@ func Run(ctx context.Context, cfg *config.Config, port int) error {
 		study.ListResources,
 		study.GetDueCards,
 		study.SubmitReview,
+		study.ExplainRange,
 	)
 
 	// The pasted-text path needs no key to accept material: it indexes always and

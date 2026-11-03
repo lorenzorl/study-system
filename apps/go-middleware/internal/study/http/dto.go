@@ -137,3 +137,32 @@ type ReviewResponse struct {
 	Stability  float64 `json:"stability"`
 	Difficulty float64 `json:"difficulty"`
 }
+
+// ExplainRangeRequest is the JSON body for POST /api/study/explanation.
+type ExplainRangeRequest struct {
+	DocumentID string `json:"document_id"`
+	FromPage   int    `json:"from_page"`
+	ToPage     int    `json:"to_page"`
+	Text       string `json:"text"`
+}
+
+// RangeGapResponse is one gap the explanation left out: the point, the page that
+// states it, and the quote that evidences it. The three travel together because a
+// gap missing any of them cannot become a card.
+type RangeGapResponse struct {
+	Point string `json:"point"`
+	Page  int    `json:"page"`
+	Quote string `json:"quote"`
+}
+
+// ExplainRangeResponse is the JSON body returned by POST /api/study/explanation.
+//
+// It carries no score: the explanation is the reader's retrieval material, and a
+// number on an open response is noise that invites writing for the grader.
+type ExplainRangeResponse struct {
+	ExplanationID string             `json:"explanation_id"`
+	DocumentID    string             `json:"document_id"`
+	FromPage      int                `json:"from_page"`
+	ToPage        int                `json:"to_page"`
+	Gaps          []RangeGapResponse `json:"gaps"`
+}

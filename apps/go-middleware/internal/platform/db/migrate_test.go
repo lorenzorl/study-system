@@ -153,6 +153,43 @@ func TestMigrate_AppliesOnlyNewMigrations(t *testing.T) {
 	assert.Equal(t, 2, version)
 }
 
+// Version numbers are allocated per context in disjoint blocks, so presence is what
+// decides whether a migration ran: a context can legitimately add a version below
+// another context's highest, long after both were applied. Comparing against
+// max(version) skips that migration forever.
+func TestMigrate_AppliesAVersionBelowTheAlreadyAppliedMaximum(t *testing.T) {
+	sqlDB := openMemory(t)
+
+	// A deployed database: the low block ran first, then the high block.
+	require.NoError(t, db.Migrate(t.Context(), sqlDB, []db.Migration{
+		markerMigration(1),
+		markerMigration(100),
+	}))
+
+	// A later release adds version 3 to the low block. It has never run, and it sits
+	// below the recorded maximum.
+	require.NoError(t, db.Migrate(t.Context(), sqlDB, []db.Migration{
+		markerMigration(1),
+		markerMigration(3),
+		markerMigration(100),
+	}))
+
+	assert.True(t, tableExists(t, sqlDB, "marker_3"),
+		"a version below the applied maximum must still be applied when it is not recorded")
+	assert.True(t, tableExists(t, sqlDB, "marker_1"), "an applied version must not be redone")
+
+	// Running again is a no-op: re-applying 3 would fail on its own CREATE TABLE.
+	require.NoError(t, db.Migrate(t.Context(), sqlDB, []db.Migration{
+		markerMigration(1),
+		markerMigration(3),
+		markerMigration(100),
+	}))
+
+	version, err := db.CurrentVersion(t.Context(), sqlDB)
+	require.NoError(t, err)
+	assert.Equal(t, 100, version, "the maximum stays the highest applied version")
+}
+
 func TestMigrate_FailedMigrationLeavesNothingBehind(t *testing.T) {
 	sqlDB := openMemory(t)
 

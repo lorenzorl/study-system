@@ -96,13 +96,14 @@ func TestMigrations_FreshDatabaseGetsTheStudySchema(t *testing.T) {
 
 	for _, table := range []string{
 		"topics", "concepts", "flashcards", "resources", "card_states", "review_logs",
+		"range_explanations", "range_gaps",
 	} {
 		assert.True(t, hasTable(t, sqlDB, table), "table %s must exist", table)
 	}
 
 	version, err := db.CurrentVersion(t.Context(), sqlDB)
 	require.NoError(t, err)
-	assert.Equal(t, 2, version)
+	assert.Equal(t, 3, version)
 
 	assert.False(t, hasColumn(t, sqlDB, "resources", "dify_document_id"),
 		"a fresh database must never have the legacy column")
@@ -138,7 +139,7 @@ func TestMigrations_AdoptLegacyDatabaseWithoutDataLoss(t *testing.T) {
 
 	version, err := db.CurrentVersion(t.Context(), sqlDB)
 	require.NoError(t, err)
-	assert.Equal(t, 2, version)
+	assert.Equal(t, 3, version)
 }
 
 func TestMigrations_AreIdempotentOnALegacyDatabase(t *testing.T) {
@@ -153,7 +154,7 @@ func TestMigrations_AreIdempotentOnALegacyDatabase(t *testing.T) {
 
 	var applied int
 	require.NoError(t, sqlDB.QueryRow(`SELECT count(*) FROM schema_version`).Scan(&applied))
-	assert.Equal(t, 2, applied)
+	assert.Equal(t, 3, applied)
 }
 
 // The baseline must be safe against a database that never had the legacy column
@@ -192,6 +193,48 @@ func TestMigrations_BaselineIsIdempotentAgainstAnAlreadyCompleteSchema(t *testin
 	version, err := db.CurrentVersion(t.Context(), sqlDB)
 	require.NoError(t, err)
 	assert.Equal(t, 1, version)
+}
+
+// The explanation tables are the study context's third migration: one row per
+// explanation, its gaps beside it, and a state vocabulary that is a plain TEXT
+// column because it will grow.
+func TestMigrations_RangeExplanationsCarryTheReaderTextAndItsGaps(t *testing.T) {
+	sqlDB := openFile(t, "range.db")
+
+	require.NoError(t, db.Migrate(t.Context(), sqlDB, sqlite.Migrations()))
+
+	for _, column := range []string{"id", "document_id", "from_page", "to_page", "text", "created_at"} {
+		assert.True(t, hasColumn(t, sqlDB, "range_explanations", column),
+			"range_explanations.%s must exist", column)
+	}
+
+	for _, column := range []string{"id", "explanation_id", "point", "page", "quote", "state"} {
+		assert.True(t, hasColumn(t, sqlDB, "range_gaps", column),
+			"range_gaps.%s must exist", column)
+	}
+
+	// The migration must be re-runnable, like every other one.
+	require.NoError(t, db.Migrate(t.Context(), sqlDB, sqlite.Migrations()))
+
+	version, err := db.CurrentVersion(t.Context(), sqlDB)
+	require.NoError(t, err)
+	assert.Equal(t, 3, version, "the study block keeps its ascending order")
+}
+
+// A gap state outside the current vocabulary must be storable: the column is
+// TEXT with no CHECK, following ingestion_jobs.status, because the vocabulary
+// grows and a stored row must not need a migration to gain a word.
+func TestMigrations_RangeGapStateAcceptsAVocabularyItDoesNotKnowYet(t *testing.T) {
+	sqlDB := openFile(t, "range-state.db")
+	require.NoError(t, db.Migrate(t.Context(), sqlDB, sqlite.Migrations()))
+
+	_, err := sqlDB.Exec(`
+		INSERT INTO range_explanations (id, document_id, from_page, to_page, text, created_at)
+		VALUES ('e1', 'd1', 88, 114, 'an explanation', '2026-11-02T10:00:00Z');
+		INSERT INTO range_gaps (id, explanation_id, point, page, quote, state)
+		VALUES ('g1', 'e1', 'a point', 89, 'a quote', 'discarded');
+	`)
+	assert.NoError(t, err, "an unknown state must be stored, not rejected by a CHECK")
 }
 
 func hasTable(t *testing.T, sqlDB *sql.DB, table string) bool {

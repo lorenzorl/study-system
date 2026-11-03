@@ -349,3 +349,72 @@ func TestClient_UsesTheInjectedHTTPClient(t *testing.T) {
 	_, err := client.Transcribe(t.Context(), "prompt", pngBytes())
 	require.Error(t, err)
 }
+
+// --- text completions ---
+
+func TestClient_CompleteSendsTextOnlyAndParsesTheAnswer(t *testing.T) {
+	bodies := make(chan map[string]any, 1)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Errorf("the request body must be JSON: %v", err)
+		}
+		bodies <- payload
+		_, _ = io.WriteString(w, okBody("the gaps"))
+	}))
+	defer server.Close()
+
+	answer, err := newTestClient(t, server.URL, llm.Options{}).Complete(t.Context(), "check this range")
+	require.NoError(t, err)
+	assert.Equal(t, "the gaps", answer)
+
+	payload := <-bodies
+	messages, ok := payload["messages"].([]any)
+	require.True(t, ok)
+	require.Len(t, messages, 1)
+
+	message, ok := messages[0].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "user", message["role"])
+
+	parts, ok := message["content"].([]any)
+	require.True(t, ok)
+	require.Len(t, parts, 1, "a text completion carries no image part")
+
+	textPart, ok := parts[0].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "text", textPart["type"])
+	assert.Equal(t, "check this range", textPart["text"])
+}
+
+func TestClient_CompleteRejectsAnEmptyPrompt(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("the client must not call the API with no prompt")
+	}))
+	defer server.Close()
+
+	_, err := newTestClient(t, server.URL, llm.Options{}).Complete(t.Context(), "   ")
+	require.Error(t, err)
+}
+
+// Both entry points share one retry budget: a text call is retried exactly as a
+// page call is, because one attempt policy is what keeps them from diverging.
+func TestClient_CompleteSharesTheRetryPolicy(t *testing.T) {
+	var attempts int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if atomic.AddInt32(&attempts, 1) == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		_, _ = io.WriteString(w, okBody("recovered"))
+	}))
+	defer server.Close()
+
+	answer, err := newTestClient(t, server.URL, llm.Options{RetryBase: time.Millisecond}).
+		Complete(t.Context(), "check this range")
+	require.NoError(t, err)
+	assert.Equal(t, "recovered", answer)
+	assert.Equal(t, int32(2), atomic.LoadInt32(&attempts))
+}
