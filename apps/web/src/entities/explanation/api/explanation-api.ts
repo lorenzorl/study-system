@@ -1,4 +1,6 @@
 import type {
+  AcceptGapRequest,
+  AcceptGapResponse,
   ExplanationResponse,
   ExplainRangeRequest,
   RangeGapResponse,
@@ -54,6 +56,34 @@ export async function setGapState(
     {
       method: "PUT",
       body: JSON.stringify({ state }),
+    },
+  )
+}
+
+/**
+ * Accept one gap into a card: the reader's question as the front, the quote and its
+ * page as the back (S6, S10).
+ *
+ * One call, because the server owns the whole write: it derives the topic and the
+ * concept, writes the card through the existing flashcards path, and marks the gap
+ * `carded` last. The client sends the front and reads the state; it never names a
+ * concept, and it cannot reorder those writes.
+ *
+ * The refusals are sentences the page renders verbatim: 400 `question is required`,
+ * 409 `this gap already has a card` — the accept happened once, and this is not a
+ * second card — and 404 for a gap that is gone.
+ */
+export async function acceptGap(
+  gapId: string,
+  question: string,
+): Promise<AcceptGapResponse> {
+  const body: AcceptGapRequest = { question }
+
+  return request<AcceptGapResponse>(
+    `/api/study/gaps/${encodeURIComponent(gapId)}/card`,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
     },
   )
 }

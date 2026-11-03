@@ -5,7 +5,6 @@ import { DashboardPage } from "@/pages/dashboard"
 import { TopicPage } from "@/pages/topic"
 import { ConceptPage } from "@/pages/concept"
 import { FlashcardSessionPage } from "@/pages/flashcard-session"
-import { FeynmanPage } from "@/pages/feynman"
 import { DueCardsPage } from "@/pages/due-cards"
 import { PresentationPage } from "@/pages/presentation"
 import { ExplainPage } from "@/pages/explain"
@@ -37,8 +36,9 @@ const routes = [
   },
   // Explain one page range in your own words and read the gaps it left. The URL
   // names the document and the range, and `?id=` names the stored explanation, so a
-  // reload re-reads the gaps instead of paying for the model again (S9). It is
-  // reachable by URL only until `/today` links to it (U4).
+  // reload re-reads the gaps instead of paying for the model again (S9). `/today`
+  // links a read-but-undistilled range here; there is no other explanation route,
+  // because the concept-level placeholder this replaces explained nothing.
   {
     path: "/explain/:documentId/:from/:to",
     name: "explain",
@@ -75,12 +75,6 @@ const routes = [
     path: "/topic/:topicId/concept/:conceptId/flashcards",
     name: "flashcards",
     component: FlashcardSessionPage,
-    props: true,
-  },
-  {
-    path: "/topic/:topicId/concept/:conceptId/feynman",
-    name: "feynman",
-    component: FeynmanPage,
     props: true,
   },
   // Reveal's stylesheets reach this page as text and land in the deck's shadow

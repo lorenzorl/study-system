@@ -5,6 +5,7 @@ import { createPinia, setActivePinia } from "pinia"
 import { createMemoryHistory, createRouter } from "vue-router"
 import { useExplanationStore } from "@/entities/explanation"
 import type {
+  AcceptGapResponse,
   Explanation,
   ExplanationFailure,
   RangeGapResponse,
@@ -26,6 +27,7 @@ const api = vi.hoisted(() => ({
   explainRange: vi.fn(),
   fetchExplanation: vi.fn(),
   setGapState: vi.fn(),
+  acceptGap: vi.fn(),
 }))
 
 vi.mock("@/entities/explanation/api/explanation-api", () => api)
@@ -76,6 +78,16 @@ const TOO_SHORT =
 const DISCARDED: RangeGapResponse = {
   ...STORED.gaps[0]!,
   state: "discarded",
+}
+
+/** `POST /api/study/gaps/{gapID}/card`: the front is the reader's, the back the book's. */
+const CARDED: AcceptGapResponse = {
+  gap_id: "g1",
+  question: "¿Qué ata el prototipo?",
+  answer: "That crude prototype forged the essential link. (p.18)",
+  concept_id: "con-1",
+  topic_id: "top-1",
+  state: "carded",
 }
 
 /**
@@ -148,9 +160,11 @@ beforeEach(() => {
   api.explainRange.mockReset()
   api.fetchExplanation.mockReset()
   api.setGapState.mockReset()
+  api.acceptGap.mockReset()
   api.explainRange.mockResolvedValue(STORED)
   api.fetchExplanation.mockResolvedValue(STORED)
   api.setGapState.mockResolvedValue(DISCARDED)
+  api.acceptGap.mockResolvedValue(CARDED)
 })
 
 describe("ExplainPage render", () => {
@@ -312,18 +326,56 @@ describe("ExplainPage render", () => {
     expect(html).not.toMatch(/puntaje|puntos|score|%/i)
   })
 
-  // U3 owns the card. Until its route exists, no control may promise one.
-  it("offers no card action", async () => {
+  // U3: the card. The front is editable and starts as the gap's point — a statement
+  // the reader turns into a question — beside the discard control.
+  it("pre-fills each gap's card front with its point and offers the card", async () => {
     const html = await render({ explanation: EXPLANATION })
 
-    expect(html).not.toMatch(/tarjeta|flashcard|card/i)
-
-    // One control per gap, plus the one that starts the range over.
-    expect(buttons(html)).toHaveLength(EXPLANATION.gaps.length + 1)
+    expect(html).toContain("Pregunta de la tarjeta")
+    expect(html).toContain('value="El prototipo ata modelo e implementación."')
+    expect(
+      buttons(html).filter((button) => button.includes("Crear tarjeta")),
+    ).toHaveLength(EXPLANATION.gaps.length)
 
     // The way back to the form. Without it, a URL naming a stored explanation would
     // leave the reader unable to explain that range again.
     expect(buttonLabelled(html, "Explicar de nuevo")).toBeDefined()
+  })
+
+  // S6: a refusal is the server's sentence, and the row is still a gap the reader can
+  // accept — nothing was written, so nothing says it was.
+  it("shows the server's refusal sentence and keeps the row un-carded", async () => {
+    const html = await render({
+      explanation: EXPLANATION,
+      error: {
+        message: "this gap already has a card",
+        status: 409,
+        source: "card",
+      },
+    })
+
+    expect(html).toContain("this gap already has a card")
+    expect(html).toContain("El prototipo ata modelo e implementación.")
+    expect(html).not.toContain("Convertida en tarjeta")
+    expect(buttonLabelled(html, "Crear tarjeta")).toBeTruthy()
+  })
+
+  // S6/S7: a carded gap says so, and the state only moves forward — no discard, no
+  // second card for the same gap.
+  it("marks a carded gap and offers neither discard nor another card", async () => {
+    const html = await render({ explanation: EXPLANATION }, (store) =>
+      store.acceptGap(EXPLANATION.gaps[0]!, CARDED.question),
+    )
+
+    expect(api.acceptGap).toHaveBeenCalledWith("g1", CARDED.question)
+    expect(html).toContain("Convertida en tarjeta")
+    // One card control left, for the gap that is still open.
+    expect(
+      buttons(html).filter((button) => button.includes("Crear tarjeta")),
+    ).toHaveLength(1)
+    expect(
+      buttons(html).filter((button) => button.includes("Descartar")),
+    ).toHaveLength(1)
   })
 
   it("says so when the explanation left nothing out", async () => {

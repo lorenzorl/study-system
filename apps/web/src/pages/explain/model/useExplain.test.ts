@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { createPinia, setActivePinia } from "pinia"
 import { ApiError } from "@/shared/api/client"
 import type {
+  AcceptGapResponse,
   ExplanationResponse,
   RangeGapResponse,
 } from "@/entities/explanation"
@@ -20,6 +21,7 @@ const api = vi.hoisted(() => ({
   explainRange: vi.fn(),
   fetchExplanation: vi.fn(),
   setGapState: vi.fn(),
+  acceptGap: vi.fn(),
 }))
 
 vi.mock("@/entities/explanation/api/explanation-api", () => api)
@@ -54,6 +56,17 @@ const TOO_SHORT =
 const DISCARDED: RangeGapResponse = { ...STORED.gaps[0]!, state: "discarded" }
 const REOPENED: RangeGapResponse = { ...STORED.gaps[0]!, state: "open" }
 
+/** The front the reader writes, and the back the server builds from the gap. */
+const QUESTION = "¿Qué ata el prototipo?"
+const CARDED: AcceptGapResponse = {
+  gap_id: "g1",
+  question: QUESTION,
+  answer: "That crude prototype forged the essential link. (p.18)",
+  concept_id: "con-1",
+  topic_id: "top-1",
+  state: "carded",
+}
+
 /** The stored gap in the domain shape the page renders. */
 function storedGap(model: ReturnType<typeof useExplain>) {
   const gap = model.gaps.value[0]
@@ -66,9 +79,11 @@ beforeEach(() => {
   api.explainRange.mockReset()
   api.fetchExplanation.mockReset()
   api.setGapState.mockReset()
+  api.acceptGap.mockReset()
   api.explainRange.mockResolvedValue(STORED)
   api.fetchExplanation.mockResolvedValue(STORED)
   api.setGapState.mockResolvedValue(DISCARDED)
+  api.acceptGap.mockResolvedValue(CARDED)
 })
 
 describe("useExplain", () => {
@@ -276,6 +291,86 @@ describe("useExplain", () => {
     expect(model.stateOf(gap)).toBe("open")
     expect(model.errorMessage.value).toBe("state must be discarded or open")
     expect(model.saving.value).toBe(false)
+  })
+
+  // S6, L5: the gap's point is a statement, and a card whose front asserts can be
+  // recognised but not recalled. So the front starts as the point and the reader
+  // rewrites it as a question.
+  it("pre-fills each gap's card front from its point", async () => {
+    const model = useExplain(RANGE)
+    await model.load("exp-1")
+
+    expect(model.front(storedGap(model)).text).toBe(
+      "El prototipo ata modelo e implementación.",
+    )
+  })
+
+  // S6: what the reader edited is what the server writes; the back is the book's.
+  it("sends the edited front and renders the gap as carded", async () => {
+    const model = useExplain(RANGE)
+    await model.load("exp-1")
+    const gap = storedGap(model)
+    model.front(gap).text = QUESTION
+
+    expect(await model.accept(gap)).toBe(true)
+
+    expect(api.acceptGap).toHaveBeenCalledWith("g1", QUESTION)
+    expect(model.stateOf(gap)).toBe("carded")
+    expect(model.isCarded(gap)).toBe(true)
+    expect(model.error.value).toBeNull()
+  })
+
+  // A card with a blank front is a card the review queue can never resolve, so the
+  // page does not spend a round trip to hear it.
+  it("does not create a card from a blank front", async () => {
+    const model = useExplain(RANGE)
+    await model.load("exp-1")
+    const gap = storedGap(model)
+    model.front(gap).text = "   "
+
+    expect(await model.accept(gap)).toBe(false)
+    expect(api.acceptGap).not.toHaveBeenCalled()
+  })
+
+  // S6: a refusal is the server's sentence verbatim, and nothing claims a card that
+  // was not written — the row stays exactly as it was.
+  it("shows the server's sentence when the card is refused and leaves the gap open", async () => {
+    api.acceptGap.mockRejectedValue(
+      new ApiError("this gap already has a card", 409),
+    )
+    const model = useExplain(RANGE)
+    await model.load("exp-1")
+    const gap = storedGap(model)
+
+    expect(await model.accept(gap)).toBe(false)
+
+    expect(model.errorMessage.value).toBe("this gap already has a card")
+    expect(model.stateOf(gap)).toBe("open")
+    expect(model.isCarded(gap)).toBe(false)
+    expect(model.canRetry.value).toBe(false)
+  })
+
+  it("shows the server's sentence when the front is refused", async () => {
+    api.acceptGap.mockRejectedValue(new ApiError("question is required", 400))
+    const model = useExplain(RANGE)
+    await model.load("exp-1")
+
+    await model.accept(storedGap(model))
+
+    expect(model.errorMessage.value).toBe("question is required")
+  })
+
+  // S6/S7: the state only moves forward. A carded gap is not discardable, and the
+  // page does not offer the control — this is the guard under that.
+  it("does not discard a carded gap", async () => {
+    const model = useExplain(RANGE)
+    await model.load("exp-1")
+    const gap = storedGap(model)
+    await model.accept(gap)
+
+    expect(await model.toggleGap(gap)).toBe(false)
+    expect(api.setGapState).not.toHaveBeenCalled()
+    expect(model.stateOf(gap)).toBe("carded")
   })
 
   // S8: the wire has no score, and the page does not invent one.

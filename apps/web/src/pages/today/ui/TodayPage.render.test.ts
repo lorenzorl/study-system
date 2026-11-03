@@ -113,6 +113,13 @@ async function render(
           name: "review",
           component: { template: "<div />" },
         },
+        // The day links a read range to its explanation; the page only needs the
+        // route to exist so the link resolves to a real URL (S9).
+        {
+          path: "/explain/:documentId/:from/:to",
+          name: "explain",
+          component: { template: "<div />" },
+        },
       ],
     }),
   )
@@ -190,12 +197,15 @@ describe("TodayPage render", () => {
     expect(buttonLabelled(html, "Leído")).toBeTruthy()
   })
 
-  // The read range has nowhere to go: this branch ships no explanation surface, and
-  // a dead link reads as a bug. Pinned so the missing link stays a decision.
-  it("offers no link on a read range, and only one control for the plan item", async () => {
+  // S9: the read range is the entry that leads somewhere now, and the URL names the
+  // document and the range. The plan item still carries only its toggle.
+  it("links a read range to its explanation, and leaves the plan item without a link", async () => {
     const html = await render()
 
-    expect(html).not.toContain("<a ")
+    const links = html.split(/(?=<a )/).filter((chunk) => chunk.startsWith("<a "))
+    expect(links).toHaveLength(1)
+    expect(links[0]).toContain('href="/explain/doc-1/24/36"')
+    expect(links[0]).toContain("Destilá estas páginas")
     expect(buttons(html).filter((button) => button.includes("Leído"))).toHaveLength(1)
   })
 

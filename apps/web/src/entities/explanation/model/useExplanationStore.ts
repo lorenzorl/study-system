@@ -12,6 +12,7 @@ import type {
   SettableGapState,
 } from "./types"
 import {
+  acceptGap as postAcceptGap,
   explainRange,
   fetchExplanation,
   setGapState as putGapState,
@@ -44,6 +45,7 @@ const FALLBACK: Record<ExplanationFailureSource, string> = {
   explain: "Error desconocido al explicar el rango.",
   load: "Error desconocido al leer la explicación.",
   state: "Error desconocido al guardar la laguna.",
+  card: "Error desconocido al crear la tarjeta.",
 }
 
 /**
@@ -67,7 +69,7 @@ function toFailure(
 }
 
 /**
- * One range, one explanation, and the gaps it left (S1, S2, S4, S5, S7, S9).
+ * One range, one explanation, and the gaps it left (S1, S2, S4, S5, S6, S7, S9).
  *
  * Two flags, because they are two different waits. `loading` is the read of a stored
  * explanation: fast, and what a deep link pays on mount. `saving` is a write — the
@@ -171,8 +173,34 @@ export const useExplanationStore = defineStore("explanation", () => {
   }
 
   /**
-   * Clear the stored explanation so the same range can be explained again.
+   * Accept a gap into a card, with the reader's question as its front (S6, S10).
    *
+   * One request writes the card and moves the gap to `carded`, and only the answer's
+   * state is rendered: the front is the reader's own, and the back is the quote the
+   * row already cites, so echoing either back would add nothing. A refusal leaves the
+   * row exactly as it was — the state is the server's claim, and nothing claims a card
+   * a failed write never stored.
+   */
+  async function acceptGap(gap: RangeGap, question: string): Promise<boolean> {
+    if (saving.value) return false
+
+    saving.value = true
+    error.value = null
+
+    try {
+      const stored = await postAcceptGap(gap.id, question)
+      gapStates.value.set(stored.gap_id, stored.state)
+      return true
+    } catch (e) {
+      error.value = toFailure(e, "card")
+      return false
+    } finally {
+      saving.value = false
+    }
+  }
+
+  /**
+   * Clear the stored explanation so the same range can be explained again.
    * Deliberate and never automatic: a second explanation is a second model call, so
    * the reader asks for it — after re-reading the chapter, or because the answer
    * missed what they meant. Without this, the form would be unreachable in any URL
@@ -198,6 +226,7 @@ export const useExplanationStore = defineStore("explanation", () => {
     explain,
     load,
     setGapState,
+    acceptGap,
     stateOf,
     reset,
   }

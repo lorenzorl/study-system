@@ -9,10 +9,15 @@ import { useConceptSelection } from "@/features/select-concept"
 import { useTopicSelection } from "@/features/select-topic"
 import ConceptPage from "./ConceptPage.vue"
 
-// Characterization test, written before the primitive migration: it pins the two
-// actions the page offers, when the flashcards one is unavailable, and the two
-// states a failed or cold visit renders. Never how they are styled — the migration
-// replaces the markup of every control here.
+// Characterization test, written before the primitive migration: it pins the action
+// the page offers, when the flashcards one is unavailable, and the two states a failed
+// or cold visit renders. Never how they are styled — the migration replaces the markup
+// of every control here.
+//
+// It carried a second action until the Feynman placeholder was retired (D2): that page
+// turned a concept into one hardcoded paragraph, and the range explanation replaced it.
+// The assertions about its link went with it, and nothing here pins a route the app no
+// longer has.
 //
 // The repo's vitest environment is `node` (no jsdom, no @vue/test-utils), so the
 // states are reached by seeding the pinia stores and rendering through
@@ -85,11 +90,6 @@ async function render(seed: Seed = {}): Promise<string> {
           name: "flashcards",
           component: { template: "<div />" },
         },
-        {
-          path: "/topic/:topicId/concept/:conceptId/feynman",
-          name: "feynman",
-          component: { template: "<div />" },
-        },
       ],
     }),
   )
@@ -113,21 +113,19 @@ function buttonLabelled(html: string, label: string): string {
 }
 
 describe("ConceptPage render", () => {
-  it("offers flashcards and Feynman, and says how many cards the concept holds", async () => {
+  it("offers flashcards and says how many cards the concept holds", async () => {
     const html = await render({ cards: [CARD] })
 
     expect(html).toContain("Filtro atencional")
     expect(html).toContain("atencion/filtro.md")
     expect(html).toContain("Tarjetas")
     expect(html).toContain("1 tarjeta")
-    expect(html).toContain("Técnica Feynman")
   })
 
-  it("pluralises the card count, and still offers Feynman with none", async () => {
+  it("pluralises the card count", async () => {
     const html = await render()
 
     expect(html).toContain("0 tarjetas")
-    expect(buttonLabelled(html, "Técnica Feynman")).not.toMatch(DISABLED)
   })
 
   it("makes the flashcards action unavailable when there are no cards", async () => {
@@ -142,7 +140,6 @@ describe("ConceptPage render", () => {
 
     expect(html).toContain("No se pudo cargar.")
     expect(buttonLabelled(html, "Reintentar")).toBeTruthy()
-    expect(html).not.toContain("Técnica Feynman")
   })
 
   it("offers the way back to the topic when the concept is not there", async () => {

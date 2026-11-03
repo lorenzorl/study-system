@@ -221,9 +221,9 @@ const conceptSelection = useConceptSelection()
 
 const { loading, error, isPending: topicsPending } = storeToRefs(topicsStore)
 
-// The same rule as `TopicPage`, `ConceptPage` and `FeynmanPage` (`backlog.md` D1,
-// D6): `concept` is resolved out of the topics store, so a cold visit needs the
-// store filled, and a warm one must not fetch twice.
+// The same rule as `TopicPage` and `ConceptPage` (`backlog.md` D1, D6): `concept` is
+// resolved out of the topics store, so a cold visit needs the store filled, and a
+// warm one must not fetch twice.
 const loadTopicsIfEmpty = createLoadIfEmpty({
   isEmpty: () => topicsStore.topics.length === 0 && !topicsStore.loading,
   load: () => topicsStore.loadTopics(),

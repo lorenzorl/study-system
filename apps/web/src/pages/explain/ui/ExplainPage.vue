@@ -97,24 +97,72 @@
             <!-- The evidence, verbatim and set apart: a citation, not a paraphrase. -->
             <blockquote class="explain__quote">{{ gap.quote }}</blockquote>
 
-            <!-- S7: discarded stops it being actionable, nothing else about it changes. -->
-            <p v-if="isDiscarded(gap)" class="explain__discarded">Descartada</p>
+            <!-- S6: a carded gap says so, and the state only moves forward — no
+                 discard, no second card for the same gap. -->
+            <p v-if="isCarded(gap)" class="explain__carded">
+              Convertida en tarjeta
+            </p>
 
-            <Button
-              type="button"
-              :variant="isDiscarded(gap) ? 'outline' : 'secondary'"
-              :class="[
-                'min-h-[44px] self-start',
-                isDiscarded(gap)
-                  ? 'border-primary text-primary'
-                  : 'border-border text-muted-foreground',
-              ]"
-              :aria-pressed="isDiscarded(gap)"
-              :disabled="saving"
-              @click="toggleGap(gap)"
-            >
-              {{ isDiscarded(gap) ? "Deshacer" : "Descartar" }}
-            </Button>
+            <!-- S7: discarded stops it being actionable, nothing else about it changes. -->
+            <template v-else-if="isDiscarded(gap)">
+              <p class="explain__discarded">Descartada</p>
+
+              <Button
+                type="button"
+                variant="outline"
+                class="min-h-[44px] self-start border-primary text-primary"
+                :aria-pressed="true"
+                :disabled="saving"
+                @click="toggleGap(gap)"
+              >
+                Deshacer
+              </Button>
+            </template>
+
+            <template v-else>
+              <!--
+                S6, L5: the front is editable, and it is deliberately not the gap's
+                point verbatim. A point is a statement ("el prototipo ata modelo e
+                implementación"), and a card whose front asserts can be recognised but
+                not recalled. The reader writes the question; the book provides the
+                evidence behind it.
+              -->
+              <div class="explain__card">
+                <label
+                  class="explain__front-label"
+                  :for="'explain-front-' + gap.id"
+                >
+                  Pregunta de la tarjeta
+                </label>
+                <input
+                  :id="'explain-front-' + gap.id"
+                  v-model="front(gap).text"
+                  class="explain__front"
+                  type="text"
+                  :disabled="saving"
+                  :placeholder="'Escribí la pregunta sobre ' + pageLabel(gap)"
+                />
+                <Button
+                  type="button"
+                  class="min-h-[44px] self-start"
+                  :disabled="saving"
+                  @click="accept(gap)"
+                >
+                  Crear tarjeta
+                </Button>
+              </div>
+
+              <Button
+                type="button"
+                variant="secondary"
+                class="min-h-[44px] self-start border-border text-muted-foreground"
+                :aria-pressed="false"
+                :disabled="saving"
+                @click="toggleGap(gap)"
+              >
+                Descartar
+              </Button>
+            </template>
           </li>
         </ul>
 
@@ -166,12 +214,15 @@ const {
   errorMessage,
   canRetry,
   pageLabel,
+  front,
   submit,
   load,
   retry,
   startOver,
+  accept,
   toggleGap,
   isDiscarded,
+  isCarded,
 } = model
 
 /**
@@ -337,6 +388,36 @@ function onStartOver() {
   margin: 0;
   font-size: 0.8rem;
   color: var(--text-muted);
+}
+
+.explain__carded {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-accent);
+}
+
+/* The front and its label: the one thing on a row the reader writes. */
+.explain__card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.explain__front-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.explain__front {
+  width: 100%;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-family: inherit;
+  font-size: 0.95rem;
+  line-height: 1.4;
 }
 
 .explain__nothing {

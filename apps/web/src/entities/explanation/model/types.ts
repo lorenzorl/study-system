@@ -11,7 +11,8 @@
  * carry one and the domain shape cannot invent it.
  */
 
-/** What a stored gap can be. `carded` says a card exists and only U3's route may set it. */
+/** What a stored gap can be. `carded` is the accept route's fact and no other route's
+ * claim; it is also the one state the page never moves back from. */
 export type GapState = "open" | "discarded" | "carded"
 
 /** The two states `PUT /api/study/gaps/{gapID}/state` accepts. */
@@ -48,6 +49,34 @@ export interface SetGapStateRequest {
   state: SettableGapState
 }
 
+/**
+ * `POST /api/study/gaps/{gapID}/card`: the reader's own question (S6, L5).
+ *
+ * The body carries the front and nothing else: the back comes from the gap the server
+ * stored, so a client cannot put words in the book's mouth.
+ */
+export interface AcceptGapRequest {
+  question: string
+}
+
+/**
+ * The card one accept wrote, and the gap's new state.
+ *
+ * `answer` is the server's own composition — `<quote> (p.N)` — because the evidence a
+ * card carries is the evidence its gap already cites. `concept_id` and `topic_id` name
+ * what the server derived (S10): a client reads them to know the write landed, never to
+ * re-derive the naming rule. The page renders the state and nothing else from here,
+ * because a reload answers a carded gap without its card's fields.
+ */
+export interface AcceptGapResponse {
+  gap_id: string
+  question: string
+  answer: string
+  concept_id: string
+  topic_id: string
+  state: GapState
+}
+
 /** A gap in the shape the page renders: addressable, with its state (S2). */
 export interface RangeGap {
   id: string
@@ -70,7 +99,7 @@ export interface Explanation {
 }
 
 /** Which request produced a failure. The page words each one differently. */
-export type ExplanationFailureSource = "explain" | "load" | "state"
+export type ExplanationFailureSource = "explain" | "load" | "state" | "card"
 
 /**
  * A failed request, kept with the status that decided it.

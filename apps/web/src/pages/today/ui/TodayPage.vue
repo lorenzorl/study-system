@@ -52,11 +52,11 @@
       <ul v-else-if="entries.length > 0" class="today__entries">
         <li v-for="entry in entries" :key="entryKey(entry)" class="today__entry">
           <!--
-            A read range is a sentence and nothing else: it has no toggle (it is
-            already read) and, deliberately, no link. This branch ships no
-            explanation surface, and a link to one that does not exist is a worse
-            answer than none — the missing control is the decision, not an
-            oversight. The commit that adds that surface adds the link here.
+            A read range still has no toggle (it is already read), but it now has
+            somewhere to go: the explanation surface exists, and this is the entry it
+            was always going to be reached from (S9). The link names the document and
+            the range, so opening it again re-reads the stored explanation instead of
+            paying for the model a second time.
           -->
           <template v-if="entry.kind === 'read_not_distilled'">
             <p class="today__entry-title">{{ materialName(entry) }}</p>
@@ -64,6 +64,9 @@
             <p class="today__entry-note">
               Leíste estas páginas y todavía no las destilaste.
             </p>
+            <RouterLink class="today__entry-link" :to="explainRoute(entry)">
+              Destilá estas páginas
+            </RouterLink>
           </template>
 
           <!--
@@ -118,6 +121,7 @@ const {
   materialName,
   rangeLabel,
   entryKey,
+  explainRoute,
   load,
   setRead,
   isRead,
@@ -217,6 +221,24 @@ function toggleRead(entry: PlanNextEntry) {
   margin: 0;
   font-size: 0.8rem;
   color: var(--text-muted);
+}
+
+/*
+ * The read range's one control, and a link rather than a button on purpose: it
+ * navigates to a page, so it is the browser's own element and the browser's own
+ * affordances (middle click, open in a tab, copy the URL).
+ */
+.today__entry-link {
+  align-self: flex-start;
+  margin-top: 0.25rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-accent);
+  text-decoration: none;
+}
+
+.today__entry-link:hover {
+  text-decoration: underline;
 }
 
 .today__nothing {

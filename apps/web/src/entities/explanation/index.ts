@@ -1,5 +1,7 @@
 // Public API of the `explanation` entity slice.
 export type {
+  AcceptGapRequest,
+  AcceptGapResponse,
   Explanation,
   ExplanationFailure,
   ExplanationFailureSource,
@@ -13,6 +15,7 @@ export type {
 } from "./model/types"
 export { useExplanationStore } from "./model/useExplanationStore"
 export {
+  acceptGap,
   explainRange,
   fetchExplanation,
   setGapState,

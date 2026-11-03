@@ -2,8 +2,8 @@
  * Fill a cache-once source when it is empty, and leave it alone when something
  * already filled it (`backlog.md` D1).
  *
- * The three pages that read the topics store — `TopicPage`, `ConceptPage`,
- * `FeynmanPage` — all need the same rule on mount: load when the store is empty
+ * Every page that reads the topics store — `TopicPage`, `ConceptPage`, the flashcard
+ * session — needs the same rule on mount: load when the store is empty
  * (a deep link, a reload, a bookmark), do nothing when a warmer path already
  * loaded it (`/topics` → topic card). Writing that rule three times is how the
  * fourth page ends up without it, which is exactly the defect: only the `retry`

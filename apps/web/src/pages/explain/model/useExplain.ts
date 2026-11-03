@@ -1,7 +1,7 @@
-import { computed, ref } from "vue"
+import { computed, reactive, ref } from "vue"
 import { storeToRefs } from "pinia"
 import { useExplanationStore } from "@/entities/explanation"
-import type { RangeGap } from "@/entities/explanation"
+import type { GapState, RangeGap } from "@/entities/explanation"
 
 /** The range the route names: `/explain/:documentId/:from/:to`. */
 export interface ExplainTarget {
@@ -30,6 +30,18 @@ export function useExplain(target: ExplainTarget) {
   /** The explanation a retry would read again, when the failure was a read. */
   let lastId: string | null = null
 
+  /**
+   * The draft front of each gap's card, by gap id.
+   *
+   * A gap's `point` is a statement — "the prototype binds model and implementation" —
+   * and a card whose front asserts can be recognised but not recalled. So the front is
+   * pre-filled with the point and the reader rewrites it as a question; the book
+   * provides the evidence behind it (`L5`). The draft lives here, in the page's own
+   * model, because it is nothing until the reader accepts it: no request carries it
+   * until then, and `startOver` throws it away with the explanation.
+   */
+  const fronts = reactive(new Map<string, { text: string }>())
+
   const gaps = computed<RangeGap[]>(() => explanation.value?.gaps ?? [])
   /** A stored explanation with no gaps is an answer, not an empty screen. */
   const isEmpty = computed(
@@ -53,7 +65,23 @@ export function useExplain(target: ExplainTarget) {
   function startOver(): void {
     store.reset()
     text.value = ""
+    fronts.clear()
     lastId = null
+  }
+
+  /**
+   * The editable front of one gap's card, created from the gap's point on first read.
+   *
+   * It answers a stable object per gap id, so `v-model` in the row binds to one draft
+   * across renders instead of a fresh one each time.
+   */
+  function front(gap: RangeGap): { text: string } {
+    const existing = fronts.get(gap.id)
+    if (existing) return existing
+
+    const draft = reactive({ text: gap.point })
+    fronts.set(gap.id, draft)
+    return draft
   }
 
   /**
@@ -67,6 +95,20 @@ export function useExplain(target: ExplainTarget) {
   const errorMessage = computed<string | null>(() => {
     const failure = error.value
     if (!failure) return null
+
+    // Accepting a gap fails differently from reading or writing a state: the server's
+    // refusals (`question is required`, `this gap already has a card`) are sentences the
+    // reader acts on, so they are rendered verbatim. Only the two that carry no useful
+    // sentence — a gap that is gone, a write that failed — are re-worded.
+    if (failure.source === "card") {
+      if (failure.status === 404) {
+        return "Esa laguna ya no está guardada: recargá la explicación."
+      }
+      if (failure.status !== null && failure.status >= 500) {
+        return "No se creó la tarjeta. Probá de nuevo."
+      }
+      return failure.message
+    }
 
     if (failure.status === 404) {
       return failure.source === "load"
@@ -92,6 +134,8 @@ export function useExplain(target: ExplainTarget) {
     const failure = error.value
     if (!failure) return false
     if (failure.source === "state") return false
+    // The card control is the retry for a card write, and it keeps the reader's front.
+    if (failure.source === "card") return false
     if (failure.status === 404 || failure.status === 400) return false
     return true
   })
@@ -131,17 +175,42 @@ export function useExplain(target: ExplainTarget) {
     await submit()
   }
 
-  /** The one control on a gap sends the state opposite to the one it shows. */
+  /**
+   * Accept this gap into a card, with the front as the reader edited it (S6).
+   *
+   * A blank front does not spend a round trip: the server refuses it with the same
+   * sentence, and the page already knows. On success the row renders the state the
+   * server stored, so nothing on the page claims a card a failed write never made.
+   */
+  async function accept(gap: RangeGap): Promise<boolean> {
+    const question = front(gap).text.trim()
+    if (question === "") return false
+
+    return store.acceptGap(gap, question)
+  }
+
+  /**
+   * The one discard control on a gap sends the state opposite to the one it shows.
+   *
+   * A carded gap is not discardable: the state only moves forward, so the page never
+   * offers the control for it and this guard keeps a stray call from trying.
+   */
   function toggleGap(gap: RangeGap): Promise<boolean> {
+    if (isCarded(gap)) return Promise.resolve(false)
+
     return store.setGapState(gap, isDiscarded(gap) ? "open" : "discarded")
   }
 
-  function stateOf(gap: RangeGap) {
+  function stateOf(gap: RangeGap): GapState {
     return store.stateOf(gap)
   }
 
   function isDiscarded(gap: RangeGap): boolean {
     return store.stateOf(gap) === "discarded"
+  }
+
+  function isCarded(gap: RangeGap): boolean {
+    return store.stateOf(gap) === "carded"
   }
 
   return {
@@ -156,13 +225,16 @@ export function useExplain(target: ExplainTarget) {
     errorMessage,
     canRetry,
     pageLabel,
+    front,
     submit,
     load,
     retry,
     startOver,
+    accept,
     toggleGap,
     setGapState: store.setGapState,
     stateOf,
     isDiscarded,
+    isCarded,
   }
 }
