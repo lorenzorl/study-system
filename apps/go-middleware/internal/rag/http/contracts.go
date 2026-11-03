@@ -104,3 +104,15 @@ type DocumentPagesUseCase interface {
 	// the contract is an *app.PageRangeError, which is a 400.
 	Execute(ctx context.Context, documentID string, from, to int) (app.DocumentPages, error)
 }
+
+// DocumentSectionsUseCase answers the structure already stored for a document.
+//
+// The document comes from the path, so the transport decides nothing: whether an
+// unknown id is a 404 and an unread book is an empty list is the application's
+// contract, not a routing detail.
+type DocumentSectionsUseCase interface {
+	// Execute returns the document's sections in reading order. An unknown
+	// document is apperror.ErrNotFound; a document with no extracted structure is
+	// an empty slice, never nil and never an error.
+	Execute(ctx context.Context, documentID string) ([]app.Section, error)
+}

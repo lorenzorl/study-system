@@ -192,6 +192,16 @@ func (r *RAG) Pages() *ragapp.DocumentPagesUseCase {
 	return ragapp.NewDocumentPagesUseCase(r.documents, r.jobs, r.pages)
 }
 
+// Sections builds the structure read: the parts, chapters and sections the
+// ingestion stored for one document.
+//
+// It needs nothing outside the database — no store, no model, no client — for the
+// same reason Pages does not: the structure was decided and written when the
+// document was processed, and this read only reports it.
+func (r *RAG) Sections() *ragapp.DocumentSectionsUseCase {
+	return ragapp.NewDocumentSectionsUseCase(r.documents, r.sections)
+}
+
 // ListDocuments builds the corpus list: every document with its page and chunk
 // counts.
 func (r *RAG) ListDocuments() *ragapp.ListDocumentsUseCase {

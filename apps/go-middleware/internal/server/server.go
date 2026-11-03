@@ -147,6 +147,10 @@ func Run(ctx context.Context, cfg *config.Config, port int) error {
 		// about a document that already exists, and the agent cites a card's source
 		// through it.
 		raghttp.NewPagesHandler(rag.Pages()),
+		// The structure read is the third sibling: same document, same already-stored
+		// evidence, and it is what lets a client cite the chapters the ingestion
+		// validated instead of reassembling a printed contents page.
+		raghttp.NewSectionsHandler(rag.Sections()),
 		raghttp.NewDocumentsHandler(rag.ListDocuments()),
 		raghttp.NewIngestTextHandler(textIngest, cfg.MaxUploadBytes),
 		// NewIngestURLHandler installs the production address rule itself; there is

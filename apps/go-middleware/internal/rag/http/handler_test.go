@@ -381,6 +381,7 @@ func newSearchRouterWithDocuments(search httppkg.SearchUseCase, documents httppk
 		// The page read is registered but not exercised here: these tests are
 		// about retrieval.
 		httppkg.NewPagesHandler(nil),
+		httppkg.NewSectionsHandler(nil),
 		httppkg.NewDocumentsHandler(documents),
 		// The creation routes are registered but not exercised here: these tests are
 		// about retrieval.

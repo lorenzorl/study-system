@@ -199,6 +199,42 @@ type DocumentPagesResponse struct {
 	Pages []PageTextResponse `json:"pages"`
 }
 
+// DocumentSectionsResponse is the body returned by
+// GET /api/rag/documents/{documentID}/sections: the structure the ingestion
+// stored, as a bare array.
+//
+// It is an array and not an object carrying the document's identity, because the
+// route already names the document: the caller that got here knows the id, and
+// repeating it would be a second source for a fact the path decided. The corpus
+// list encodes the same way.
+type DocumentSectionsResponse []SectionResponse
+
+// SectionResponse is one entry of that body: a part, a chapter, or a section,
+// with the page range it owns.
+//
+// ParentID is always present, empty for a top-level entry, never omitted. A
+// consumer rebuilds the tree from it, and "absent" reading the same as
+// "top-level" would make every entry a candidate root.
+type SectionResponse struct {
+	ID       string `json:"id"`
+	ParentID string `json:"parent_id"`
+
+	// Level is the document's own nesting: 1 for a part, 2 for a chapter, and 3 or
+	// more for a section. A document with no parts starts at 1.
+	Level int `json:"level"`
+
+	Title string `json:"title"`
+
+	// StartPage and EndPage are 1-based and inclusive, and they are what a citation
+	// of a chapter is checked against.
+	StartPage int `json:"start_page"`
+	EndPage   int `json:"end_page"`
+
+	// Source is how the entry was recovered: outline, toc, typography, pattern, or
+	// mixed when one of those confirmed another.
+	Source string `json:"source"`
+}
+
 // PageTextResponse is one page of that body.
 //
 // The text is verbatim and possibly long: this endpoint exists so a client can

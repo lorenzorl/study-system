@@ -131,6 +131,7 @@ func TestRouter_RegistersTheDocumentRoutes(t *testing.T) {
 	status := &fakeStatusUseCase{status: app.DocumentStatus{DocumentID: "doc-1", State: app.StateQueued}}
 	router := httppkg.NewRouter(&mockSearchUseCase{}, upload,
 		httppkg.NewDocumentStatusHandler(status), httppkg.NewPagesHandler(nil),
+		httppkg.NewSectionsHandler(nil),
 		httppkg.NewDocumentsHandler(&fakeDocumentListUseCase{}),
 		// The text and URL routes are the other creation paths; this test owns the
 		// PDF one.

@@ -183,6 +183,7 @@ func TestRouter_RegistersThePagesRoute(t *testing.T) {
 		httppkg.NewUploadDocumentHandler(nil, nil, nil, false),
 		httppkg.NewDocumentStatusHandler(nil),
 		httppkg.NewPagesHandler(pages),
+		httppkg.NewSectionsHandler(nil),
 		httppkg.NewDocumentsHandler(&fakeDocumentListUseCase{}),
 		newTextHandler(&fakeIngestTextUseCase{}),
 		newURLHandler(&fakeIngestTextUseCase{}),

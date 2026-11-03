@@ -238,6 +238,7 @@ func TestRouter_RegistersTheTextIngestRoute(t *testing.T) {
 		httppkg.NewUploadDocumentHandler(nil, nil, nil, false),
 		httppkg.NewDocumentStatusHandler(nil),
 		httppkg.NewPagesHandler(nil),
+		httppkg.NewSectionsHandler(nil),
 		httppkg.NewDocumentsHandler(&fakeDocumentListUseCase{}),
 		newTextHandler(useCase),
 		newURLHandler(&fakeIngestTextUseCase{}),
