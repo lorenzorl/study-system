@@ -484,6 +484,96 @@ func TestIngestDocumentUseCase_SecondRunCreatesNoNewJobAndRedoesNothing(t *testi
 	assert.Len(t, artifacts, 1, "the bytes are stored once, not once per run")
 }
 
+// A resumed run reworks the pages an earlier attempt failed, so the job's finish
+// time must be the instant the last attempt ended, not the instant the first one
+// stopped. Backlog D9 measured an 18-minute error in the only duration field the
+// API exposes.
+func TestIngestDocumentUseCase_ResumedRunStampsTheInstantTheLastAttemptEnded(t *testing.T) {
+	ctx := t.Context()
+	h := newHarness(t, 2, []byte("resumed book")).withLongText(2)
+
+	// The first attempt settles completed with page 2 failed, which is the state
+	// a resumed run finds: a failed page still counts as a terminal outcome, and
+	// the next run owes it again.
+	h.extractor.errs[2] = errors.New("pdftotext exited 1")
+	h.run(t)
+
+	// Re-seed the staleness the defect produces, through the real repository, so
+	// the assertion below is about the value the database holds.
+	stopped := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
+	stale := h.job(t)
+	stale.FinishedAt = &stopped
+	stale.UpdatedAt = stopped
+	require.NoError(t, h.jobs.UpdateStatus(ctx, stale))
+
+	delete(h.extractor.errs, 2)
+	h.extractor.calls = nil
+
+	report, events := h.run(t)
+
+	assert.True(t, report.Settled)
+	assert.Equal(t, []int{2}, h.extractor.calls, "only the failed page is owed again")
+	require.Len(t, events, 1)
+
+	job := h.job(t)
+	require.NotNil(t, job.FinishedAt)
+	assert.True(t, job.FinishedAt.After(stopped),
+		"finished_at %s must move to the attempt that finished the work, not stay at %s",
+		job.FinishedAt, stopped)
+	assert.Equal(t, domain.JobCompleted, job.Status,
+		"the resumed run does not change the status the first attempt decided")
+	assert.Equal(t, 1, h.countJobs(t), "a resume continues the job, it does not start another")
+
+	latest := latestOutcomeInstant(t, h.outcomes(t))
+	assert.False(t, job.FinishedAt.Before(latest),
+		"finished_at %s must not precede the last page written at %s", job.FinishedAt, latest)
+}
+
+// The other direction of the same lie: a run that reworked nothing must not push
+// finished_at forward, or the duration of an idle re-run becomes the duration of
+// the ingestion.
+func TestIngestDocumentUseCase_ResumedRunThatOwesNothingLeavesTheFinishInstantAlone(t *testing.T) {
+	ctx := t.Context()
+	h := newHarness(t, 2, []byte("settled book")).withLongText(2)
+
+	h.run(t)
+
+	stopped := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
+	stale := h.job(t)
+	stale.FinishedAt = &stopped
+	stale.UpdatedAt = stopped
+	require.NoError(t, h.jobs.UpdateStatus(ctx, stale))
+
+	report, events := h.run(t)
+
+	assert.Empty(t, events, "a settled job owes no page")
+	assert.Equal(t, 2, report.Skipped)
+
+	job := h.job(t)
+	require.NotNil(t, job.FinishedAt)
+	assert.Equal(t, stopped, *job.FinishedAt,
+		"a run that reworked nothing must not claim to have ended later")
+	assert.Equal(t, stopped, job.UpdatedAt)
+	assert.Equal(t, 1, h.countJobs(t))
+}
+
+// latestOutcomeInstant is the instant of the most recently written page, which is
+// the evidence a job's finish time has to agree with.
+func latestOutcomeInstant(t *testing.T, outcomes []domain.PageOutcome) time.Time {
+	t.Helper()
+
+	require.NotEmpty(t, outcomes)
+
+	latest := outcomes[0].UpdatedAt
+	for _, outcome := range outcomes[1:] {
+		if outcome.UpdatedAt.After(latest) {
+			latest = outcome.UpdatedAt
+		}
+	}
+
+	return latest
+}
+
 // --- failure handling ---
 
 func TestIngestDocumentUseCase_RecordsAFailedPageAndContinues(t *testing.T) {

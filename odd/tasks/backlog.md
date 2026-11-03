@@ -1,7 +1,7 @@
 # Backlog — open findings
 
 **Single source of truth for everything deliberately not fixed yet.**
-Updated: 2026-11-03 (P3 closed, the section read; D8/D9 from the `DDD.pdf` re-ingest; P2, the `resources` ↔ `documents` decision; W1-W4, the coverage and plan slices)
+Updated: 2026-11-03 (P3 closed, the section read; D9 closed, the resumed-run instants; D8 from the `DDD.pdf` re-ingest; P2, the `resources` ↔ `documents` decision; W1-W4, the coverage and plan slices)
 
 A follow-up is a finding that was real, but outside the scope of the step that
 found it. Fixing it mid-step would make that step unverifiable: you could no
@@ -643,11 +643,11 @@ artifact directory per content hash after two uploads of the same bytes. The dir
 `documents` was confirmed to be the only referrer; `data/` went 42 MB -> 37 MB with the
 document still `completed`.
 
-### D9 — A resumed ingestion keeps the timestamps of the run that failed
+### D9 (closed 2026-11-03) — A resumed ingestion kept the timestamps of the run that failed
 
-`ingestion_jobs.updated_at` and `finished_at` are not rewritten when a resumed run
-finishes. The document's state is derived from the page outcomes and the chunk counts,
-so it reports `completed` correctly, while the job row still carries the instant the
+`ingestion_jobs.updated_at` and `finished_at` were not rewritten when a resumed run
+finished. The document's state is derived from the page outcomes and the chunk counts,
+so it reported `completed` correctly, while the job row still carried the instant the
 first attempt stopped.
 
 **Measured:** after the resumed `DDD.pdf` run, the last page was written at
@@ -656,16 +656,49 @@ first attempt stopped.
 projected that stale value verbatim alongside `state: completed`. An 18-minute error in
 the only duration field the API exposes.
 
-**Why it matters beyond cosmetics:** anyone measuring ingestion time, alerting on a
-slow run, or deciding "is this still going?" from `finished_at` gets the wrong answer
-precisely in the case that took longest — the one that had to be retried. The page
-rows are correct (`job_pages.updated_at` advanced with each retry), so the evidence to
-fix it is already stored.
+**Why it mattered beyond cosmetics:** anyone measuring ingestion time, alerting on a
+slow run, or deciding "is this still going?" from `finished_at` got the wrong answer
+precisely in the case that took longest — the one that had to be retried. The page rows
+were correct (`job_pages.updated_at` advanced with each retry), so the evidence to fix
+it was already stored.
 
-**How to close:** have the pipeline rewrite `updated_at`/`finished_at` when the run
-terminates, whatever the attempt number, and add a test that resumes an interrupted
-job to completion and asserts `finished_at >= max(job_pages.updated_at)`. No schema
-change is needed.
+**The root cause, once located, was a rule doing two jobs.** `domain.IngestionJob.Settle`
+decides the status and writes the instants in one place, and it early-returns when the
+job is already `completed` or `failed`. That early return is right for the case it was
+written for — the same attempt settling twice must not move its finish time, and
+`TestSettle_IsIdempotent` pinned exactly that. But a resumed run has the same shape and
+the opposite need: the first attempt settles `completed` even when a page failed (a
+failure is a terminal outcome), `findOrStartJob` hands the settled job back untouched,
+`domain.PendingPages` owes the failed page again, the run reworks it — and then `Settle`
+returns early, freezing the instants at an attempt that stopped eighteen minutes earlier.
+
+**Closed by separating the two questions rather than by relaxing the rule.** The new
+`(*IngestionJob).FinishAttempt(now)` moves `UpdatedAt`/`FinishedAt` on a job that has
+already settled and never touches `Status`; it refuses an unsettled job, because there
+`Settle` declares both and an ending recorded by anything else would be an ending nobody
+declared. `Settle` is unchanged, so its idempotence holds. The pipeline calls
+`FinishAttempt` only when the job was already settled **and** the run reworked at least
+one owed page: the opposite lie was available and is worth naming — a re-run that owed
+nothing would have pushed `finished_at` forward on every invocation and inflated the
+duration just as badly, from the other side.
+
+**Evidence.** Test-first, and the RED was re-checked by reverting only the
+implementation and keeping the tests: `finished_at 13:32:46Z must move to the attempt
+that finished the work` and `must not precede the last page written at 14:32:46Z` — the
+defect reproduced through the public interface. GREEN with four new tests (domain:
+the instants move, an unsettled job is refused; app: the resumed run stamps the instant
+it ended and asserts `finished_at >= max(job_pages.updated_at)`, and the run that owes
+nothing leaves it alone). `TestSettle_IsIdempotent` and the existing resume tests
+(`ResumesFromRecordedOutcomesWithoutRedoingPages`, `SecondRunCreatesNoNewJobAndRedoesNothing`,
+`InterruptedRunResumesIntoExactlyOneHeader`, `ResumedPlanCountsOnlyTheOwedPages`) pass
+unedited. `gofmt`, `go vet ./...`, `go build ./...` and `go test ./...` clean. No schema
+change, and `text.go` is untouched because that path creates a fresh job and never
+resumes.
+
+**One caveat worth keeping:** the guard is `len(plannedPages) > 0`, which is faithful
+only because the processing loop iterates exactly that slice and every loop error
+returns before the settle site. If a future change lets the loop skip entries, the guard
+has to be revisited with it.
 
 ## 🟡 Missing policy
 

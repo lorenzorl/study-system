@@ -174,6 +174,28 @@ func (j *IngestionJob) Settle(progress Progress, now time.Time) error {
 	return nil
 }
 
+// FinishAttempt records the end of a run that reworked a job which had already
+// settled: the status stays as the earlier attempt decided, and the instants move
+// to the end of the attempt that actually finished the work.
+//
+// Settle deliberately refuses to move a settled job's instants, because a second
+// settle of the same run must not lie about when it ended. A resumed run is a
+// different case with the same shape: a page that failed is owed again, the next
+// attempt reworks it, and the instant the first attempt stopped is then neither
+// the finish time nor an honest duration. Refusing an unsettled job keeps the two
+// apart — for those, Settle decides both the status and the instants, so an
+// ending recorded here would be an ending nobody declared.
+func (j *IngestionJob) FinishAttempt(now time.Time) error {
+	if j.Status != JobCompleted && j.Status != JobFailed {
+		return fmt.Errorf("cannot finish an attempt of a job in state %q: %w", j.Status, apperror.ErrConflict)
+	}
+
+	instant := now.UTC()
+	j.UpdatedAt = instant
+	j.FinishedAt = &instant
+	return nil
+}
+
 // IsResumable reports whether the run left work behind.
 func (j *IngestionJob) IsResumable() bool {
 	return j.Status == JobRunning || j.Status == JobPending

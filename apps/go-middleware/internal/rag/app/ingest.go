@@ -346,8 +346,20 @@ func (uc *IngestDocumentUseCase) Execute(
 			job.ID, progress.Pending, apperror.ErrConflict)
 	}
 
-	if err := job.Settle(progress, uc.now()); err != nil {
+	// A job that already settled is being resumed: its status is the earlier
+	// attempt's verdict and Settle keeps it, but the instants it wrote describe
+	// the attempt that stopped, not this one. FinishAttempt moves them, and only
+	// when this run actually reworked a page — a re-run that owed nothing must
+	// not push finished_at forward and inflate the duration it reports.
+	instant := uc.now()
+	alreadySettled := job.Status == domain.JobCompleted || job.Status == domain.JobFailed
+	if err := job.Settle(progress, instant); err != nil {
 		return report, fmt.Errorf("settle job %s: %w", job.ID, err)
+	}
+	if alreadySettled && len(plannedPages) > 0 {
+		if err := job.FinishAttempt(instant); err != nil {
+			return report, fmt.Errorf("finish attempt of job %s: %w", job.ID, err)
+		}
 	}
 	if err := uc.jobs.UpdateStatus(ctx, job); err != nil {
 		return report, fmt.Errorf("persist job %s: %w", job.ID, err)

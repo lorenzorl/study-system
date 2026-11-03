@@ -149,6 +149,44 @@ func TestSettle_IsIdempotent(t *testing.T) {
 	assert.Equal(t, finished, *job.FinishedAt, "a second settle must not move the finish time")
 }
 
+// A resumed run reworks the pages an earlier attempt failed, so the instant the
+// first attempt wrote is not the instant the work ended.
+func TestFinishAttempt_MovesTheInstantsOfASettledJob(t *testing.T) {
+	job := mustNewJob(t, "job", "doc", 2)
+	require.NoError(t, job.MarkRunning(now))
+	require.NoError(t, job.Settle(domain.Progress{Total: 2, Extracted: 1, Failed: 1}, now))
+
+	ended := now.Add(19 * time.Minute)
+	require.NoError(t, job.FinishAttempt(ended))
+
+	require.NotNil(t, job.FinishedAt)
+	assert.Equal(t, ended, *job.FinishedAt, "the finish time belongs to the attempt that finished the work")
+	assert.Equal(t, ended, job.UpdatedAt)
+	assert.Equal(t, domain.JobCompleted, job.Status, "the status stays as the earlier attempt decided")
+}
+
+// An unsettled job has no ending to record: Settle decides both its status and
+// its instants, so claiming one here would report an end nobody declared.
+func TestFinishAttempt_RefusesAJobThatNeverSettled(t *testing.T) {
+	running := mustNewJob(t, "job", "doc", 2)
+	require.NoError(t, running.MarkRunning(now))
+
+	pending := mustNewJob(t, "job", "doc", 2)
+
+	for name, job := range map[string]*domain.IngestionJob{"running": running, "pending": pending} {
+		t.Run(name, func(t *testing.T) {
+			updatedAt := job.UpdatedAt
+
+			err := job.FinishAttempt(now.Add(time.Hour))
+
+			require.Error(t, err)
+			assert.ErrorIs(t, err, apperror.ErrConflict)
+			assert.Equal(t, updatedAt, job.UpdatedAt, "a refused attempt must not move the instants")
+			assert.Nil(t, job.FinishedAt)
+		})
+	}
+}
+
 func TestIsResumable(t *testing.T) {
 	cases := map[domain.JobStatus]bool{
 		domain.JobPending:   true,
