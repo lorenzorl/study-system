@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from "vue-router"
 import { ResourcesPage } from "@/pages/resources"
+import { TodayPage } from "@/pages/today"
 import { DashboardPage } from "@/pages/dashboard"
 import { TopicPage } from "@/pages/topic"
 import { ConceptPage } from "@/pages/concept"
@@ -25,6 +26,13 @@ const routes = [
     path: "/",
     name: "dashboard",
     component: ResourcesPage,
+  },
+  // What to do today, reached from the launcher's own control row: the projection
+  // is the answer to the question the launcher only gestures at (S13, S14).
+  {
+    path: "/today",
+    name: "today",
+    component: TodayPage,
   },
   {
     path: "/topics",
