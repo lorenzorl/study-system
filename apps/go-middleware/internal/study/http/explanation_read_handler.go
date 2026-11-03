@@ -4,6 +4,7 @@ package http
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/platform/httpx"
@@ -68,6 +69,14 @@ func (h *GapStateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		State: req.State,
 	})
 	if err != nil {
+		// A gap with a card keeps its state, and the sentence says why: the generic
+		// envelope would answer "conflict", which tells the reader nothing to do.
+		var conflict *app.GapConflict
+		if errors.As(err, &conflict) {
+			httpx.WriteError(w, http.StatusConflict, conflict.Error())
+			return
+		}
+
 		httpx.WriteErrorFrom(w, err)
 		return
 	}

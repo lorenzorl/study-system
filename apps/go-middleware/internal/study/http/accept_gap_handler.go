@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/platform/apperror"
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/platform/httpx"
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/study/app"
 )
@@ -49,10 +48,12 @@ func (h *AcceptGapHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// The conflict is written here rather than in the shared envelope: every other
 		// route's conflict is a generic "conflict", and this one has to say what it is
-		// about, because the reader's next move depends on knowing the gap already has
-		// a card.
-		if errors.Is(err, apperror.ErrConflict) {
-			httpx.WriteError(w, http.StatusConflict, "this gap already has a card")
+		// about, because the reader's next move depends on which state stands in the
+		// way — a gap with a card and a discarded gap are the same status and different
+		// advice.
+		var conflict *app.GapConflict
+		if errors.As(err, &conflict) {
+			httpx.WriteError(w, http.StatusConflict, conflict.Error())
 			return
 		}
 

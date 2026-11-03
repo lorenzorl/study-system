@@ -44,6 +44,22 @@ func (uc *GetExplanationUseCase) Execute(
 	return *explanation, nil
 }
 
+// GapConflict is a gap whose state forbids the request, carrying the sentence the
+// caller reads.
+//
+// It unwraps to apperror.ErrConflict so a transport that only knows the sentinels
+// still answers 409, and the sentence says which state stands in the way: "it already
+// has a card" and "it was discarded" are the same status and different advice.
+type GapConflict struct {
+	Sentence string
+}
+
+// Error is the caller-facing sentence.
+func (c *GapConflict) Error() string { return c.Sentence }
+
+// Unwrap makes the conflict classified by any caller that knows the sentinels.
+func (c *GapConflict) Unwrap() error { return apperror.ErrConflict }
+
 // SetGapStateInput is one request to change a gap's state.
 type SetGapStateInput struct {
 	GapID string
@@ -81,6 +97,18 @@ func (uc *SetGapStateUseCase) Execute(
 	state := domain.RangeGapState(strings.TrimSpace(input.State))
 	if state != domain.RangeGapStateOpen && state != domain.RangeGapStateDiscarded {
 		return domain.RangeGap{}, fmt.Errorf("state %q: %w", input.State, apperror.ErrInvalidInput)
+	}
+
+	// A gap with a card is not dismissed: the card exists, and a state that says
+	// otherwise would let the deck and the gap list disagree about the same reader.
+	// The read comes first because the state machine needs the current state, and the
+	// update is transactional, so the window between them is not a decision.
+	current, err := uc.gaps.FindByID(ctx, gapID)
+	if err != nil {
+		return domain.RangeGap{}, fmt.Errorf("find gap: %w", err)
+	}
+	if current.State == domain.RangeGapStateCarded {
+		return domain.RangeGap{}, &GapConflict{Sentence: "this gap already has a card"}
 	}
 
 	gap, err := uc.gaps.UpdateState(ctx, gapID, state)

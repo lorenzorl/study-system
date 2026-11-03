@@ -125,10 +125,10 @@ func TestPostGapCard_UnknownGapIsNotFound(t *testing.T) {
 	assert.JSONEq(t, `{"error":"not found"}`, rec.Body.String())
 }
 
-// S6: the 409 is written here, from the conflict sentinel, so a gap that already has
-// a card says so instead of the shared envelope's generic "conflict".
+// S6: the 409 is written here, from the conflict's own sentence, so a gap that
+// already has a card says so instead of the shared envelope's generic "conflict".
 func TestPostGapCard_AlreadyCardedGapIsAConflict(t *testing.T) {
-	accept := &mockAcceptGapUseCase{err: apperror.ErrConflict}
+	accept := &mockAcceptGapUseCase{err: &app.GapConflict{Sentence: "this gap already has a card"}}
 	rec := httptest.NewRecorder()
 
 	request := httptest.NewRequest(http.MethodPost, "/api/study/gaps/g1/card",
@@ -138,4 +138,19 @@ func TestPostGapCard_AlreadyCardedGapIsAConflict(t *testing.T) {
 
 	require.Equal(t, http.StatusConflict, rec.Code, rec.Body.String())
 	assert.JSONEq(t, `{"error":"this gap already has a card"}`, rec.Body.String())
+}
+
+// S7: a discarded gap is not turned into a card behind the reader's back, and the 409
+// says which state stood in the way.
+func TestPostGapCard_DiscardedGapIsAConflictWithItsOwnSentence(t *testing.T) {
+	accept := &mockAcceptGapUseCase{err: &app.GapConflict{Sentence: "this gap was discarded"}}
+	rec := httptest.NewRecorder()
+
+	request := httptest.NewRequest(http.MethodPost, "/api/study/gaps/g1/card",
+		strings.NewReader(`{"question":"¿Qué es un agregado?"}`))
+	request.Header.Set("Content-Type", "application/json")
+	acceptGapRouter(accept).ServeHTTP(rec, request)
+
+	require.Equal(t, http.StatusConflict, rec.Code, rec.Body.String())
+	assert.JSONEq(t, `{"error":"this gap was discarded"}`, rec.Body.String())
 }

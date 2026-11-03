@@ -174,3 +174,18 @@ func TestPutGapState_UnknownGapIsNotFound(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, rec.Code)
 	assert.JSONEq(t, `{"error":"not found"}`, rec.Body.String())
 }
+
+// S7: a gap with a card keeps its state, and the answer says why instead of the
+// envelope's generic "conflict".
+func TestPutGapState_AGapWithACardIsAConflict(t *testing.T) {
+	set := &mockSetGapStateUseCase{err: &app.GapConflict{Sentence: "this gap already has a card"}}
+	rec := httptest.NewRecorder()
+
+	request := httptest.NewRequest(http.MethodPut, "/api/study/gaps/g1/state",
+		strings.NewReader(`{"state":"discarded"}`))
+	request.Header.Set("Content-Type", "application/json")
+	explanationReadRouter(&mockGetExplanationUseCase{}, set).ServeHTTP(rec, request)
+
+	require.Equal(t, http.StatusConflict, rec.Code, rec.Body.String())
+	assert.JSONEq(t, `{"error":"this gap already has a card"}`, rec.Body.String())
+}

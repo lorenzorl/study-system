@@ -487,3 +487,24 @@ func TestAcceptGap_A_SecondAcceptIsRefusedAndStoresNoSecondCard(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, due, 1, "a refused second accept never writes a second card")
 }
+
+// S7: a discarded gap is a judgment the reader made, so it is not turned into a card
+// behind their back. The way back is the state route, which reopens it first.
+func TestAcceptGap_RefusesADiscardedGap(t *testing.T) {
+	fixture := newAcceptGapFixture()
+	fixture.gaps.gaps[0].State = domain.RangeGapStateDiscarded
+
+	result, err := fixture.useCase.Execute(t.Context(), app.AcceptGapInput{
+		GapID:    "g1",
+		Question: "¿Por qué el prototipo crudo fue importante?",
+	})
+
+	assert.ErrorIs(t, err, apperror.ErrConflict)
+	var conflict *app.GapConflict
+	require.ErrorAs(t, err, &conflict)
+	assert.Equal(t, "this gap was discarded", conflict.Error())
+	assert.Empty(t, result.GapID)
+	assert.Empty(t, fixture.cards.calls, "a refused accept must not write a card")
+	assert.Equal(t, []string{"gap"}, fixture.order.steps,
+		"a refusal reads the gap and writes nothing else")
+}

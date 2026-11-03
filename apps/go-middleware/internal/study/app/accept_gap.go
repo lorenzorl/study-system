@@ -108,7 +108,14 @@ func (uc *AcceptGapUseCase) Execute(
 	}
 
 	if gap.State == domain.RangeGapStateCarded {
-		return AcceptGapResult{}, fmt.Errorf("accept gap %q: %w", gapID, apperror.ErrConflict)
+		return AcceptGapResult{}, fmt.Errorf("accept gap %q: %w", gapID, &GapConflict{Sentence: "this gap already has a card"})
+	}
+
+	// A discarded gap is a judgment the reader made about the material, so it is not
+	// turned into a card behind their back: the way back is the state route, which
+	// reopens it to `open` first.
+	if gap.State == domain.RangeGapStateDiscarded {
+		return AcceptGapResult{}, fmt.Errorf("accept gap %q: %w", gapID, &GapConflict{Sentence: "this gap was discarded"})
 	}
 
 	// Step 2: the explanation names the document and the range the card belongs to.

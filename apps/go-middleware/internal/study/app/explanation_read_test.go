@@ -157,6 +157,23 @@ func TestSetGapState_RefusesCardedAndTheUnknowns(t *testing.T) {
 	}
 }
 
+// S7: a gap with a card keeps its state. Discarding it would let the deck and the gap
+// list disagree about the same reader, and the way back would then be a second card.
+func TestSetGapState_RefusesToDiscardAGapThatHasACard(t *testing.T) {
+	repo := &fakeGatewayRepo{gaps: []domain.RangeGap{
+		{ID: "g1", State: domain.RangeGapStateCarded},
+	}}
+	useCase := app.NewSetGapStateUseCase(repo)
+
+	_, err := useCase.Execute(t.Context(), app.SetGapStateInput{GapID: "g1", State: "discarded"})
+
+	assert.ErrorIs(t, err, apperror.ErrConflict)
+	var conflict *app.GapConflict
+	require.ErrorAs(t, err, &conflict)
+	assert.Equal(t, "this gap already has a card", conflict.Error())
+	assert.Empty(t, repo.updated, "a refused state change must not be written")
+}
+
 func TestSetGapState_UnknownGapIsNotFound(t *testing.T) {
 	useCase := app.NewSetGapStateUseCase(&fakeGatewayRepo{})
 
