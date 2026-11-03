@@ -1,7 +1,7 @@
 # Backlog — open findings
 
 **Single source of truth for everything deliberately not fixed yet.**
-Updated: 2026-10-17 (step 6 — HTTP upload and processing status)
+Updated: 2026-11-02 (D8/D9 from the `DDD.pdf` re-ingest; P2, the `resources` ↔ `documents` decision; P3, sections not exposed by the API)
 
 A follow-up is a finding that was real, but outside the scope of the step that
 found it. Fixing it mid-step would make that step unverifiable: you could no
@@ -613,6 +613,60 @@ asked" from "we asked and there is nothing", which no existing field could expre
 refetches once per mount rather than once per session. Intentional (a dead end is worse
 than a retry), unit-pinned, and worth revisiting if the endpoint gets flaky.
 
+### D8 — Re-uploading the same file leaves an orphan artifact on disk
+
+`UploadDocumentHandler.ServeHTTP` stores the artifact **before** it deduplicates the
+document: `store.Put` runs first, then `app.FindOrCreateDocument` looks the document
+up by `content_sha256`. The document row is correctly idempotent — the same bytes
+yield the same `documents.id` and the ingestion run resumes — but the stored copy is
+not, so every re-upload of unchanged bytes leaves a new
+`data/artifacts/<artifactID>/` that no row points at.
+
+**Measured, not theorised.** Uploading `DDD.pdf` twice on 2026-11-02 produced two
+artifact directories with byte-identical payloads (`sha256 5b4ee361…`, 4.4 MB each).
+`documents.artifact_id` named `d41b05c4…` (first upload, 22:03:28Z) while
+`0dac5de7…` (second upload, 22:06:24Z) was referenced by nothing. `documents` is the
+only table with an `artifact_id` column, so that check is exhaustive.
+
+**Why it was not fixed on sight:** the fix is a policy, not a line. Either `Put`
+becomes content-addressed (store keyed by hash, which changes the on-disk layout and
+the `meta.json` contract), or `Put` is skipped when the document already exists (which
+moves the hash computation ahead of the store and needs the upload to be readable
+twice). Both are decisions about the artifact contract, not about this defect, and
+both belong with `P1` — the manual orphan sweep that already exists on paper would
+have collected this directory for free.
+
+**How to close:** decide the artifact contract with `P1`, then either make the store
+content-addressed or skip `Put` on a known hash. A regression test can assert one
+artifact directory per content hash after two uploads of the same bytes. The directory
+`0dac5de7-3e40-4a17-88c6-58d4f8ac80c2` was deleted by hand on 2026-11-02 once
+`documents` was confirmed to be the only referrer; `data/` went 42 MB -> 37 MB with the
+document still `completed`.
+
+### D9 — A resumed ingestion keeps the timestamps of the run that failed
+
+`ingestion_jobs.updated_at` and `finished_at` are not rewritten when a resumed run
+finishes. The document's state is derived from the page outcomes and the chunk counts,
+so it reports `completed` correctly, while the job row still carries the instant the
+first attempt stopped.
+
+**Measured:** after the resumed `DDD.pdf` run, the last page was written at
+`2026-11-02T22:22:16Z` — the generated `book.md` header says the same — while
+`ingestion_jobs.finished_at` read `22:03:50Z`, and `GET /api/rag/documents/{id}/status`
+projected that stale value verbatim alongside `state: completed`. An 18-minute error in
+the only duration field the API exposes.
+
+**Why it matters beyond cosmetics:** anyone measuring ingestion time, alerting on a
+slow run, or deciding "is this still going?" from `finished_at` gets the wrong answer
+precisely in the case that took longest — the one that had to be retried. The page
+rows are correct (`job_pages.updated_at` advanced with each retry), so the evidence to
+fix it is already stored.
+
+**How to close:** have the pipeline rewrite `updated_at`/`finished_at` when the run
+terminates, whatever the attempt number, and add a test that resumes an interrupted
+job to completion and asserts `finished_at >= max(job_pages.updated_at)`. No schema
+change is needed.
+
 ## 🟡 Missing policy
 
 ### P1 — Nothing prunes stored artifacts (open, documented, awaiting a product decision)
@@ -626,6 +680,12 @@ R2, so does the remote copy.
 **Owner's call, 2026-10-30: leave it as it is for now, and keep this written down so
 the analysis does not have to be redone.** Everything below is what that analysis
 produced.
+
+**A real orphan already exists, produced by `D8`.** The upload handler stores the
+artifact before deduplicating the document, so re-uploading unchanged bytes leaves a
+directory no row points at. That is the first non-hypothetical case for a sweep, and it
+is also the reason to prefer the orphan policy over doing nothing: normal growth adds
+artifacts, but re-uploads add garbage.
 
 **The tools already exist; only the policy is missing.** Verified in the code:
 
@@ -671,6 +731,114 @@ Count and age delete good data and are the owner's call, not a default.
 high-risk item 1 — hard to detect and hard to undo. It gets an independent verifier
 and a native review on the source candidate, not the automatic path the UI changes
 of 2026-10-30 took.
+
+### P2 — `resources` and `documents` are two correct tables with no bridge between them
+
+**Open, awaiting an owner decision.** Whether a corpus document should appear in the
+launcher at all. Nothing here is a bug in either table; what is missing is the link,
+and the decision that would justify building one.
+
+**The two tables answer different questions, and that part is right.**
+
+| | `documents` (rag) | `resources` (study) |
+| --- | --- | --- |
+| Holds | the ingested bytes plus everything derived | a pointer to material that lives elsewhere |
+| Identity | `content_sha256 UNIQUE` — same bytes, same book | `source_uri UNIQUE` — same address, same material |
+| Owned by a topic | no | yes, `topic_id NOT NULL` |
+| Content columns | artifact, pages, chunks, vectors, sections | none |
+| Produced by | `POST /api/rag/documents`, `/text`, `/url`, CLI `convert` | `POST /api/sync/resource` only |
+
+Merging them is the wrong answer, and the reason is concrete rather than
+architectural: the merge fails in both directions. A `type=video` resource has no
+bytes and no hash to key on; the DDD.pdf feeds any number of topics and would have to
+pick one. One table would need two identities and two nullable halves, which is two
+tables with a `CASE` inside.
+
+**The link already existed once, and was cut deliberately.**
+
+- `study/sqlite/migrations.go:24` — migration 2, *"drop legacy
+  `resources.dify_document_id` column"*.
+- `odd/tasks/step0-restructure.md` — 44 Dify references removed, and
+  `SyncResourceUseCase` lost its `difyDocumentID` parameter. The recorded consequence:
+  *"re-syncing an existing `source_uri` is now a no-op. Previously the second sync
+  updated the stored Dify document ID. With that field gone there is nothing left to
+  update."*
+
+That removed the bridge to a **third-party** document store, not the idea of a bridge.
+When the in-house `documents` table was built afterwards, no equivalent link was ever
+created — so today the two tables are islands.
+
+**Measured state on 2026-11-02, after a full `DDD.pdf` ingest:**
+
+| Observation | Value |
+| --- | --- |
+| `documents` | 1 row, 359 pages, 1045 chunks, 1045 embeddings, 110 sections |
+| `resources` | **0 rows** |
+| `GET /api/resources` | `[]` |
+| Writers of `resources` in the app | **none** — only the Obsidian plugin's sync route |
+| What the upload created in `resources` | nothing |
+
+The only join that exists today is folklore: `resources.source_uri =
+'rag://documents/<id>'`. It is recognized in exactly one place
+(`pages/resources/model/openSource.ts`), classified as `corpus`, and
+`ResourcesPage.vue` disables the *Abrir* button for it because *"a corpus material has
+no address of its own — the corpus document is the material — so it is searched, not
+opened"*. No code creates such a row.
+
+**The three options, with their real costs.**
+
+1. **Nullable FK, one direction:** `resources.document_id TEXT NULL REFERENCES
+documents(id)`. Nullable is what makes it fit both exceptions — a video has no document,
+and a corpus with no topic has no resource at all. Requires a migration, a repo field,
+a producer in the upload path, and killing the `rag://` string convention. Buys: the
+launcher can show "Libro · DDD.pdf · 359 páginas · 17 capítulos".
+2. **Stay decoupled, say so.** No schema change. The corpus is agent-facing: its
+consumers are `/api/rag/search`, `/pages` and the skill. `section-metadata.md` S6
+already deferred corpus UI ("it adds no section filter and no UI"). Buys: nothing to
+build, but the gap has to be written down or it reads as an oversight.
+3. **Merge the tables.** Rejected above; recorded so it is not re-proposed.
+
+**The decision does not block the UI gap it exposed.** Uploading a book today closes
+the capture panel after a 46 ms `202` and then says nothing for ~18 minutes while 359
+pages convert, 1045 chunks embed and the structure stage runs. `GET
+/api/rag/documents/{id}/status` already reports `state`, `pages.pending`,
+`pages.transcribed`, `chunks` and `embedded`, so showing live progress needs no schema
+decision and no new endpoint. That work is independent of P2 and should not wait for
+it.
+
+**How to close:** the owner picks 1 or 2. Option 1 gets a migration, the nullable
+field, a producer wired into the upload response, and a test that an uploaded book
+produces exactly one resource with `document_id` set; option 2 gets one paragraph in
+`ARCHITECTURE.md` and a line in this entry saying the separation is intentional.
+
+### P3 — The chapter table is built, stored, and unreachable through the API
+
+The structure stage stores `document_sections` — 110 rows for a 359-page book, with the
+printed page ranges and provenance (`toc`, `typography`, `pattern`, `mixed`). **No
+endpoint exposes it.** `GET /api/rag/documents/{id}/status` does not report the count
+either, so the only way to see the chapters is `sqlite3` on the server's own disk.
+
+**Why it matters now:** a client that is not shelling into the server — a phone running
+Pi in Termux, which is the premise of both skills — cannot see the chapter structure at
+all. `skills/study-plan` has to reassemble the contents from the printed pages
+(`?from=1&to=6`), which works, and is strictly worse: the pages arrive with dot leaders
+and can be mangled or missing entirely, and the stored table is the validated answer
+(≥95% of chapters on the exact page, per `section-metadata.md` S4).
+
+**Measured:** `document_sections` has 110 rows for `DDD.pdf`; the printed contents is on
+pp. 3-5 and survives extraction; the plan skill's own verification needed
+`pages?from=1&to=6` plus manual reassembly to get the 17 chapter titles.
+
+**S6 of `section-metadata.md` said so deliberately** ("no section filter, no UI"), so
+this is not an oversight — it is a scope cut that the skills changed the cost of.
+
+**How to close:** add `GET /api/rag/documents/{id}/sections` returning the same shape the
+table stores: `[{id, parent_id, level, title, start_page, end_page, source}]`, ascending
+by `start_page`, empty array when a document has none (a document with no structure is
+normal, not an error). Additive and read-only, so it is not high risk; it needs a
+handler, a repository method (`section_repo.go` already reads by document), and tests for
+the empty case and for the ordering. Then `skills/study-plan` reads the chapters instead
+of guessing them, and the plan cites the book's own structure.
 
 ---
 
