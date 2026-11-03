@@ -110,6 +110,41 @@ func (r *ReadingProgressRepository) ListByDocument(
 	return ranges, nil
 }
 
+// ListRead returns every range marked read, across every document, oldest first.
+//
+// updated_at and not created_at: the projection names the reading that has gone
+// longest without being distilled, and a range re-marked read has been read again.
+// `unread` is left out because an explicit not-read is not reading, whatever its
+// timestamp says.
+func (r *ReadingProgressRepository) ListRead(ctx context.Context) ([]domain.ReadingProgress, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id, document_id, from_page, to_page, state, created_at, updated_at
+		 FROM reading_progress
+		 WHERE state = ?
+		 ORDER BY updated_at, id`,
+		string(domain.ReadingStateRead),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query read ranges: %w", err)
+	}
+	defer rows.Close()
+
+	reads := make([]domain.ReadingProgress, 0)
+	for rows.Next() {
+		progress, err := scanReadingProgress(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan read range: %w", err)
+		}
+		reads = append(reads, *progress)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate read ranges: %w", err)
+	}
+
+	return reads, nil
+}
+
 // rowScanner is what both *sql.Row and *sql.Rows offer.
 type rowScanner interface {
 	Scan(dest ...any) error

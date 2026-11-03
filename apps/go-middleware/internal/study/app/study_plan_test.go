@@ -38,6 +38,13 @@ func (f *fakeStudyPlanRepository) FindActiveByDocument(ctx context.Context, docu
 	return f.active, nil
 }
 
+func (f *fakeStudyPlanRepository) ListActiveItems(ctx context.Context) ([]domain.PlanItemWithDocument, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return nil, nil
+}
+
 // fakeDocuments is the ingestion context's titles behind the port the study
 // context declares.
 type fakeDocuments struct {

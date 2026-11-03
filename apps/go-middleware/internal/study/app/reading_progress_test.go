@@ -39,6 +39,13 @@ func (f *fakeReadingProgressRepository) ListByDocument(ctx context.Context, docu
 	return f.ranges, nil
 }
 
+func (f *fakeReadingProgressRepository) ListRead(ctx context.Context) ([]domain.ReadingProgress, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.ranges, nil
+}
+
 // S2 and S4: what the application refuses, it refuses before writing.
 func TestSetReadingProgress_RefusesWhatTheContractNames(t *testing.T) {
 	valid := app.SetReadingProgressInput{DocumentID: "doc-1", FromPage: 24, ToPage: 36, State: "read"}

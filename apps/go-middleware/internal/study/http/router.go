@@ -25,6 +25,7 @@ type UseCases struct {
 	ListReadingProgress ListReadingProgressUseCase
 	SavePlan            SavePlanUseCase
 	GetPlan             GetPlanUseCase
+	Today               TodayUseCase
 }
 
 // NewRouter builds the study context's HTTP handler.
@@ -62,6 +63,11 @@ func NewRouter(useCases UseCases) http.Handler {
 	// it instead.
 	mux.Handle("POST /api/study/plan", NewSavePlanHandler(useCases.SavePlan))
 	mux.Handle("GET /api/study/plan", NewGetPlanHandler(useCases.GetPlan))
+
+	// The projection that answers what to do today. It is one read over the three
+	// routes above and the due query: it stores nothing, and adding it changed no
+	// shape any of them answers with.
+	mux.Handle("GET /api/study/today", NewTodayHandler(useCases.Today))
 
 	return mux
 }

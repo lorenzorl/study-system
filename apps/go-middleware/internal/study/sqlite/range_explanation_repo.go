@@ -102,3 +102,34 @@ func (r *RangeExplanationRepository) FindByID(ctx context.Context, id string) (*
 
 	return &explanation, nil
 }
+
+// ListExplainedRanges returns the document and exact range of every explanation.
+//
+// DISTINCT because two explanations of one range are one answer: the projection
+// asks whether the range was distilled, not how many times. The text and the gaps
+// stay where they belong.
+func (r *RangeExplanationRepository) ListExplainedRanges(ctx context.Context) ([]domain.ExplainedRange, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT DISTINCT document_id, from_page, to_page
+		 FROM range_explanations
+		 ORDER BY document_id, from_page, to_page`)
+	if err != nil {
+		return nil, fmt.Errorf("query explained ranges: %w", err)
+	}
+	defer rows.Close()
+
+	ranges := make([]domain.ExplainedRange, 0)
+	for rows.Next() {
+		var explained domain.ExplainedRange
+		if err := rows.Scan(&explained.DocumentID, &explained.FromPage, &explained.ToPage); err != nil {
+			return nil, fmt.Errorf("scan explained range: %w", err)
+		}
+		ranges = append(ranges, explained)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate explained ranges: %w", err)
+	}
+
+	return ranges, nil
+}

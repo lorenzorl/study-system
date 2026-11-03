@@ -37,6 +37,10 @@ type Study struct {
 	// projects it, and never classifies a book itself.
 	SavePlan *studyapp.SavePlanUseCase
 	GetPlan  *studyapp.GetPlanUseCase
+
+	// Today is the projection over the three axes above plus the due count: what to
+	// do today, read from rows the other routes already stored.
+	Today *studyapp.TodayUseCase
 }
 
 // NewStudy wires the study context over an open database.
@@ -96,5 +100,8 @@ func NewStudyWithRangeExplanations(
 		ListReadingProgress: studyapp.NewListReadingProgressUseCase(readingProgress),
 		SavePlan:            studyapp.NewSavePlanUseCase(documents, plans, readingProgress),
 		GetPlan:             studyapp.NewGetPlanUseCase(plans, readingProgress),
+		Today: studyapp.NewTodayUseCase(
+			flashcards, plans, readingProgress, explanations, documents,
+		),
 	}
 }

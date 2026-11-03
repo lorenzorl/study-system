@@ -231,3 +231,29 @@ type PlanItemResponse struct {
 	State    string `json:"state"`
 	Read     bool   `json:"read"`
 }
+
+// TodayEntryResponse is one thing to do today.
+//
+// title, note and read_at are omitted when empty because each kind leaves the
+// other's fields zero: a reading has no title or note, and a plan item has no
+// read_at. An empty key would invite a client to render an empty line.
+type TodayEntryResponse struct {
+	Kind          string `json:"kind"`
+	DocumentID    string `json:"document_id"`
+	DocumentTitle string `json:"document_title"`
+	Title         string `json:"title,omitempty"`
+	FromPage      int    `json:"from_page"`
+	ToPage        int    `json:"to_page"`
+	Note          string `json:"note,omitempty"`
+	ReadAt        string `json:"read_at,omitempty"`
+}
+
+// TodayResponse is the JSON body returned by GET /api/study/today.
+//
+// due_count is a count and not a list of cards: a due review has no page range to
+// name, so it belongs to the number the page links to the review route, not to the
+// entries.
+type TodayResponse struct {
+	DueCount int                  `json:"due_count"`
+	Entries  []TodayEntryResponse `json:"entries"`
+}

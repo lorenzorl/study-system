@@ -40,6 +40,7 @@ func testUseCases() httppkg.UseCases {
 		ListReadingProgress: &mockListReadingProgressUseCase{},
 		SavePlan:            &mockSavePlanUseCase{},
 		GetPlan:             &mockGetPlanUseCase{},
+		Today:               &mockTodayUseCase{},
 	}
 }
 

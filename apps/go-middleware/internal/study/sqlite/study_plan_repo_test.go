@@ -99,3 +99,59 @@ func TestStudyPlanRepository_ADocumentWithoutAnActivePlanIsNotFound(t *testing.T
 
 	assert.ErrorIs(t, err, apperror.ErrNotFound)
 }
+
+// S13: the projection reads the items of every active plan together, because "the
+// next thing to read" is a question across books. A superseded plan must not
+// answer it: those rows are kept so the reader does not lose what they said, not
+// so they keep recommending chapters.
+func TestStudyPlanRepository_ListActiveItemsReturnsOnlyActivePlansItems(t *testing.T) {
+	sqlDB := openMigratedDB(t)
+	repo := sqlite.NewStudyPlanRepository(sqlDB)
+	ctx := t.Context()
+
+	base := time.Date(2026, 11, 2, 9, 0, 0, 0, time.UTC)
+	superseded := &domain.StudyPlan{
+		ID: "p-old", DocumentID: "doc-1", ReadingMode: domain.ReadingModeLinear, CreatedAt: base,
+		Items: []domain.StudyPlanItem{
+			{ID: "old-1", Position: 1, Title: "Viejo", FromPage: 1, ToPage: 10, State: domain.PlanItemStatePending},
+		},
+	}
+	_, err := repo.CreateActive(ctx, superseded)
+	require.NoError(t, err)
+
+	active := &domain.StudyPlan{
+		ID: "p-new", DocumentID: "doc-1", ReadingMode: domain.ReadingModeLinear,
+		CreatedAt: base.Add(time.Hour),
+		Items: []domain.StudyPlanItem{
+			{ID: "new-1", Position: 1, Title: "Capítulo 1", FromPage: 5, ToPage: 23, State: domain.PlanItemStatePending},
+			{ID: "new-2", Position: 2, Title: "Capítulo 2", FromPage: 24, ToPage: 36, State: domain.PlanItemStateSkipped},
+		},
+	}
+	_, err = repo.CreateActive(ctx, active)
+	require.NoError(t, err)
+
+	other := &domain.StudyPlan{
+		ID: "p-other", DocumentID: "doc-0", ReadingMode: domain.ReadingModeProject,
+		CreatedAt: base,
+		Items: []domain.StudyPlanItem{
+			{ID: "other-1", Position: 1, Title: "Cap 1", FromPage: 1, ToPage: 2, State: domain.PlanItemStatePending},
+		},
+	}
+	_, err = repo.CreateActive(ctx, other)
+	require.NoError(t, err)
+
+	items, err := repo.ListActiveItems(ctx)
+	require.NoError(t, err)
+
+	require.Len(t, items, 3, "the superseded plan contributes no item")
+
+	ids := make([]string, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.Item.ID)
+	}
+	assert.Equal(t, []string{"other-1", "new-1", "new-2"}, ids, "document order, then position")
+	assert.Equal(t, "doc-0", items[0].DocumentID)
+	assert.Equal(t, "doc-1", items[1].DocumentID)
+	assert.Equal(t, "Capítulo 2", items[2].Item.Title)
+	assert.Equal(t, domain.PlanItemStateSkipped, items[2].Item.State)
+}

@@ -242,3 +242,46 @@ one `POST` answers.
 | --- | --- |
 | `document_id` missing or blank | `400 document_id is required` |
 | the document has no active plan | `404 not found` |
+
+## GET /api/study/today
+
+What to do today, across every material: the due count, then the ranges marked read
+that nobody has explained, then the next pending chapter of each active plan.
+
+No query parameters: the day is the question, and it covers the whole corpus.
+
+```json
+{"due_count":3,
+ "entries":[
+  {"kind":"read_not_distilled","document_id":"0f0b6b0e-…","document_title":"DDD","from_page":24,"to_page":36,"read_at":"2026-11-02T10:00:00Z"},
+  {"kind":"plan_next","document_id":"0f0b6b0e-…","document_title":"DDD","title":"Capítulo 5","from_page":100,"to_page":118,"note":"volver si hace falta"}]}
+```
+
+`entries` is `[]`, never `null`. There are two kinds, and each one appears **at most
+once per document**:
+
+- `read_not_distilled` — a range marked `read` with no explanation of the **same
+  exact range**. The one named is that document's oldest such reading, and `read_at`
+  is when that range was last marked read. It carries no `title` and no `note`: a
+  reading is not a plan item.
+- `plan_next` — the first `pending` item, in position order, of the document's active
+  plan whose exact range is not marked read. A `skipped` item is never named, and an
+  item whose range is read is already done.
+
+Order: every `read_not_distilled` first, oldest `read_at` first (ties by document
+title, then document id); then every `plan_next`, by document title and position.
+
+- Ranges match **exactly, never by overlap**: a read row for 24-35 neither marks the
+  item 24-36 read nor distils it.
+- Due reviews are the number `due_count`, not an entry: a review has no page range to
+  name. It counts what `GET /api/study/due` lists, so show the count with a link to
+  `/study/review` when it is above zero.
+- The route writes nothing. It projects what `PUT /api/study/reading`,
+  `POST /api/study/plan` and `POST /api/study/explanation` already stored.
+- A `document_title` that cannot be resolved is `""` and the entry stays: the
+  `document_id` is what the action needs.
+
+| Case | Response |
+| --- | --- |
+| nothing read, nothing planned, nothing due | `200 {"due_count":0,"entries":[]}` |
+| a material whose title is no longer in the corpus | `200` with `"document_title":""` |

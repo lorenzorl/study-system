@@ -102,3 +102,12 @@ type GetPlanUseCase interface {
 	// apperror.ErrNotFound when the document has no active plan.
 	Execute(ctx context.Context, documentID string) (app.StudyPlanView, error)
 }
+
+// TodayUseCase projects what the reader has to do today, over rows other routes
+// wrote.
+type TodayUseCase interface {
+	// Execute returns the due count and the ordered entries. A document whose title
+	// cannot be resolved still appears, with an empty document_title: the projection
+	// is read-only and reports what it knows, it does not fail on a missing name.
+	Execute(ctx context.Context) (app.Today, error)
+}

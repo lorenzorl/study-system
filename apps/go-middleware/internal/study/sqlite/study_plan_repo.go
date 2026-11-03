@@ -180,3 +180,51 @@ func listPlanItems(ctx context.Context, db *sql.DB, planID string) ([]domain.Stu
 
 	return items, nil
 }
+
+// ListActiveItems returns the items of every active plan, ordered by document and
+// position.
+//
+// The join is what makes it a projection input rather than a plan read: the caller
+// asks one question of every book at once, and a superseded plan is filtered out
+// here because keeping its rows is about not losing the reader's history, not about
+// still recommending its chapters.
+func (r *StudyPlanRepository) ListActiveItems(ctx context.Context) ([]domain.PlanItemWithDocument, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT i.id, i.plan_id, i.position, i.title, i.from_page, i.to_page, i.note, i.state,
+		        p.document_id
+		 FROM study_plan_items i
+		 JOIN study_plans p ON p.id = i.plan_id
+		 WHERE p.superseded_at IS NULL
+		 ORDER BY p.document_id, i.position`)
+	if err != nil {
+		return nil, fmt.Errorf("query active study_plan_items: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]domain.PlanItemWithDocument, 0)
+	for rows.Next() {
+		var item domain.PlanItemWithDocument
+		var state string
+		if err := rows.Scan(
+			&item.Item.ID,
+			&item.Item.PlanID,
+			&item.Item.Position,
+			&item.Item.Title,
+			&item.Item.FromPage,
+			&item.Item.ToPage,
+			&item.Item.Note,
+			&state,
+			&item.DocumentID,
+		); err != nil {
+			return nil, fmt.Errorf("scan active study_plan_item: %w", err)
+		}
+		item.Item.State = domain.PlanItemState(state)
+		items = append(items, item)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate active study_plan_items: %w", err)
+	}
+
+	return items, nil
+}

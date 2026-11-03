@@ -111,3 +111,76 @@ func TestReadingProgressRepository_ADocumentWithNothingMarkedIsEmpty(t *testing.
 	assert.NotNil(t, ranges)
 	assert.Empty(t, ranges)
 }
+
+// S13: the projection reads every read range across every document, oldest first,
+// because the entry it names is the reading that has gone longest without being
+// distilled. An explicit `unread` is not reading.
+func TestReadingProgressRepository_ListReadReturnsReadRowsAcrossDocumentsOldestFirst(t *testing.T) {
+	sqlDB := openMigratedDB(t)
+	repo := sqlite.NewReadingProgressRepository(sqlDB)
+	ctx := t.Context()
+
+	first := time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC)
+	second := first.Add(time.Hour)
+	third := second.Add(time.Hour)
+
+	for _, seed := range []struct {
+		id       string
+		document string
+		from, to int
+		state    domain.ReadingState
+		at       time.Time
+	}{
+		{"rp1", "doc-2", 1, 10, domain.ReadingStateRead, second},
+		{"rp2", "doc-1", 24, 36, domain.ReadingStateRead, first},
+		{"rp3", "doc-1", 100, 110, domain.ReadingStateRead, third},
+		{"rp4", "doc-1", 61, 70, domain.ReadingStateUnread, first},
+	} {
+		_, err := repo.Upsert(ctx, &domain.ReadingProgress{
+			ID: seed.id, DocumentID: seed.document,
+			FromPage: seed.from, ToPage: seed.to,
+			State: seed.state, CreatedAt: seed.at, UpdatedAt: seed.at,
+		})
+		require.NoError(t, err)
+	}
+
+	reads, err := repo.ListRead(ctx)
+	require.NoError(t, err)
+
+	ids := make([]string, 0, len(reads))
+	for _, read := range reads {
+		ids = append(ids, read.ID)
+	}
+
+	assert.Equal(t, []string{"rp2", "rp1", "rp3"}, ids, "read rows only, oldest updated_at first")
+	assert.Equal(t, time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC), reads[0].UpdatedAt)
+}
+
+// S13: two readings at the same instant still have one order, so the projection
+// answers the same thing twice rather than depending on row order.
+func TestReadingProgressRepository_ListReadBreaksTiesByID(t *testing.T) {
+	sqlDB := openMigratedDB(t)
+	repo := sqlite.NewReadingProgressRepository(sqlDB)
+	ctx := t.Context()
+
+	at := time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC)
+	// Different ranges, one instant: the range is the unique key, so two rows at
+	// one moment is exactly the case a tie-break has to settle.
+	for index, seed := range []struct {
+		id   string
+		from int
+	}{{"rp-b", 1}, {"rp-a", 6}} {
+		_, err := repo.Upsert(ctx, &domain.ReadingProgress{
+			ID: seed.id, DocumentID: "doc-1", FromPage: seed.from, ToPage: seed.from + 4,
+			State: domain.ReadingStateRead, CreatedAt: at, UpdatedAt: at,
+		})
+		require.NoError(t, err, "seed %d", index)
+	}
+
+	reads, err := repo.ListRead(ctx)
+	require.NoError(t, err)
+
+	require.Len(t, reads, 2)
+	assert.Equal(t, "rp-a", reads[0].ID)
+	assert.Equal(t, "rp-b", reads[1].ID)
+}

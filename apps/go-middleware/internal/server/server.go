@@ -132,6 +132,7 @@ func Run(ctx context.Context, cfg *config.Config, port int) error {
 		ListReadingProgress: study.ListReadingProgress,
 		SavePlan:            study.SavePlan,
 		GetPlan:             study.GetPlan,
+		Today:               study.Today,
 	})
 
 	// The pasted-text path needs no key to accept material: it indexes always and
