@@ -106,8 +106,8 @@ README's API table gains their rows (and the missing `/sections` row).
 
 | Id | Slices | Route | Commit |
 | --- | --- | --- | --- |
-| T1 | W1 — S1-S5 | inline | `feat(study): record which page ranges were read` |
-| T2 | W2 — S6-S12 | inline | `feat(study): store the plan the agent produces`, independent verifier + native review (high-risk item 1) |
+| T1 | W1 — S1-S5 | inline | `feat(study): record which page ranges were read` — `40e2338` |
+| T2 | W2 — S6-S12 | inline | `feat(study): store the plan the agent produces` — `8761dbe`; independent verifier + native review (high-risk item 1) |
 | T3 | W3 — S13, S15 | inline | `feat(study): project what to do today` |
 | T4 | W3 UI — S14 | inline | `feat(web): open the app on what to do today` |
 
@@ -145,3 +145,15 @@ the plan is versioned.
 `documents` (rag), so the projection and the plan's 404 both go through a
 `Documents` port that `internal/composition` implements over
 `rag.DocumentRepo().FindByID`, the same shape as the existing `RangeText` adapter.
+
+**L6 — slice boundaries, and the branch baseline.** Each task is one commit, and the
+three backlogs slices are three reviewable units: `40e2338` (W1), `8761dbe` (W2), and
+T3/T4 after them. The branch is stacked on eight unpushed commits of `master`, so a
+branch-versus-`origin/master` line count is not the size of these slices.
+
+**L7 — an LSP false positive, recorded so it is not re-diagnosed.** `pi-lens`'s `gopls`
+reported `undefined: NewSetReadingProgressHandler` and the new test mocks while
+`go build ./...`, `go vet ./...` and `go test ./...` were green: its index had been
+built before those files existed and never picked them up. Restarting the server and
+re-saving the new files cleared it. Evidence over the index; the compiler is the
+authority.
