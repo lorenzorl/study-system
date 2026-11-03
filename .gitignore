@@ -13,6 +13,10 @@
 apps/go-middleware/data/*
 !apps/go-middleware/data/.gitkeep
 
+# A `data` directory moved aside to start from zero. Same content as `data/`,
+# so the same rule applies: never committed.
+apps/go-middleware/data.bak-*/
+
 # Build artifacts
 apps/go-middleware/bin/
 *.test
