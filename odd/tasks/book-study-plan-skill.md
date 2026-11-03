@@ -144,4 +144,3 @@ was tried. Those are the two cases most likely to need another refinement.
 The slice closes here: 741 authored lines across three commits, past the ~400-line
 review unit, so anything else — implementing `P3`, wiring `P2`, the ingest progress in
 the capture panel — is a **new slice**, not an addition to this one.
-

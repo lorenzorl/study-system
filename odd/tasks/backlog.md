@@ -1,7 +1,7 @@
 # Backlog — open findings
 
 **Single source of truth for everything deliberately not fixed yet.**
-Updated: 2026-11-02 (D8/D9 from the `DDD.pdf` re-ingest; P2, the `resources` ↔ `documents` decision; P3, sections not exposed by the API)
+Updated: 2026-11-02 (D8/D9 from the `DDD.pdf` re-ingest; P2, the `resources` ↔ `documents` decision; P3, sections not exposed by the API; W1-W4, the coverage and plan slices)
 
 A follow-up is a finding that was real, but outside the scope of the step that
 found it. Fixing it mid-step would make that step unverifiable: you could no
@@ -839,6 +839,131 @@ normal, not an error). Additive and read-only, so it is not high risk; it needs 
 handler, a repository method (`section_repo.go` already reads by document), and tests for
 the empty case and for the ordering. Then `skills/study-plan` reads the chapters instead
 of guessing them, and the plan cites the book's own structure.
+
+---
+
+## 🔵 Designed, not started
+
+Decided in conversation on 2026-11-02, not built. Recorded so the design work is not
+redone, and so the order of the slices is explicit: `W1` -> `W2` -> `W3`, with `W4`
+independent of all three.
+
+**The idea they share.** The app has one axis and needs two. Today everything it tracks
+is **retrieval**: a card is attempted, graded, and FSRS schedules it; the Feynman page is
+the same idea for an explanation. Nothing tracks **coverage** — where the reader is
+inside a material. Reading is not a third retrieval modality (it cannot be graded and it
+has no `next_review`); it is position, and it belongs on the other axis.
+
+| Axis | Measures | Engine | Exists |
+| --- | --- | --- | --- |
+| Coverage | where the reader is in this material | none — it is a position | **no** |
+| Retrieval | what the reader can produce from memory | FSRS, due dates, review logs | yes |
+
+The value is in crossing them: a range read and not yet distilled is "read, not studied",
+which is an actionable state and today is invisible. It is also the honest answer to *what
+should I study now*: a datum instead of advice.
+
+### W1 — Reading coverage: a range is read or not read
+
+The unit is the **range the plan recommends**, not the page. Two states, `unread` and
+`read`. Nothing else.
+
+**Why not pages:** a page counter produces states that mean nothing to a reader. The plan
+says "read chapter 2 (pp. 24-36)"; after two pages, a page counter says `2/13` and the
+chapter is neither read nor not read. A range with two states answers the only question
+the plan asks: did this block get done.
+
+**Why not a percentage:** showing "62% of the book" as the primary number turns the app
+into a page treadmill, the completionism this project already named as an anti-pattern.
+Coverage is shown as ranges the reader can act on, never as a progress bar.
+
+**Shape:** a `reading_progress` row per `(document_id, from_page, to_page)` with the two
+states and a timestamp. Keyed to page ranges and **not** to `document_sections` ids,
+because sections are derived data rebuilt on reprocess (and unexposed by the API, `P3`).
+Page ranges are stable across a re-ingest of the same bytes, and survive a document whose
+structure extraction failed.
+
+**Attached to `documents`, not to `resources`**, so this slice does not force the `P2`
+decision.
+
+**Marking a range read is a claim, not a proof.** See `W4` for why a gate here would be
+the wrong instrument.
+
+**Risk:** additive (a new table, no change to existing rows). Not high risk.
+
+### W2 — A persisted study plan, produced by the skill and stored by the app
+
+Today the plan exists as text from `skills/study-plan` and is lost. Persisting it is what
+turns "you have a book" into "today you do this".
+
+**Three constraints, each of which decides whether this works:**
+
+1. **Items are page ranges, not section ids.** Same reason as `W1`: sections are derived
+   and unstable, ranges are stable.
+2. **The agent produces the plan; the app stores and projects it.** The classification and
+   the core 20-30% are judgment, and that judgment lives in the skill. Re-deriving it in
+   the app would be two implementations of one decision, and they will disagree.
+3. **A plan is partial and disposable.** The skill recommends skipping chapters; a plan
+   forced to cover every page fights its own recommendation. A plan that cannot be thrown
+   away becomes a moral debt, and the reader abandons both the plan and the app.
+
+**Shape:** `POST /api/study/plan` (from the skill), a `study_plans` table plus items with
+their state, and a read endpoint. The plan is **not** the progress metric: it is a queue of
+candidate next actions whose priority is re-derived from reality (due cards, ranges read
+and not distilled, last failures).
+
+**Risk:** high-risk item 1 — it adds tables and the user's own written data. It gets a
+migration, an independent verifier, and a native review on the source candidate. This is
+the slice where the sequence `W1` -> `W2` -> `W3` matters least: W2 could ship on its own
+once W1 exists, but not before, because a plan with nothing to mark is a schedule with no
+state.
+
+### W3 — The projection: what to do today
+
+The slice where the two axes meet, and the one that answers the question the product
+started from.
+
+**Shape:** one projection over existing data — due cards, ranges read and not yet
+distilled into cards, and the next item of the plan for each material. No new tables; it
+reads `W1`, `W2` and `/api/study/due`.
+
+**The rule that keeps it honest:** every entry is an action, not a statistic. "Chapter 6
+is read with 0 cards" is an entry; "you are 41% through Part II" is not.
+
+**Risk:** additive and read-only. Not high risk.
+
+### W4 — Explain a range, and store the gaps instead of a score
+
+Proposed in the same conversation as `W1`: require proof of reading by making the reader
+explain the range in their own words, and store a score of comprehension.
+
+**The activity is right and the score is wrong.** Explaining in your own words is one of
+the best-evidenced study actions there is, so it should be built — on the **retrieval**
+axis, not as a condition for marking a range read:
+
+- **A gate makes coverage dishonest.** If marking a range read costs a graded paragraph,
+  readers stop marking ranges, and the coverage signal that `W3` needs disappears. Reading
+  careful readers get punished for not wanting to write.
+- **A number is not actionable and is gameable.** A model's `7/10` on an open response is
+  noisy, invites optimizing for the grader, and cannot be acted on. What can be acted on
+  is the **gap**: what the material says that the explanation did not.
+- **The app already has a real comprehension metric, and it is longitudinal.** Cards that
+  the explanation produced, and the share of reviews passed over weeks. That number is
+  earned rather than assigned, and it does not need a model to invent one.
+- **It is the same feature as the Feynman placeholder.** `FeynmanPage.vue:146` already
+  promises "RAG-powered analysis with gap detection and guided follow-up" and returns
+  hardcoded text. Building a second, scored explanation surface would add a parallel
+  feature beside an unbuilt one; generalizing Feynman from *concept* to *range* fixes the
+  placeholder and serves this request at once.
+
+**Shape:** "explain this range" stores the explanation (the reader's own words, valuable
+later as their own retrieval material) plus a gap list; each gap becomes a candidate card,
+and the cards go through `skills/study-system`'s existing accept-or-discard gate.
+
+**Risk:** a model call per explanation, over the existing OpenRouter client. Additive.
+
+**A note on what to measure instead of a score:** explanations produced, gaps turned into
+cards, and reviews passed. All three already exist or fall out of this design.
 
 ---
 
