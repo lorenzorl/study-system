@@ -166,3 +166,94 @@ type ExplainRangeResponse struct {
 	ToPage        int                `json:"to_page"`
 	Gaps          []RangeGapResponse `json:"gaps"`
 }
+
+// SetReadingProgressRequest is the JSON body for PUT /api/study/reading.
+type SetReadingProgressRequest struct {
+	DocumentID string `json:"document_id"`
+	FromPage   int    `json:"from_page"`
+	ToPage     int    `json:"to_page"`
+	State      string `json:"state"`
+}
+
+// ReadingProgressResponse is one page range and whether the reader read it.
+//
+// Both timestamps travel: created_at is when the range was first marked and
+// updated_at when its state last changed, and the difference is what lets a client
+// show "marked read two days ago" without a second request.
+type ReadingProgressResponse struct {
+	DocumentID string `json:"document_id"`
+	FromPage   int    `json:"from_page"`
+	ToPage     int    `json:"to_page"`
+	State      string `json:"state"`
+	CreatedAt  string `json:"created_at"`
+	UpdatedAt  string `json:"updated_at"`
+}
+
+// SavePlanRequest is the JSON body for POST /api/study/plan.
+type SavePlanRequest struct {
+	DocumentID  string            `json:"document_id"`
+	ReadingMode string            `json:"reading_mode"`
+	Objective   string            `json:"objective"`
+	Source      string            `json:"source"`
+	Items       []PlanItemRequest `json:"items"`
+}
+
+// PlanItemRequest is one recommended range in the plan the agent produced.
+type PlanItemRequest struct {
+	Title    string `json:"title"`
+	FromPage int    `json:"from_page"`
+	ToPage   int    `json:"to_page"`
+	Note     string `json:"note"`
+	State    string `json:"state"`
+}
+
+// StudyPlanResponse is a stored plan as a caller reads it.
+//
+// Read is derived, not stored: it says whether coverage marked this item's exact
+// range, so the plan and the coverage axis cannot disagree.
+type StudyPlanResponse struct {
+	PlanID      string             `json:"plan_id"`
+	DocumentID  string             `json:"document_id"`
+	ReadingMode string             `json:"reading_mode"`
+	Objective   string             `json:"objective"`
+	Source      string             `json:"source"`
+	CreatedAt   string             `json:"created_at"`
+	Items       []PlanItemResponse `json:"items"`
+}
+
+// PlanItemResponse is one recommended range with its derived read flag.
+type PlanItemResponse struct {
+	Position int    `json:"position"`
+	Title    string `json:"title"`
+	FromPage int    `json:"from_page"`
+	ToPage   int    `json:"to_page"`
+	Note     string `json:"note"`
+	State    string `json:"state"`
+	Read     bool   `json:"read"`
+}
+
+// TodayEntryResponse is one thing to do today.
+//
+// title, note and read_at are omitted when empty because each kind leaves the
+// other's fields zero: a reading has no title or note, and a plan item has no
+// read_at. An empty key would invite a client to render an empty line.
+type TodayEntryResponse struct {
+	Kind          string `json:"kind"`
+	DocumentID    string `json:"document_id"`
+	DocumentTitle string `json:"document_title"`
+	Title         string `json:"title,omitempty"`
+	FromPage      int    `json:"from_page"`
+	ToPage        int    `json:"to_page"`
+	Note          string `json:"note,omitempty"`
+	ReadAt        string `json:"read_at,omitempty"`
+}
+
+// TodayResponse is the JSON body returned by GET /api/study/today.
+//
+// due_count is a count and not a list of cards: a due review has no page range to
+// name, so it belongs to the number the page links to the review route, not to the
+// entries.
+type TodayResponse struct {
+	DueCount int                  `json:"due_count"`
+	Entries  []TodayEntryResponse `json:"entries"`
+}

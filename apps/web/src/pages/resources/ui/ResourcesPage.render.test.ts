@@ -173,6 +173,19 @@ describe("ResourcesPage render", () => {
     expect(html).toContain("0 recursos")
   })
 
+  // T4/S14: the day's page is reachable. A page nobody can open is the defect D2 was
+  // made of, so the launcher's control row carries the one control that leads there —
+  // and it is a primitive button, like every other action in that row.
+  it("offers the way into the day's page", async () => {
+    const html = withoutComments(await renderPage(() => {}))
+
+    const control = html.match(/<button[^>]*>\s*Hoy\s*<\/button>/)?.[0]
+
+    expect(control).toBeDefined()
+    expect(control ?? "").toContain('data-slot="button"')
+    expect(control ?? "").not.toMatch(DISABLED_ATTRIBUTE)
+  })
+
   it("shows the empty state when the API returned nothing", async () => {
     const html = await renderPage((store) => {
       store.resources = []

@@ -151,3 +151,44 @@ func TestRangeExplanationRepository_RoundTripsTheInstant(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, explanation.CreatedAt, stored.CreatedAt)
 }
+
+// S13: the projection asks one question of every explanation — is this exact range
+// already distilled — so only the pair travels, without the reader's text.
+func TestRangeExplanationRepository_ListExplainedRangesReturnsEveryStoredPair(t *testing.T) {
+	ctx := t.Context()
+	sqlDB := openMigratedDB(t)
+	t.Cleanup(func() { sqlDB.Close() })
+
+	repo := sqlite.NewRangeExplanationRepository(sqlDB)
+
+	first := newExplanation("An aggregate is a consistency boundary.")
+	require.NoError(t, repo.Create(ctx, first))
+
+	second := newExplanation("A repository per aggregate root.")
+	second.DocumentID = "c6d1e9a3-0000-4000-8000-000000000002"
+	second.FromPage = 24
+	second.ToPage = 36
+	second.Gaps = nil
+	require.NoError(t, repo.Create(ctx, second))
+
+	ranges, err := repo.ListExplainedRanges(ctx)
+	require.NoError(t, err)
+
+	assert.ElementsMatch(t, []domain.ExplainedRange{
+		{DocumentID: "c6d1e9a3-0000-4000-8000-000000000001", FromPage: 88, ToPage: 114},
+		{DocumentID: "c6d1e9a3-0000-4000-8000-000000000002", FromPage: 24, ToPage: 36},
+	}, ranges)
+}
+
+// S13: nothing explained is an empty list, not a failed read: a corpus nobody has
+// distilled yet is a normal state.
+func TestRangeExplanationRepository_ListExplainedRangesWithNothingStoredIsEmpty(t *testing.T) {
+	ctx := t.Context()
+	sqlDB := openMigratedDB(t)
+	t.Cleanup(func() { sqlDB.Close() })
+
+	ranges, err := sqlite.NewRangeExplanationRepository(sqlDB).ListExplainedRanges(ctx)
+	require.NoError(t, err)
+	assert.NotNil(t, ranges)
+	assert.Empty(t, ranges)
+}

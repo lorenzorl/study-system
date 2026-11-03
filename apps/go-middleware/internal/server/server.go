@@ -117,18 +117,23 @@ func Run(ctx context.Context, cfg *config.Config, port int) error {
 	// context's port, so study never imports the page store.
 	study := composition.NewStudyWithRangeExplanations(sqlDB, rag.Pages(), clients.Model)
 
-	studyRoutes := studyhttp.NewRouter(
-		study.SyncConcept,
-		study.SyncFlashcards,
-		study.ListConcepts,
-		study.CreateTopic,
-		study.CreateConcept,
-		study.SyncResource,
-		study.ListResources,
-		study.GetDueCards,
-		study.SubmitReview,
-		study.ExplainRange,
-	)
+	studyRoutes := studyhttp.NewRouter(studyhttp.UseCases{
+		SyncConcept:         study.SyncConcept,
+		SyncFlashcards:      study.SyncFlashcards,
+		ListConcepts:        study.ListConcepts,
+		CreateTopic:         study.CreateTopic,
+		CreateConcept:       study.CreateConcept,
+		SyncResource:        study.SyncResource,
+		ListResources:       study.ListResources,
+		GetDueCards:         study.GetDueCards,
+		SubmitReview:        study.SubmitReview,
+		ExplainRange:        study.ExplainRange,
+		SetReadingProgress:  study.SetReadingProgress,
+		ListReadingProgress: study.ListReadingProgress,
+		SavePlan:            study.SavePlan,
+		GetPlan:             study.GetPlan,
+		Today:               study.Today,
+	})
 
 	// The pasted-text path needs no key to accept material: it indexes always and
 	// embeds only when a client exists (composition.TextIngest says why). The URL

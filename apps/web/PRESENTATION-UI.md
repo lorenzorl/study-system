@@ -76,7 +76,8 @@ entry got a real source (`odd/tasks/backlog.md` D2).
 
 | Surface | Job | Lifetime |
 | --- | --- | --- |
-| Launcher (`/`) | Continue, then browse resources by topic, with a kind filter; the capture form opens from here | Long, user-driven |
+| Launcher (`/`) | Continue, then browse resources by topic, with a kind filter; the capture form opens from here, and `Hoy` leads to the day | Long, user-driven |
+| Day (`/today`) | What to do today: the due count, each material's read-but-undistilled range, the next pending chapter of each plan | Long, user-driven |
 | Review session (`/study/review`) | One card at a time, keyboard-first; the due queue | Session-length |
 | Deck page (`/present/:deckId`) | Present a deck (Reveal, full-bleed) | Session-length |
 | Topics (`/topics`, `/topic/:topicId`, `/topic/:topicId/concept/:conceptId`) | Browse topics and concepts; paste a note to sync flashcards | Long, user-driven |
@@ -226,14 +227,47 @@ them. Leaving is `← Volver` to `/study/due`; there is no `Esc` to bind.
 Same three kinds as the launcher, scoped to the note. This is the highest-value
 surface: it meets the user where they decide to study.
 
+### 4.7 Day (`/today`)
+
+The answer to "what do I do now", and the only new surface of the reading-coverage
+branch. It renders `GET /api/study/today` and decides nothing itself: the
+projection orders the entries, the page words them.
+
+```text
+┌ Hoy ──────────────────────────────────────────────────────────────┐
+│  Tenés 3 tarjetas para repasar                        [ Repasar ] │
+│                                                                   │
+│  DDD                                                              │
+│  páginas 24-36                                                    │
+│  Leíste estas páginas y todavía no las destilaste.                │
+│                                                                   │
+│  Capítulo 5                                                       │
+│  páginas 100-118                                                  │
+│  volver si hace falta                              [ Leído ]      │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+The due row is absent at zero instead of reading `0 para repasar`, and the read
+range has **no link**: there is no explanation surface on this branch, and a link
+to a page that does not exist is worse than no link. The commit that adds that
+surface is the commit that adds the link (`TodayPage.vue` says so where the link
+would go).
+
+The `Leído` toggle is the page's only write: it PUTs the range `read`, and the
+page re-reads the projection instead of flipping the row itself, so an item leaves
+the list because the server stopped naming it. `unread` is the same control in its
+other state. A refused write keeps the toggle where it was and shows the error
+with a `Reintentar`.
+
 ## 5. Navigation model
 
 ```text
    header nav ──┐
    URL ─────────┴─▶ Launcher (/)
-                      │ SEGUIR / filtro / búsqueda
+                      │ SEGUIR / filtro / búsqueda / Hoy
                       ├── ⏰ Repaso ──▶ /study/review ──Volver──▶ /study/due
                       ├── ▤ diapositivas ──▶ /present/:deckId ──Salir──▶ Launcher
+                      ├── Hoy ──▶ /today ──Repasar──▶ /study/review
                       └── ✎ examen ──▶ (sin ruta todavía)
    header nav ────▶ Temas (/topics) ──▶ Tema ──▶ Concepto ──▶ Sesión / Feynman
 ```
@@ -267,6 +301,8 @@ resource; it only routes to one. Exams are modelled but unrouted.
 | Topic and concept pages | `pages/dashboard`, `pages/topic`, `pages/concept` | pages |
 | Sync-note form | `features/sync-note` (paste markdown on the topics page) | features |
 | Resource entity | `entities/resource` (`ARCHITECTURE.md` §15) | entities |
+| Day page, its wording and its toggle | `pages/today` (`ui/TodayPage.vue`, `model/useToday.ts`) | pages |
+| Today projection and the reading write | `entities/today` (`model/types.ts`, `model/useTodayStore.ts`, `api/today-api.ts`) | entities |
 | Exam view | not started | pages (future) |
 
 ## 8. Decisions and open questions
@@ -285,6 +321,15 @@ Decided 2026-10-30:
 1. **One review surface.** The review modal is dropped; `/study/review` is the
    session, reached from the launcher's continue entry and from `/study/due`. Two
    surfaces for one interaction is what `backlog.md` D2 was made of.
+
+Decided 2026-11-03:
+
+1. **The day has no explanation link.** A read-but-undistilled range is a sentence,
+   not an action: this branch ships no range-explanation surface, and a dead link
+   reads as a bug. The link lands with that surface, not before it.
+2. **The launcher opens the day, and the day is not the launcher.** `/` still
+   answers "pick a resource"; `/today` answers "what do I do now". One control
+   connects them, so neither has to absorb the other's job.
 
 Open:
 

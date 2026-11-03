@@ -147,3 +147,141 @@ never for choosing what to propose.
 ```json
 [{"flashcard_id":"b64958c5-…","question":"…","answer":"…","concept_title":"Aggregates","topic_name":"DDD","next_review":"2026-10-23T15:11:49Z"}]
 ```
+
+## PUT /api/study/reading
+
+Mark one page range read or unread. This is the coverage axis, the one beside
+retrieval: a card is attempted and graded, while a range is only a position —
+where the reader is inside the book.
+
+```json
+{"document_id":"0f0b6b0e-…","from_page":24,"to_page":36,"state":"read"}
+```
+
+- The unit is the **range the plan recommends**, not the page. A page counter turns
+  a chapter into `2/13`, which is neither read nor not read.
+- `state` is `read` or `unread`. Marking `unread` keeps the row: it is a state, not
+  a deletion, and "not read" stays different from "never looked at".
+- Marking the same range again is one row: `created_at` stays, `updated_at` moves.
+- **A mark is a claim, not a proof.** Nothing verifies the reader read the pages,
+  and nothing should.
+
+`200` answers the stored row:
+
+```json
+{"document_id":"0f0b6b0e-…","from_page":24,"to_page":36,"state":"read","created_at":"2026-11-02T10:00:00Z","updated_at":"2026-11-02T10:00:00Z"}
+```
+
+| Case | Response |
+| --- | --- |
+| body is not JSON | `400 invalid request body` |
+| `document_id` missing or blank | `400 document_id is required` |
+| `from_page` below 1 | `400 from_page must be at least 1` |
+| `to_page` before `from_page` | `400 to_page must not be before from_page` |
+| `state` is neither `read` nor `unread` | `400 state must be read or unread` |
+
+## GET /api/study/reading?document_id=…
+
+The ranges marked on one document, in page order, `[]` when none is marked.
+
+```json
+[{"document_id":"0f0b6b0e-…","from_page":24,"to_page":36,"state":"read","created_at":"2026-11-02T10:00:00Z","updated_at":"2026-11-02T10:00:00Z"}]
+```
+
+| Case | Response |
+| --- | --- |
+| `document_id` missing or blank | `400 document_id is required` |
+
+## POST /api/study/plan
+
+Store the plan you recommended. This is the one write the planning skill makes: the
+app stores the plan and projects it, and never classifies a book itself.
+
+```json
+{"document_id":"0f0b6b0e-…","reading_mode":"linear","objective":"decidir qué agregado va en qué contexto","source":"sections","items":[{"title":"Capítulo 2","from_page":24,"to_page":36,"note":"primero: nombra el vocabulario"}]}
+```
+
+- `reading_mode` is `linear`, `project`, `survey` or `consult`.
+- `source` is `sections`, `printed-contents` or `none`: the skeleton the ranges came
+  from.
+- `items` is in the order you recommend reading; the server keeps that order and
+  numbers the items 1..N. A position you send is ignored.
+- `state` is `pending` or `skipped`; omit it and the item is `pending`.
+- A stored plan **supersedes** the document's previous active plan. The old plan and
+  its items are kept, so throwing a plan away never loses what it said.
+- `read` in the answer is derived from coverage for the exact range; it is never
+  stored on the item.
+
+`201` answers the stored plan:
+
+```json
+{"plan_id":"3f1c…","document_id":"0f0b6b0e-…","reading_mode":"linear","objective":"decidir qué agregado va en qué contexto","source":"sections","created_at":"2026-11-03T09:00:00Z","items":[{"position":1,"title":"Capítulo 2","from_page":24,"to_page":36,"note":"primero: nombra el vocabulario","state":"pending","read":false}]}
+```
+
+| Case | Response |
+| --- | --- |
+| body is not JSON | `400 invalid request body` |
+| `document_id` missing or blank | `400 document_id is required` |
+| `reading_mode` missing or unknown | `400 reading_mode must be linear, project, survey or consult` |
+| `items` missing or empty | `400 items is required` |
+| an item has no title | `400 item 1: title is required` |
+| an item starts below page 1 | `400 item 1: from_page must be at least 1` |
+| an item's range is backwards | `400 item 1: to_page must not be before from_page` |
+| an item's state is neither `pending` nor `skipped` | `400 item 1: state must be pending or skipped` |
+| two items name the same range | `400 duplicate range 24-36` |
+| the document is not in the corpus | `404 not found` |
+
+Nothing is stored on a refusal, so a corrected plan starts from a clean slate.
+
+## GET /api/study/plan?document_id=…
+
+The document's active plan, with each item's derived `read` flag. The shape is the
+one `POST` answers.
+
+| Case | Response |
+| --- | --- |
+| `document_id` missing or blank | `400 document_id is required` |
+| the document has no active plan | `404 not found` |
+
+## GET /api/study/today
+
+What to do today, across every material: the due count, then the ranges marked read
+that nobody has explained, then the next pending chapter of each active plan.
+
+No query parameters: the day is the question, and it covers the whole corpus.
+
+```json
+{"due_count":3,
+ "entries":[
+  {"kind":"read_not_distilled","document_id":"0f0b6b0e-…","document_title":"DDD","from_page":24,"to_page":36,"read_at":"2026-11-02T10:00:00Z"},
+  {"kind":"plan_next","document_id":"0f0b6b0e-…","document_title":"DDD","title":"Capítulo 5","from_page":100,"to_page":118,"note":"volver si hace falta"}]}
+```
+
+`entries` is `[]`, never `null`. There are two kinds, and each one appears **at most
+once per document**:
+
+- `read_not_distilled` — a range marked `read` with no explanation of the **same
+  exact range**. The one named is that document's oldest such reading, and `read_at`
+  is when that range was last marked read. It carries no `title` and no `note`: a
+  reading is not a plan item.
+- `plan_next` — the first `pending` item, in position order, of the document's active
+  plan whose exact range is not marked read. A `skipped` item is never named, and an
+  item whose range is read is already done.
+
+Order: every `read_not_distilled` first, oldest `read_at` first (ties by document
+title, then document id); then every `plan_next`, by document title and position.
+
+- Ranges match **exactly, never by overlap**: a read row for 24-35 neither marks the
+  item 24-36 read nor distils it.
+- Due reviews are the number `due_count`, not an entry: a review has no page range to
+  name. It counts what `GET /api/study/due` lists, so show the count with a link to
+  `/study/review` when it is above zero.
+- The route writes nothing. It projects what `PUT /api/study/reading`,
+  `POST /api/study/plan` and `POST /api/study/explanation` already stored.
+- A `document_title` that cannot be resolved is `""` and the entry stays: the
+  `document_id` is what the action needs.
+
+| Case | Response |
+| --- | --- |
+| nothing read, nothing planned, nothing due | `200 {"due_count":0,"entries":[]}` |
+| a material whose title is no longer in the corpus | `200` with `"document_title":""` |

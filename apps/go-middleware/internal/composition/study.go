@@ -27,6 +27,20 @@ type Study struct {
 	GetDueCards    *studyapp.GetDueCardsUseCase
 	SubmitReview   *studyapp.SubmitReviewUseCase
 	ExplainRange   *studyapp.ExplainRangeUseCase
+
+	// SetReadingProgress and ListReadingProgress are the coverage axis: where the
+	// reader is inside a material, which the plan turns into the next action.
+	SetReadingProgress  *studyapp.SetReadingProgressUseCase
+	ListReadingProgress *studyapp.ListReadingProgressUseCase
+
+	// SavePlan and GetPlan are the plan the agent produces: the app stores it and
+	// projects it, and never classifies a book itself.
+	SavePlan *studyapp.SavePlanUseCase
+	GetPlan  *studyapp.GetPlanUseCase
+
+	// Today is the projection over the three axes above plus the due count: what to
+	// do today, read from rows the other routes already stored.
+	Today *studyapp.TodayUseCase
 }
 
 // NewStudy wires the study context over an open database.
@@ -59,6 +73,13 @@ func NewStudyWithRangeExplanations(
 	cardStates := studysqlite.NewCardStateRepository(sqlDB)
 	reviewLogs := studysqlite.NewReviewLogRepository(sqlDB)
 	explanations := studysqlite.NewRangeExplanationRepository(sqlDB)
+	readingProgress := studysqlite.NewReadingProgressRepository(sqlDB)
+	plans := studysqlite.NewStudyPlanRepository(sqlDB)
+
+	// The plan names a material, so it needs the ingestion context's catalogue: the
+	// adapter keeps study from importing rag, the same shape the page-text adapter
+	// uses. Building the repository twice over one *sql.DB is free and stateless.
+	documents := newDocumentTitles(NewRAG(sqlDB).DocumentRepo())
 
 	return &Study{
 		SyncConcept:    studyapp.NewSyncConceptUseCase(topics, concepts),
@@ -74,6 +95,13 @@ func NewStudyWithRangeExplanations(
 			newPageRangeText(pages),
 			newModelGapFinder(model),
 			explanations,
+		),
+		SetReadingProgress:  studyapp.NewSetReadingProgressUseCase(readingProgress),
+		ListReadingProgress: studyapp.NewListReadingProgressUseCase(readingProgress),
+		SavePlan:            studyapp.NewSavePlanUseCase(documents, plans, readingProgress),
+		GetPlan:             studyapp.NewGetPlanUseCase(plans, readingProgress),
+		Today: studyapp.NewTodayUseCase(
+			flashcards, plans, readingProgress, explanations, documents,
 		),
 	}
 }

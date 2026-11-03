@@ -10,7 +10,6 @@ import (
 	"sort"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -36,37 +35,6 @@ func (m *mockExplainRangeUseCase) Execute(
 ) (domain.RangeExplanation, error) {
 	m.inputs = append(m.inputs, input)
 	return m.explanation, m.err
-}
-
-// newStudyRouter mounts the whole study router over mocks.
-//
-// The tests below go through the router, not through one handler: the point of
-// several of them is that the new route shares a mux with the existing ones and
-// changes none of them.
-func newStudyRouter(explain httppkg.ExplainRangeUseCase) http.Handler {
-	return httppkg.NewRouter(
-		&mockSyncConceptUseCase{id: "concept-1"},
-		&mockSyncFlashcardsUseCase{count: 1},
-		&mockListConceptsUseCase{topics: []app.TopicWithConcepts{}},
-		&mockCreateTopicUseCase{topic: &domain.Topic{ID: "t1", Name: "DDD", CreatedAt: time.Now().UTC()}},
-		&mockCreateConceptUseCase{concept: &domain.Concept{ID: "c1", TopicID: "t1", Title: "Aggregates"}},
-		&mockSyncResourceUseCase{resourceID: "r1"},
-		&mockListResourcesUseCase{summaries: []app.ResourceSummary{}},
-		&mockGetDueCardsUseCase{cards: []app.DueCard{{
-			FlashcardID:  "f1",
-			Front:        "What is an aggregate?",
-			Back:         "A consistency boundary",
-			ConceptTitle: "Aggregates",
-			TopicName:    "DDD",
-			NextReview:   time.Date(2026, 11, 2, 10, 0, 0, 0, time.UTC),
-		}}},
-		&mockSubmitReviewUseCase{state: domain.CardState{
-			ID: "cs1", FlashcardID: "f1", Stability: 1.1, Difficulty: 0.5,
-			NextReview: time.Date(2026, 11, 5, 10, 0, 0, 0, time.UTC),
-			LastReview: time.Date(2026, 11, 2, 10, 0, 0, 0, time.UTC),
-		}},
-		explain,
-	)
 }
 
 func explanationRequest(body string) *http.Request {

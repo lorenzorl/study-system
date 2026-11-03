@@ -40,6 +40,19 @@
           {{ chip.label }}
         </Button>
       </div>
+      <!--
+        The way into the day (`/today`): what to do now, across every material. A
+        page nobody can open is the defect D2 was made of, so the control sits in
+        the row the launcher already uses for its destinations.
+      -->
+      <Button
+        type="button"
+        variant="outline"
+        class="min-h-[44px]"
+        @click="router.push({ name: 'today' })"
+      >
+        Hoy
+      </Button>
       <!-- The one write the launcher offers: every other action opens a resource. -->
       <Button type="button" class="min-h-[44px]" @click="openCapture($event)">
         Agregar material

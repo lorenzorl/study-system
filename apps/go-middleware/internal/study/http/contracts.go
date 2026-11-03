@@ -69,3 +69,45 @@ type ExplainRangeUseCase interface {
 	// and a model failure is a plain error, which is a 500 and nothing stored.
 	Execute(ctx context.Context, input app.ExplainRangeInput) (domain.RangeExplanation, error)
 }
+
+// SetReadingProgressUseCase records whether one page range was read.
+//
+// The range arrives as the application's own input for the same reason the
+// explanation does: deciding what a valid range is belongs to the application
+// layer, and the transport only decides whether the body carried those fields.
+type SetReadingProgressUseCase interface {
+	// Execute returns the stored row. A refused range is apperror.ErrInvalidInput,
+	// which is a 400 with nothing stored.
+	Execute(ctx context.Context, input app.SetReadingProgressInput) (domain.ReadingProgress, error)
+}
+
+// ListReadingProgressUseCase lists one document's marked ranges.
+type ListReadingProgressUseCase interface {
+	// Execute returns the ranges in page order, as an empty slice when the document
+	// has none.
+	Execute(ctx context.Context, documentID string) ([]domain.ReadingProgress, error)
+}
+
+// SavePlanUseCase stores the plan the agent produced for one document.
+type SavePlanUseCase interface {
+	// Execute supersedes the document's active plan and returns the stored one. A
+	// malformed plan is apperror.ErrInvalidInput and an unknown document is
+	// apperror.ErrNotFound; nothing is stored in either case.
+	Execute(ctx context.Context, input app.SavePlanInput) (app.StudyPlanView, error)
+}
+
+// GetPlanUseCase reads the active plan of one document.
+type GetPlanUseCase interface {
+	// Execute returns the active plan with each item's derived read flag, or
+	// apperror.ErrNotFound when the document has no active plan.
+	Execute(ctx context.Context, documentID string) (app.StudyPlanView, error)
+}
+
+// TodayUseCase projects what the reader has to do today, over rows other routes
+// wrote.
+type TodayUseCase interface {
+	// Execute returns the due count and the ordered entries. A document whose title
+	// cannot be resolved still appears, with an empty document_title: the projection
+	// is read-only and reports what it knows, it does not fail on a missing name.
+	Execute(ctx context.Context) (app.Today, error)
+}

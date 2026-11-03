@@ -96,14 +96,14 @@ func TestMigrations_FreshDatabaseGetsTheStudySchema(t *testing.T) {
 
 	for _, table := range []string{
 		"topics", "concepts", "flashcards", "resources", "card_states", "review_logs",
-		"range_explanations", "range_gaps",
+		"range_explanations", "range_gaps", "reading_progress", "study_plans", "study_plan_items",
 	} {
 		assert.True(t, hasTable(t, sqlDB, table), "table %s must exist", table)
 	}
 
 	version, err := db.CurrentVersion(t.Context(), sqlDB)
 	require.NoError(t, err)
-	assert.Equal(t, 3, version)
+	assert.Equal(t, 5, version)
 
 	assert.False(t, hasColumn(t, sqlDB, "resources", "dify_document_id"),
 		"a fresh database must never have the legacy column")
@@ -139,7 +139,7 @@ func TestMigrations_AdoptLegacyDatabaseWithoutDataLoss(t *testing.T) {
 
 	version, err := db.CurrentVersion(t.Context(), sqlDB)
 	require.NoError(t, err)
-	assert.Equal(t, 3, version)
+	assert.Equal(t, 5, version)
 }
 
 func TestMigrations_AreIdempotentOnALegacyDatabase(t *testing.T) {
@@ -154,7 +154,7 @@ func TestMigrations_AreIdempotentOnALegacyDatabase(t *testing.T) {
 
 	var applied int
 	require.NoError(t, sqlDB.QueryRow(`SELECT count(*) FROM schema_version`).Scan(&applied))
-	assert.Equal(t, 3, applied)
+	assert.Equal(t, 5, applied)
 }
 
 // The baseline must be safe against a database that never had the legacy column
@@ -218,7 +218,7 @@ func TestMigrations_RangeExplanationsCarryTheReaderTextAndItsGaps(t *testing.T) 
 
 	version, err := db.CurrentVersion(t.Context(), sqlDB)
 	require.NoError(t, err)
-	assert.Equal(t, 3, version, "the study block keeps its ascending order")
+	assert.Equal(t, 5, version, "the study block keeps its ascending order")
 }
 
 // A gap state outside the current vocabulary must be storable: the column is
@@ -237,6 +237,49 @@ func TestMigrations_RangeGapStateAcceptsAVocabularyItDoesNotKnowYet(t *testing.T
 	assert.NoError(t, err, "an unknown state must be stored, not rejected by a CHECK")
 }
 
+// S1: coverage is one row per page range, keyed to the book's pages and never to
+// a derived section id.
+func TestMigrations_ReadingProgressIsOneRowPerPageRange(t *testing.T) {
+	sqlDB := openFile(t, "reading.db")
+
+	require.NoError(t, db.Migrate(t.Context(), sqlDB, sqlite.Migrations()))
+
+	for _, column := range []string{
+		"id", "document_id", "from_page", "to_page", "state", "created_at", "updated_at",
+	} {
+		assert.True(t, hasColumn(t, sqlDB, "reading_progress", column),
+			"reading_progress.%s must exist", column)
+	}
+
+	_, err := sqlDB.Exec(`
+		INSERT INTO reading_progress (id, document_id, from_page, to_page, state, created_at, updated_at)
+		VALUES ('rp1', 'doc-1', 24, 36, 'read', '2026-11-02T10:00:00Z', '2026-11-02T10:00:00Z');
+		INSERT INTO reading_progress (id, document_id, from_page, to_page, state, created_at, updated_at)
+		VALUES ('rp2', 'doc-1', 24, 36, 'unread', '2026-11-02T11:00:00Z', '2026-11-02T11:00:00Z');
+	`)
+	require.Error(t, err, "the same range twice is one row: the second insert must conflict")
+
+	// The migration must be re-runnable, like every other one.
+	require.NoError(t, db.Migrate(t.Context(), sqlDB, sqlite.Migrations()))
+
+	version, err := db.CurrentVersion(t.Context(), sqlDB)
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, version, 4, "the coverage schema is recorded")
+}
+
+// S1: the state vocabulary grows without a migration, following
+// ingestion_jobs.status and range_gaps.state.
+func TestMigrations_ReadingProgressAcceptsAStateItDoesNotKnowYet(t *testing.T) {
+	sqlDB := openFile(t, "reading-state.db")
+	require.NoError(t, db.Migrate(t.Context(), sqlDB, sqlite.Migrations()))
+
+	_, err := sqlDB.Exec(`
+		INSERT INTO reading_progress (id, document_id, from_page, to_page, state, created_at, updated_at)
+		VALUES ('rp1', 'doc-1', 24, 36, 'skimmed', '2026-11-02T10:00:00Z', '2026-11-02T10:00:00Z');
+	`)
+	assert.NoError(t, err, "an unknown state must be stored, not rejected by a CHECK")
+}
+
 func hasTable(t *testing.T, sqlDB *sql.DB, table string) bool {
 	t.Helper()
 
@@ -246,4 +289,46 @@ func hasTable(t *testing.T, sqlDB *sql.DB, table string) bool {
 	).Scan(&count))
 
 	return count == 1
+}
+
+// S6: a plan is a plan of page ranges with two states, and its items belong to
+// one plan by cascade.
+func TestMigrations_StudyPlanIsRangesInOrderWithItsOwnItemStates(t *testing.T) {
+	sqlDB := openFile(t, "plan.db")
+
+	require.NoError(t, db.Migrate(t.Context(), sqlDB, sqlite.Migrations()))
+
+	for _, column := range []string{
+		"id", "document_id", "reading_mode", "objective", "source", "created_at", "superseded_at",
+	} {
+		assert.True(t, hasColumn(t, sqlDB, "study_plans", column),
+			"study_plans.%s must exist", column)
+	}
+
+	for _, column := range []string{
+		"id", "plan_id", "position", "title", "from_page", "to_page", "note", "state",
+	} {
+		assert.True(t, hasColumn(t, sqlDB, "study_plan_items", column),
+			"study_plan_items.%s must exist", column)
+	}
+
+	_, err := sqlDB.Exec(`
+		INSERT INTO study_plans (id, document_id, reading_mode, objective, source, created_at)
+		VALUES ('p1', 'doc-1', 'linear', 'decidir', 'sections', '2026-11-03T09:00:00Z');
+		INSERT INTO study_plan_items (id, plan_id, position, title, from_page, to_page, note, state)
+		VALUES ('i1', 'p1', 1, 'Capítulo 2', 24, 36, '', 'pending');
+		INSERT INTO study_plan_items (id, plan_id, position, title, from_page, to_page, note, state)
+		VALUES ('i2', 'p1', 1, 'Capítulo 3', 37, 48, '', 'pending');
+	`)
+	require.Error(t, err, "one position holds one item per plan")
+
+	_, err = sqlDB.Exec(`UPDATE study_plans SET superseded_at = '2026-11-04T09:00:00Z' WHERE id = 'p1'`)
+	require.NoError(t, err, "a superseded plan is a timestamp, not a deletion")
+
+	// The migration must be re-runnable, like every other one.
+	require.NoError(t, db.Migrate(t.Context(), sqlDB, sqlite.Migrations()))
+
+	version, err := db.CurrentVersion(t.Context(), sqlDB)
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, version, 5, "the plan schema is recorded")
 }

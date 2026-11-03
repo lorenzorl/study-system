@@ -68,6 +68,14 @@ type RangeExplanationRepository interface {
 	// FindByID returns the explanation with its gaps in stored order, or
 	// apperror.ErrNotFound on a miss.
 	FindByID(ctx context.Context, id string) (*RangeExplanation, error)
+
+	// ListExplainedRanges returns the document and exact range of every stored
+	// explanation, so a read range can be told apart from a distilled one.
+	//
+	// A projection that asks "was this range distilled" needs the pairs and not the
+	// texts: two explanations of one range are one answer, so the list is one entry
+	// per range.
+	ListExplainedRanges(ctx context.Context) ([]ExplainedRange, error)
 }
 
 // RangeGapRepository manages persistence of RangeGap entities.
@@ -75,4 +83,46 @@ type RangeGapRepository interface {
 	// ListByExplanationID returns the gaps of one explanation in stored order, as
 	// an empty slice when it has none.
 	ListByExplanationID(ctx context.Context, explanationID string) ([]RangeGap, error)
+}
+
+// ReadingProgressRepository manages persistence of ReadingProgress entities.
+//
+// It is the coverage axis: a range is read or not read, and there is no score.
+type ReadingProgressRepository interface {
+	// Upsert writes the state of one range, creating the row on its first marking.
+	// The stored row is returned because created_at belongs to that first marking
+	// and only the database knows it.
+	Upsert(ctx context.Context, progress *ReadingProgress) (*ReadingProgress, error)
+
+	// ListByDocument returns one document's ranges in page order, as an empty slice
+	// when nothing was marked.
+	ListByDocument(ctx context.Context, documentID string) ([]ReadingProgress, error)
+
+	// ListRead returns every range marked read, across every document, oldest
+	// updated_at first and ties by id.
+	//
+	// Across documents because the order the projection needs — which reading has
+	// gone longest without being distilled — is only meaningful as one order over
+	// the whole corpus.
+	ListRead(ctx context.Context) ([]ReadingProgress, error)
+}
+
+// StudyPlanRepository stores the plan the agent produced and reads back the one
+// active plan of a document.
+type StudyPlanRepository interface {
+	// CreateActive writes the plan with its items in one transaction and marks the
+	// document's previous active plan superseded, keeping its rows. Two live plans
+	// for one book would make "the next item" ambiguous.
+	CreateActive(ctx context.Context, plan *StudyPlan) (*StudyPlan, error)
+
+	// FindActiveByDocument returns the document's active plan with its items in
+	// position order, or apperror.ErrNotFound when nobody planned it.
+	FindActiveByDocument(ctx context.Context, documentID string) (*StudyPlan, error)
+
+	// ListActiveItems returns the items of every active plan, ordered by document
+	// then position.
+	//
+	// Only active plans: a superseded plan is a plan the reader threw away, and it
+	// must not keep recommending chapters.
+	ListActiveItems(ctx context.Context) ([]PlanItemWithDocument, error)
 }

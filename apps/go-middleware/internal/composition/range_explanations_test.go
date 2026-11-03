@@ -179,6 +179,51 @@ func TestModelGapFinder_SendsTheRangeAndTheExplanation(t *testing.T) {
 	assert.Contains(t, prompt, "pages 88 to 114")
 }
 
+// The gap's point is the reader's feedback, so it must arrive in the language the
+// reader wrote in. A book is usually in English and its text dominates the prompt,
+// so without an explicit instruction the model answers in the book's language and
+// the reader gets feedback they did not ask for — observed on a live run against a
+// Spanish explanation of an English chapter.
+//
+// The quote is the opposite case and the prompt must say so: a translated quote is
+// no longer evidence that the page says it.
+func TestModelGapFinder_AsksForTheReadersLanguageAndAVerbatimQuote(t *testing.T) {
+	var bodies = make(chan string, 1)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		bodies <- string(body)
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"{\"gaps\":[]}"}}]}`)
+	}))
+	defer server.Close()
+
+	client, err := llm.NewClient("test-key", server.URL, "test/model", llm.Options{HTTPClient: server.Client()})
+	require.NoError(t, err)
+
+	_, err = newModelGapFinder(client).FindGaps(t.Context(), gapSource())
+	require.NoError(t, err)
+
+	// Decoded, not searched in the raw body: the request is JSON, so every quote in
+	// the prompt arrives escaped and a raw search would test the encoding instead of
+	// the instruction.
+	var payload struct {
+		Messages []struct {
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"messages"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(<-bodies), &payload))
+	require.NotEmpty(t, payload.Messages)
+	require.NotEmpty(t, payload.Messages[0].Content)
+	prompt := payload.Messages[0].Content[0].Text
+
+	assert.Contains(t, prompt, "in the language of the reader's explanation",
+		"the point must be written in the reader's language")
+	assert.Contains(t, prompt, `"quote" stays verbatim`,
+		"the quote must stay in the book's language")
+}
+
 // A reasoning model repeats the answer template inside its thinking, so the first
 // JSON in the answer is the template with placeholder values. The payload is the
 // last one: taking the first stored point="..." and quote="..." on a live run.
