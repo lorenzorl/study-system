@@ -60,35 +60,48 @@ This is Adler's *inspectional* pass: 30 to 45 minutes of a human's attention, fi
 requests here. It exists so the reader does not read the whole book to discover that
 only a third of it was theirs.
 
-1. **Front matter** — `GET /api/rag/documents/{id}/pages?from=1&to=6`. The printed
-   table of contents is usually here. Expect it to span two or three pages and to
-   arrive with dot leaders; reassemble the titles by hand.
-2. **Preface or introduction** — the pages between the contents and the first chapter.
+1. **The stored structure** — `GET /api/rag/documents/{id}/sections`. This is the
+   chapter table the ingestion already recovered and validated: one entry per part,
+   chapter and section, with `level`, `parent_id`, and the printed `start_page` and
+   `end_page`. It is the answer to "what are this book's chapters" and it needs no
+   reassembly. Read it first, and plan from it whenever it is not empty.
+2. **Front matter** — only when the structure is empty, or when it disagrees with the
+   book: `GET /api/rag/documents/{id}/pages?from=1&to=6`. The printed table of contents
+   is usually here, arrives mangled by dot leaders, and needs its titles reassembled by
+   hand.
+3. **Preface or introduction** — the pages between the contents and the first chapter.
    Read them. This is the only place the author says who the book is for and what it
    assumes.
-3. **The ending** — `?from=<last-5>&to=<last>`. You cannot plan a route without the
+4. **The ending** — `?from=<last-5>&to=<last>`. You cannot plan a route without the
    destination. **The last pages are often back matter**: a bibliography, an appendix, an
    index. Check the contents before treating them as the conclusion, and read the end of
    the last chapter of content instead. (`DDD.pdf` ends with a bibliography on p. 357 and
    an appendix on pp. 358-359; its conclusions start at p. 349.)
 4. **Density sample** — three pages from the middle, spread out. Measures how many
    ideas a page carries, and whether the vocabulary is legible at all.
-5. **Vocabulary probe** — one or two `GET /api/rag/search?q=<term>&document_id=<id>`
+5. **Density sample** — three pages from the middle, spread out. Measures how many
+   ideas a page carries, and whether the vocabulary is legible at all.
+6. **Vocabulary probe** — one or two `GET /api/rag/search?q=<term>&document_id=<id>`
    calls with the book's own key terms. If the results are about the book's subject,
    the corpus understands it; if they are unrelated, say so.
 
 Rules for this step:
 
+- **The stored structure is the preferred skeleton, and it is normal for it to be
+  empty.** An empty array is a document with no recovered structure — a novel, an
+  essay, a scan whose headings the cascade could not find — not a failed request. Fall
+  back to the printed contents, and say in the plan which of the two you used.
+- **Cite the ranges the structure gives you.** When a chapter comes from
+  `/sections`, quote its `start_page` and `end_page` rather than reading a page number
+  off the printed contents: the stored range was checked against the pages themselves.
 - **A book with no printed contents** (a novel, an essay, an argument) has no skeleton
   to read. Say so and work from the front matter, the ending and the reader's own
   question. Do not invent chapters.
 - `status: transcribed` means a model described a page, usually a figure or a divider.
   Cite it as a description, never as the author's words.
 - Sample pages with `status: extracted` when you need the author's sentence.
-- **The chapter table is not available through this API.** `document_sections` exists in
-  the database and no endpoint exposes it, so the structure here comes from what the
-  book prints. When the printed contents are missing, mangled, or cover only part of
-  the book, say that in the plan instead of smoothing over it.
+- **When both skeletons are missing or mangled**, say that in the plan instead of
+  smoothing over it.
 
 ## 4. Classify the book — first deliverable
 

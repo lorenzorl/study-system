@@ -1,7 +1,7 @@
 # Backlog — open findings
 
 **Single source of truth for everything deliberately not fixed yet.**
-Updated: 2026-11-02 (D8/D9 from the `DDD.pdf` re-ingest; P2, the `resources` ↔ `documents` decision; P3, sections not exposed by the API; W1-W4, the coverage and plan slices)
+Updated: 2026-11-03 (P3 closed, the section read; D8/D9 from the `DDD.pdf` re-ingest; P2, the `resources` ↔ `documents` decision; W1-W4, the coverage and plan slices)
 
 A follow-up is a finding that was real, but outside the scope of the step that
 found it. Fixing it mid-step would make that step unverifiable: you could no
@@ -811,34 +811,52 @@ field, a producer wired into the upload response, and a test that an uploaded bo
 produces exactly one resource with `document_id` set; option 2 gets one paragraph in
 `ARCHITECTURE.md` and a line in this entry saying the separation is intentional.
 
-### P3 — The chapter table is built, stored, and unreachable through the API
+### P3 (closed 2026-11-03) — The chapter table was built, stored, and unreachable through the API
 
 The structure stage stores `document_sections` — 110 rows for a 359-page book, with the
 printed page ranges and provenance (`toc`, `typography`, `pattern`, `mixed`). **No
-endpoint exposes it.** `GET /api/rag/documents/{id}/status` does not report the count
-either, so the only way to see the chapters is `sqlite3` on the server's own disk.
+endpoint exposed it.** `GET /api/rag/documents/{id}/status` did not report the count
+either, so the only way to see the chapters was `sqlite3` on the server's own disk.
 
-**Why it matters now:** a client that is not shelling into the server — a phone running
-Pi in Termux, which is the premise of both skills — cannot see the chapter structure at
-all. `skills/study-plan` has to reassemble the contents from the printed pages
-(`?from=1&to=6`), which works, and is strictly worse: the pages arrive with dot leaders
-and can be mangled or missing entirely, and the stored table is the validated answer
-(≥95% of chapters on the exact page, per `section-metadata.md` S4).
+**Why it mattered:** a client that is not shelling into the server — a phone running
+Pi in Termux, which is the premise of both skills — could not see the chapter structure
+at all. `skills/study-plan` had to reassemble the contents from the printed pages
+(`?from=1&to=6`), which worked, and was strictly worse: the pages arrive with dot
+leaders and can be mangled or missing entirely, and the stored table is the validated
+answer (≥95% of chapters on the exact page, per `section-metadata.md` S4).
 
-**Measured:** `document_sections` has 110 rows for `DDD.pdf`; the printed contents is on
-pp. 3-5 and survives extraction; the plan skill's own verification needed
-`pages?from=1&to=6` plus manual reassembly to get the 17 chapter titles.
+The printed contents is on pp. 3-5 of `DDD.pdf` and survives extraction; the plan
+skill's own verification still needed `pages?from=1&to=6` plus manual reassembly to get
+the 17 chapter titles. **S6 of `section-metadata.md` said so deliberately** ("no section
+filter, no UI"), so it was never an oversight — it was a scope cut whose cost the skills
+changed.
 
-**S6 of `section-metadata.md` said so deliberately** ("no section filter, no UI"), so
-this is not an oversight — it is a scope cut that the skills changed the cost of.
+**Closed with `GET /api/rag/documents/{id}/sections`**, the shape this entry specified:
+`[{id, parent_id, level, title, start_page, end_page, source}]`, ascending by
+`start_page`, and `[]` for a document with no structure. `section_repo.go` already had
+`ListByDocument` (ordered by page, level and id), so the read needed a use case, a
+handler, a DTO, the route, the composition factory and the server wiring — no schema
+change, no new query, no adapter work.
 
-**How to close:** add `GET /api/rag/documents/{id}/sections` returning the same shape the
-table stores: `[{id, parent_id, level, title, start_page, end_page, source}]`, ascending
-by `start_page`, empty array when a document has none (a document with no structure is
-normal, not an error). Additive and read-only, so it is not high risk; it needs a
-handler, a repository method (`section_repo.go` already reads by document), and tests for
-the empty case and for the ordering. Then `skills/study-plan` reads the chapters instead
-of guessing them, and the plan cites the book's own structure.
+**The one rule worth keeping.** This read has two silences and the endpoint keeps them
+apart: an unknown document is `404`, while a document that exists and has no chapters —
+the stage has not run, or found nothing — is `200 []`. Collapsing the first into the
+second would make a typo in a document id read as a book with no table of contents. The
+use case resolves that by looking the document up first (`sections.go`), and the handler
+never tells them apart itself.
+
+**Evidence.** Test-first: RED as a compile failure on `app.DocumentSectionsUseCase`,
+then GREEN with 8 new tests (app 4: the projection, the empty case, the unknown document
+without a section query, the reported read failure; http 4: the wire keys, `[]` not
+`null`, the 404, and the route registered). `gofmt`, `go vet ./...`, `go build ./...` and
+`go test ./...` clean. Verified live against an isolated database on port 8099: a seeded
+document returned its four sections in reading order with a part before the chapter that
+opens on the same page, a second document with no sections returned `200 []`, and an
+unknown id returned `404 {"error":"not found"}`.
+
+**Consumers updated in the same change:** `skills/study-plan` now reads the structure
+first and falls back to the printed contents only when it is empty, and
+`skills/study-system/references/api.md` documents the route, its shape and its refusals.
 
 ---
 

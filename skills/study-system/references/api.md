@@ -24,6 +24,41 @@ The corpus. Use it to resolve a document id and see how many pages it has.
 
 An empty corpus is `[]`.
 
+## GET /api/rag/documents/{id}/sections
+
+The structure the ingestion recovered and stored for that document: one entry per
+part, chapter and section, with the page range each one owns. Use it instead of
+reassembling a printed table of contents, which arrives mangled by dot leaders.
+
+No query parameters. No cap: a 359-page book has 110 entries.
+
+```json
+[
+  {"id":"6f9d…","parent_id":"","level":1,"title":"Part I: Putting the Domain Model to Work","start_page":3,"end_page":120,"source":"toc"},
+  {"id":"b21c…","parent_id":"6f9d…","level":2,"title":"Crunching Knowledge","start_page":3,"end_page":40,"source":"mixed"}
+]
+```
+
+- The array is ascending by `start_page`, and a part sorts before the chapter that
+  opens on the same page.
+- `parent_id` is always present and empty for a top-level entry: the tree is rebuilt
+  from it.
+- `level` is the document's own nesting, not a fixed vocabulary. 1 is a part, 2 a
+  chapter, 3 and beyond a section; a document with no parts starts at 1.
+- `source` says how the entry was recovered: `outline` (the PDF's own bookmarks),
+  `toc` (the printed contents), `typography`, `pattern` (a numbered heading), or
+  `mixed` when one source confirmed another. `toc` and `mixed` are the confident ones.
+- **An empty array is normal**, not an error: it means no structure was recovered —
+  a novel, an essay, or a scan whose headings the cascade could not find. Fall back
+  to the printed contents and say which one the plan used.
+
+Refusals:
+
+| Case | Response |
+| --- | --- |
+| Unknown document | `404 {"error":"not found"}` |
+| Document with no recovered structure | `200 []` |
+
 ## GET /api/rag/documents/{id}/pages?from=N&to=M
 
 The text the ingestion run recorded for those pages. This is the material a card is
