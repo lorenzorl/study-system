@@ -189,3 +189,14 @@ lines): risk medium, `reviewDue: false`, reason `under_budget`, writer profile
 `large`. Per the entry rule no native review is started: it is not due, and the
 independent verifier already covered the slice whose Risk line names item 1. Native
 review of a smaller candidate remains available whenever someone asks for one.
+
+**L10 — a live run found the gap language, and it is fixed.** Running
+`POST /api/study/explanation` on a real Spanish explanation of `Crunching Knowledge`
+(pp. 15-23) against the running server returned six correct gaps **in English**: the
+book's text is the bulk of the prompt and nothing asked for the reader's language, so
+the model answered in the book's. The prompt now says the `point` is written in the
+language of the reader's explanation while the `quote` stays verbatim in the book's,
+because a translated quote is no longer evidence. Verified on a second live run: the
+same explanation returned its six points in Spanish with the English quotes intact.
+A prompt instruction is not the model's behaviour, so the test pins the instruction,
+and the live run is the evidence that it lands.

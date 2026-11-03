@@ -70,6 +70,12 @@ func (a pageRangeText) ReadRange(
 // The prompt is bounded by construction — the range's text and the explanation,
 // nothing else — and it asks for the shape the parser reads, with the page markers
 // it must cite.
+//
+// It names the language of the answer for the reason a live run showed: the book is
+// usually in English and its text is the bulk of the prompt, so a Spanish
+// explanation got its gaps back in English. The point is the reader's feedback and
+// must arrive in their language; the quote is evidence and must not be translated,
+// which is why the two are stated separately instead of as one "answer in X".
 const gapPrompt = `You are checking one reader's explanation of pages %d to %d of a book against the book's own text.
 
 Report only what the material states that the explanation leaves out. Answer with JSON
@@ -78,9 +84,12 @@ and nothing else, in exactly this shape:
 {"gaps":[{"point":"...","page":89,"quote":"..."}]}
 
 Each gap has three fields:
-- "point": one sentence naming an idea the material states and the explanation does not;
+- "point": one sentence naming an idea the material states and the explanation does not, written
+  in the language of the reader's explanation;
 - "page": the page number that states it, taken from the "--- page N ---" markers below;
-- "quote": a short passage copied verbatim from that page, as evidence.
+- "quote": a short passage copied verbatim from that page, as evidence; "quote" stays verbatim in
+  the book's language even when "point" is in another one, because a translated quote no longer
+  proves that the page says it.
 
 Rules:
 - at most %d gaps, the most important first;
