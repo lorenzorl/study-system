@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/platform/apperror"
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/study/domain"
 )
 
@@ -21,6 +22,81 @@ func NewRangeGapRepository(db *sql.DB) *RangeGapRepository {
 // ListByExplanationID returns the gaps of one explanation.
 func (r *RangeGapRepository) ListByExplanationID(ctx context.Context, explanationID string) ([]domain.RangeGap, error) {
 	return listGaps(ctx, r.db, explanationID)
+}
+
+// FindByID returns one gap by its id, or apperror.ErrNotFound when no gap has it.
+//
+// Every column is read, evidence included: the accept route builds a card's back from
+// the quote and its page, so a projection would only move the same columns into a
+// second query.
+func (r *RangeGapRepository) FindByID(ctx context.Context, gapID string) (*domain.RangeGap, error) {
+	var gap domain.RangeGap
+	var state string
+
+	err := r.db.QueryRowContext(ctx,
+		`SELECT id, explanation_id, point, page, quote, state FROM range_gaps WHERE id = ?`,
+		gapID,
+	).Scan(&gap.ID, &gap.ExplanationID, &gap.Point, &gap.Page, &gap.Quote, &state)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, apperror.ErrNotFound
+		}
+		return nil, fmt.Errorf("query range_gap by id: %w", err)
+	}
+	gap.State = domain.RangeGapState(state)
+
+	return &gap, nil
+}
+
+// UpdateState writes one gap's state and returns the row as stored.
+//
+// The update is followed by a read inside the same transaction, because the state is
+// the only column it may touch: returning the input would hide a write that also
+// changed the evidence. A missing row is apperror.ErrNotFound, which is what makes a
+// stale id in a browser a 404 instead of a silent success.
+func (r *RangeGapRepository) UpdateState(
+	ctx context.Context,
+	gapID string,
+	state domain.RangeGapState,
+) (*domain.RangeGap, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	result, err := tx.ExecContext(ctx,
+		`UPDATE range_gaps SET state = ? WHERE id = ?`,
+		string(state), gapID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("update range_gap state: %w", err)
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("count updated range_gaps: %w", err)
+	}
+	if affected == 0 {
+		return nil, apperror.ErrNotFound
+	}
+
+	var gap domain.RangeGap
+	var stored string
+	err = tx.QueryRowContext(ctx,
+		`SELECT id, explanation_id, point, page, quote, state FROM range_gaps WHERE id = ?`,
+		gapID,
+	).Scan(&gap.ID, &gap.ExplanationID, &gap.Point, &gap.Page, &gap.Quote, &stored)
+	if err != nil {
+		return nil, fmt.Errorf("read back range_gap: %w", err)
+	}
+	gap.State = domain.RangeGapState(stored)
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit transaction: %w", err)
+	}
+
+	return &gap, nil
 }
 
 // listGaps reads the gaps of one explanation for both repositories, so the order

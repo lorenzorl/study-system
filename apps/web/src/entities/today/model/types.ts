@@ -58,7 +58,7 @@ interface TodayEntryBase {
   toPage: number
 }
 
-/** A range marked read that nobody has distilled yet: a sentence, no control. */
+/** A range marked read that nobody has distilled yet, with the way to explain it. */
 export interface ReadNotDistilledEntry extends TodayEntryBase {
   kind: "read_not_distilled"
 }

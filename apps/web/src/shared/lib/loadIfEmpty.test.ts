@@ -4,8 +4,8 @@ import { createLoadIfEmpty } from "./loadIfEmpty"
 /**
  * The load-if-empty rule (`backlog.md` D1), tested without pinia.
  *
- * The three pages that read the topics store (`TopicPage`, `ConceptPage`,
- * `FeynmanPage`) need one rule: fill the store on mount when it is empty, and do
+ * Every page that reads the topics store (`TopicPage`, `ConceptPage`, the flashcard
+ * session) needs one rule: fill the store on mount when it is empty, and do
  * nothing when something already filled it. That rule lives in
  * `shared/lib/loadIfEmpty.ts` with no store import — the caller passes "is it
  * loaded" and "load it" — precisely so it can be pinned here.

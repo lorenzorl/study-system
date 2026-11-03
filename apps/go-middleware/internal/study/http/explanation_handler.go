@@ -78,12 +78,21 @@ func explanationResponse(explanation domain.RangeExplanation) ExplainRangeRespon
 	}
 
 	for _, gap := range explanation.Gaps {
-		response.Gaps = append(response.Gaps, RangeGapResponse{
-			Point: gap.Point,
-			Page:  gap.Page,
-			Quote: gap.Quote,
-		})
+		response.Gaps = append(response.Gaps, rangeGapResponse(gap))
 	}
 
 	return response
+}
+
+// rangeGapResponse maps one stored gap to its wire shape. One function for both
+// routes: a gap created and a gap read are the same gap, and two mappings is how a
+// field arrives on one and not the other.
+func rangeGapResponse(gap domain.RangeGap) RangeGapResponse {
+	return RangeGapResponse{
+		GapID: gap.ID,
+		Point: gap.Point,
+		Page:  gap.Page,
+		Quote: gap.Quote,
+		State: string(gap.State),
+	}
 }

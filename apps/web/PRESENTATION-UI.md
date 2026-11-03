@@ -77,7 +77,8 @@ entry got a real source (`odd/tasks/backlog.md` D2).
 | Surface | Job | Lifetime |
 | --- | --- | --- |
 | Launcher (`/`) | Continue, then browse resources by topic, with a kind filter; the capture form opens from here, and `Hoy` leads to the day | Long, user-driven |
-| Day (`/today`) | What to do today: the due count, each material's read-but-undistilled range, the next pending chapter of each plan | Long, user-driven |
+| Day (`/today`) | What to do today: the due count, each material's read-but-undistilled range and its way into the explanation, the next pending chapter of each plan | Long, user-driven |
+| Range explanation (`/explain/:documentId/:from/:to`) | Explain one page range in your own words, read the gaps it left, accept one into a card or discard it | Session-length |
 | Review session (`/study/review`) | One card at a time, keyboard-first; the due queue | Session-length |
 | Deck page (`/present/:deckId`) | Present a deck (Reveal, full-bleed) | Session-length |
 | Topics (`/topics`, `/topic/:topicId`, `/topic/:topicId/concept/:conceptId`) | Browse topics and concepts; paste a note to sync flashcards | Long, user-driven |
@@ -154,7 +155,7 @@ have done structurally.
 │  Recursos › Atención                                                 │
 │                                                                      │
 │  ATENCIÓN                                    3 conceptos · 3 recursos│
-│  [ Repasar tema ]   [ Editar ]   [ Feynman ]                         │
+│  [ Repasar tema ]   [ Editar ]                                       │
 │                                                                      │
 │  CONCEPTOS                                                           │
 │  ┌────────────────────────────────┐ ┌──────────────────────────────┐ │
@@ -240,6 +241,7 @@ projection orders the entries, the page words them.
 │  DDD                                                              │
 │  páginas 24-36                                                    │
 │  Leíste estas páginas y todavía no las destilaste.                │
+│  Destilá estas páginas                                            │
 │                                                                   │
 │  Capítulo 5                                                       │
 │  páginas 100-118                                                  │
@@ -248,10 +250,11 @@ projection orders the entries, the page words them.
 ```
 
 The due row is absent at zero instead of reading `0 para repasar`, and the read
-range has **no link**: there is no explanation surface on this branch, and a link
-to a page that does not exist is worse than no link. The commit that adds that
-surface is the commit that adds the link (`TodayPage.vue` says so where the link
-would go).
+range now **has** the link it deliberately lacked: it goes to
+`/explain/:documentId/:from/:to` for that entry's document and range, so the
+reader's own words are what turn a read page into a distilled one. The link names
+the range in the URL because opening it again re-reads the stored explanation
+instead of paying for the model a second time.
 
 The `Leído` toggle is the page's only write: it PUTs the range `read`, and the
 page re-reads the projection instead of flipping the row itself, so an item leaves
@@ -268,8 +271,9 @@ with a `Reintentar`.
                       ├── ⏰ Repaso ──▶ /study/review ──Volver──▶ /study/due
                       ├── ▤ diapositivas ──▶ /present/:deckId ──Salir──▶ Launcher
                       ├── Hoy ──▶ /today ──Repasar──▶ /study/review
+                      │              └──Destilá estas páginas──▶ /explain/:documentId/:from/:to
                       └── ✎ examen ──▶ (sin ruta todavía)
-   header nav ────▶ Temas (/topics) ──▶ Tema ──▶ Concepto ──▶ Sesión / Feynman
+   header nav ────▶ Temas (/topics) ──▶ Tema ──▶ Concepto ──▶ Sesión
 ```
 
 Every kind that has a surface has exactly one target. The launcher never embeds a
@@ -302,6 +306,7 @@ resource; it only routes to one. Exams are modelled but unrouted.
 | Sync-note form | `features/sync-note` (paste markdown on the topics page) | features |
 | Resource entity | `entities/resource` (`ARCHITECTURE.md` §15) | entities |
 | Day page, its wording and its toggle | `pages/today` (`ui/TodayPage.vue`, `model/useToday.ts`) | pages |
+| Range explanation, its gaps and the card a gap becomes | `pages/explain` (`ui/ExplainPage.vue`, `model/useExplain.ts`) + `entities/explanation` | pages + entities |
 | Today projection and the reading write | `entities/today` (`model/types.ts`, `model/useTodayStore.ts`, `api/today-api.ts`) | entities |
 | Exam view | not started | pages (future) |
 
@@ -324,12 +329,21 @@ Decided 2026-10-30:
 
 Decided 2026-11-03:
 
-1. **The day has no explanation link.** A read-but-undistilled range is a sentence,
-   not an action: this branch ships no range-explanation surface, and a dead link
-   reads as a bug. The link lands with that surface, not before it.
+1. **The day's read range leads to the explanation.** Superseded: the link was
+   withheld while no explanation surface existed, and `/explain` is that surface
+   now. A link to a page that does not exist reads as a bug; a link to a page that
+   does is the whole point of naming a read-but-undistilled range.
 2. **The launcher opens the day, and the day is not the launcher.** `/` still
    answers "pick a resource"; `/today` answers "what do I do now". One control
    connects them, so neither has to absorb the other's job.
+
+Decided 2026-11-03 (later the same day):
+
+1. **The concept's Feynman page is retired, not kept beside the range page.**
+   `/feynman` was per concept and its "feedback" was a hardcoded string, so it
+   explained nothing. The range explanation is the same idea generalised from a
+   concept to the pages that state it, so the page, its route and the concept
+   page's action are gone and the explanation is the only surface for the idea.
 
 Open:
 

@@ -1,7 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { createPinia, setActivePinia } from "pinia"
 import { ApiError } from "@/shared/api/client"
-import type { PlanNextEntry, TodayResponse } from "@/entities/today"
+import type {
+  PlanNextEntry,
+  ReadNotDistilledEntry,
+  TodayResponse,
+} from "@/entities/today"
 import { useToday } from "./useToday"
 
 // The write path is the one thing about `/today` that is not a render: the toggle
@@ -58,6 +62,17 @@ function planEntry(today: ReturnType<typeof useToday>): PlanNextEntry {
   const entry = today.entries.value.find((item) => item.kind === "plan_next")
   if (!entry || entry.kind !== "plan_next") {
     throw new Error("the projection has no plan_next entry")
+  }
+  return entry
+}
+
+/** The range nobody distilled yet: the one entry that leads to the explanation. */
+function readEntry(today: ReturnType<typeof useToday>): ReadNotDistilledEntry {
+  const entry = today.entries.value.find(
+    (item) => item.kind === "read_not_distilled",
+  )
+  if (!entry || entry.kind !== "read_not_distilled") {
+    throw new Error("the projection has no read_not_distilled entry")
   }
   return entry
 }
@@ -126,6 +141,19 @@ describe("useToday", () => {
     expect(today.isRead(entry)).toBe(false)
     // Nothing to re-read: the write never landed, so the projection is unchanged.
     expect(api.fetchToday).toHaveBeenCalledTimes(1)
+  })
+
+  // S9: the read range is the one entry with somewhere to go. The route names the
+  // document and the range, so opening it again re-reads the stored explanation
+  // instead of paying for the model.
+  it("names the explanation route for a read range", async () => {
+    const today = useToday()
+    await today.load()
+
+    expect(today.explainRoute(readEntry(today))).toEqual({
+      name: "explain",
+      params: { documentId: "doc-1", from: 24, to: 36 },
+    })
   })
 
   // D6/D2: a failed load must not read as an empty day.

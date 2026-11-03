@@ -18,6 +18,10 @@ const PIXEL_TOLERANCE = 0
 /**
  * The routes the migration touches, one screenshot each
  * (odd/tasks/shadcn-migration.md S3: "un smoke por ruta: 8 páginas, render + screenshot").
+ *
+ * `/topic/:topicId/concept/:conceptId/feynman` was the seventh and it is gone: the page
+ * was retired with the range explanation (D2), and a capture of a route that no longer
+ * exists fails on the navigation before it can photograph anything.
  */
 const ROUTES = [
   { path: "/", name: "resources" },
@@ -26,7 +30,6 @@ const ROUTES = [
   { path: "/study/review", name: "review" },
   { path: "/topic/t1", name: "topic" },
   { path: "/topic/t1/concept/c1", name: "concept" },
-  { path: "/topic/t1/concept/c1/feynman", name: "feynman" },
   { path: "/present/deck-atencion", name: "presentation" },
 ] as const
 

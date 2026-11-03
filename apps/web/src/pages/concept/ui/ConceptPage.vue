@@ -8,11 +8,16 @@
     sized by utilities and a migration does not shrink a 44px target to the
     primitive's 36px.
 
-    The two actions are a different shape: each one is an icon + label + meta block
-    that fills the column, so the control *is* the frame and it stays the page's own
-    CSS, with the box restated in full so the primitive's `h-9`/`justify-center`/
+    The cards action is a different shape: it is an icon + label + meta block that
+    fills the column, so the control *is* the frame and it stays the page's own CSS,
+    with the box restated in full so the primitive's `h-9`/`justify-center`/
     `font-medium`/`nowrap` cannot reshape it (the same rule T7 applied to the entity
     cards).
+
+    There is exactly one action now. The second one was `/feynman`: a page per concept
+    whose "feedback" was a hardcoded string, so it explained nothing. It was retired
+    with the range explanation, which is the same idea generalised from a concept to
+    the pages that state it (D2), and this page no longer promises it.
   -->
   <div class="concept-view">
     <div v-if="loading || topicsPending" class="concept-view__state loading-state">
@@ -53,16 +58,6 @@
             <small class="concept-view__action-meta">
               {{ flashcardCount }}
               tarjeta{{ flashcardCount === 1 ? '' : 's' }}
-            </small>
-          </span>
-        </Button>
-
-        <Button class="concept-view__action" @click="navigateTo('feynman')">
-          <span class="concept-view__action-icon">📝</span>
-          <span class="concept-view__action-text">
-            Técnica Feynman
-            <small class="concept-view__action-meta">
-              Explícalo con tus propias palabras
             </small>
           </span>
         </Button>
@@ -130,7 +125,7 @@ function retry() {
   topicsStore.loadTopics()
 }
 
-function navigateTo(module: "flashcards" | "feynman") {
+function navigateTo(module: "flashcards") {
   router.push({
     name: module,
     params: { topicId: props.topicId, conceptId: props.conceptId },

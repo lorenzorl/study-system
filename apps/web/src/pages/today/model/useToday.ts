@@ -1,7 +1,8 @@
 import { computed } from "vue"
 import { storeToRefs } from "pinia"
+import type { RouteLocationRaw } from "vue-router"
 import { useTodayStore } from "@/entities/today"
-import type { TodayEntry } from "@/entities/today"
+import type { ReadNotDistilledEntry, TodayEntry } from "@/entities/today"
 
 /**
  * The page's own model over `useTodayStore`, the same split `PRESENTATION-UI.md`
@@ -49,6 +50,25 @@ export function useToday() {
     return `${entry.kind}:${entry.documentId}:${entry.fromPage}-${entry.toPage}`
   }
 
+  /**
+   * Where a read range goes: that range's explanation (S9).
+   *
+   * The projection names a document and a range, and the explanation route names the
+   * same two things — which is what makes the link survive a reload without paying for
+   * the model again. How those become a URL is the page's decision, so the entity is
+   * left with the wire shape only.
+   */
+  function explainRoute(entry: ReadNotDistilledEntry): RouteLocationRaw {
+    return {
+      name: "explain",
+      params: {
+        documentId: entry.documentId,
+        from: entry.fromPage,
+        to: entry.toPage,
+      },
+    }
+  }
+
   return {
     today,
     loading,
@@ -62,6 +82,7 @@ export function useToday() {
     materialName,
     rangeLabel,
     entryKey,
+    explainRoute,
     load: store.load,
     setRead: store.setRead,
     isRead: store.isRead,

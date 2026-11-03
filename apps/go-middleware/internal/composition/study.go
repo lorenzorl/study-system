@@ -41,6 +41,15 @@ type Study struct {
 	// Today is the projection over the three axes above plus the due count: what to
 	// do today, read from rows the other routes already stored.
 	Today *studyapp.TodayUseCase
+
+	// GetExplanation and SetGapState make a stored explanation usable twice:
+	// re-reading it costs nothing, and a gap can be dismissed on its own.
+	GetExplanation *studyapp.GetExplanationUseCase
+	SetGapState    *studyapp.SetGapStateUseCase
+
+	// AcceptGap turns an accepted gap into a card. It is the only writer of `carded`,
+	// because it is the only route that writes the card that state claims.
+	AcceptGap *studyapp.AcceptGapUseCase
 }
 
 // NewStudy wires the study context over an open database.
@@ -73,6 +82,7 @@ func NewStudyWithRangeExplanations(
 	cardStates := studysqlite.NewCardStateRepository(sqlDB)
 	reviewLogs := studysqlite.NewReviewLogRepository(sqlDB)
 	explanations := studysqlite.NewRangeExplanationRepository(sqlDB)
+	gaps := studysqlite.NewRangeGapRepository(sqlDB)
 	readingProgress := studysqlite.NewReadingProgressRepository(sqlDB)
 	plans := studysqlite.NewStudyPlanRepository(sqlDB)
 
@@ -81,9 +91,15 @@ func NewStudyWithRangeExplanations(
 	// uses. Building the repository twice over one *sql.DB is free and stateless.
 	documents := newDocumentTitles(NewRAG(sqlDB).DocumentRepo())
 
+	// One flashcards use case, held here and passed to two callers: the sync route and
+	// the accept route. A second instance would be a second owner of the derived
+	// obsidian_id and of the initial card state, which is exactly what the accept route
+	// must not have.
+	syncFlashcards := studyapp.NewSyncFlashcardsUseCase(concepts, flashcards, cardStates)
+
 	return &Study{
 		SyncConcept:    studyapp.NewSyncConceptUseCase(topics, concepts),
-		SyncFlashcards: studyapp.NewSyncFlashcardsUseCase(concepts, flashcards, cardStates),
+		SyncFlashcards: syncFlashcards,
 		ListConcepts:   studyapp.NewListConceptsUseCase(topics, concepts),
 		CreateTopic:    studyapp.NewCreateTopicUseCase(topics),
 		CreateConcept:  studyapp.NewCreateConceptUseCase(topics, concepts),
@@ -95,6 +111,11 @@ func NewStudyWithRangeExplanations(
 			newPageRangeText(pages),
 			newModelGapFinder(model),
 			explanations,
+		),
+		GetExplanation: studyapp.NewGetExplanationUseCase(explanations),
+		SetGapState:    studyapp.NewSetGapStateUseCase(gaps),
+		AcceptGap: studyapp.NewAcceptGapUseCase(
+			documents, gaps, explanations, plans, topics, concepts, syncFlashcards,
 		),
 		SetReadingProgress:  studyapp.NewSetReadingProgressUseCase(readingProgress),
 		ListReadingProgress: studyapp.NewListReadingProgressUseCase(readingProgress),

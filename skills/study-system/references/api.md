@@ -139,6 +139,124 @@ twice updates one card instead of adding a second. Omit it.
 - A newly written card gets an initial card state with `next_review` set to now, so
   it is due immediately.
 
+## POST /api/study/explanation
+
+Explain a page range in your own words and get back what the material states that you
+left out. The app calls the model synchronously, so expect 30 to 60 seconds.
+
+```json
+{"document_id":"0f0b6b0e-…","from_page":15,"to_page":23,"text":"El capítulo cuenta cómo un equipo construyó el modelo hablando con los expertos…"}
+```
+
+- **A range is at most 12 pages.** A chapter is answered one section at a time; a
+  wider range is refused before anything is read.
+- **At least 40 characters per page.** An explanation too thin to judge is refused,
+  not graded: a model that produces gaps from two sentences is a slot machine.
+- The explanation is stored **verbatim**. There is no comprehension score: a number
+  on an open response is noisy and invites writing for the grader.
+- At most **7 gaps**, the most important first. Each carries the page that states it
+  and a verbatim quote as evidence. A gap without a page is rejected.
+- `point` comes back in the language of your explanation; `quote` stays verbatim in
+  the book's language, because a translated quote no longer proves the page says it.
+- Every gap has a `gap_id` and a `state` (`open`), so you can discard one or accept it
+  into a card without sending the explanation back.
+
+`201` answers the stored explanation:
+
+```json
+{"explanation_id":"0e56…","document_id":"0f0b6b0e-…","from_page":15,"to_page":23,
+ "gaps":[{"gap_id":"7b1c…","point":"El prototipo ata modelo e implementación.","page":18,"quote":"That crude prototype forged the essential link.","state":"open"}]}
+```
+
+| Case | Response |
+| --- | --- |
+| body is not JSON | `400 invalid request body` |
+| `text` missing or blank | `400 text is required` |
+| the range is wider than 12 pages | `400 this range is N pages and explaining a range is limited to 12: explain one section at a time` |
+| the explanation is too short for the range | `400 this range is N pages and your explanation covers M characters: explain one section, or say more` |
+| the range has no recorded text | `400 the range has no recorded text` |
+| the document or range does not exist | `404 not found` |
+| the model fails | `500 internal server error`, and **nothing is stored** |
+
+## GET /api/study/explanations/{explanationID}
+
+Read a stored explanation with its gaps, without calling the model. The shape is the
+one `POST` answers. Reopening an explanation is re-reading your own words, and a
+reload that asked the model again would cost money, answer differently and forget the
+gaps you already discarded.
+
+| Case | Response |
+| --- | --- |
+| no explanation has that id | `404 not found` |
+
+## PUT /api/study/gaps/{gapID}/state
+
+Discard a gap, or return a discarded one to `open`.
+
+```json
+{"state":"discarded"}
+```
+
+- The two settable states are `discarded` and `open`. **`carded` is not settable
+  here**: it says a card exists, and only the route that writes the card can say
+  that.
+- Discarding is a state, not a deletion: the point, the page and the quote stay
+  readable, and that is what the answer carries.
+- `200` answers the gap as stored: `{"gap_id":"…","point":"…","page":18,"quote":"…","state":"discarded"}`.
+
+| Case | Response |
+| --- | --- |
+| body is not JSON | `400 invalid request body` |
+| `state` is not `discarded` or `open` (including `carded`) | `400 state must be discarded or open` |
+| no gap has that id | `404 not found` |
+
+## POST /api/study/gaps/{gapID}/card
+
+Accept one gap into a flashcard. You write the question, the book provides the evidence:
+this route builds the card's back as the gap's quote plus its page, so the card asserts
+nothing the page does not say.
+
+```json
+{"question":"¿Por qué el prototipo ata modelo e implementación?"}
+```
+
+- The question is **yours**, and it is edited from the gap's point before you send it.
+  A gap's point is a statement, and a card whose front asserts can only be recognised,
+  never recalled.
+- The answer is the gap's `quote` followed by `(p.<page>)`, read from what the server
+  stored. Sending a quote is not possible: the evidence never comes from the client.
+- The topic and the concept are **named by the server**: the topic is the document's
+  title, and the concept is the active plan item's title when the explained range is
+  exactly that item's range, `pp. <from>-<to>` otherwise.
+- The card is written through the existing flashcards path, so it gets the derived
+  `obsidian_id` and an initial `next_review` of now — it is due immediately.
+- Accepting the same gap twice is a `409`: the gap already carries the card. Accepting a
+  *different* gap of the same range reuses the same topic and concept, and only a
+  different question makes a different card.
+- **The card is written first and the gap's state `carded` last**, and the order is the
+  point: the state is a claim that a card exists, so a claim written first could be true
+  of nothing. A failure before the last step leaves the gap `open` and stores no lie, and
+  a retry converges because the card's identity is derived from the concept and the
+  question.
+
+`201` answers the card that was written:
+
+```json
+{"gap_id":"7b1c…","question":"¿Por qué el prototipo ata modelo e implementación?",
+ "answer":"That crude prototype forged the essential link. (p.18)",
+ "concept_id":"3d9f…","topic_id":"a1c2…","state":"carded"}
+```
+
+| Case | Response |
+| --- | --- |
+| body is not JSON | `400 invalid request body` |
+| `question` missing or blank | `400 question is required` |
+| the gap already has a card | `409 this gap already has a card` |
+| no gap has that id | `404 not found` |
+
+Nothing is written on a refusal: no gap state, no card, and not even a topic or a
+concept.
+
 ## GET /api/study/due
 
 What the user has to review today. Useful for a closing line ("quedan N para hoy"),
