@@ -121,20 +121,39 @@ the PDF adapter tests use the fixture in `internal/rag/infra/pdf/testdata`.
 - `odd/tasks/` — feature documents with their specs, tasks and logs.
   `odd/tasks/web-app.md` records this migration.
 
-## The agent skill
+## The agent skills
 
-`skills/study-system/` is a Pi skill that reads a page range of the corpus, drafts
-flashcards from it with the document and page each one came from, and writes only
-the cards you accept. It talks to a running server over HTTP, so it works from any
-machine that can reach one — including a phone running Pi in Termux.
+The repository ships a Pi package with two skills. Both talk to a running server over
+HTTP, so both work from any machine that can reach one — including a phone running Pi
+in Termux. Both begin with the same smoke test and stop if the connection is wrong.
+
+**`skills/study-plan/`** answers *what do I do now that I uploaded a book?* It inspects
+the book through the API, classifies the kind of knowledge it carries (procedural,
+conceptual, factual, argumentative, or reference-only), and returns a study plan: the
+core 20-30% by chapter and page range, the order to read it in, the retrieval test the
+type demands, the session protocol, and what to skip. When the reader has no objective
+yet it asks for one, and if there is none it offers an exercise that manufactures one
+before recommending survey mode. It writes nothing.
+
+**`skills/study-system/`** answers *make me cards from these pages*. It reads a page
+range of the corpus, drafts flashcards with the document and page each one came from,
+and writes only the cards you accept.
 
 ```bash
 pi install git:github.com/lorenzorl/study-system@v2.1.0
 ```
 
-The tag names the release the skill was written against, which is also the release
-that added the two endpoints it calls. Bump both together, or the skill will
-describe an API the server does not serve.
+The tag names the release the skills were written against. `study-plan` calls only
+endpoints that existed before it (`documents`, `pages`, `search`), so it runs against a
+`v2.1.0` server unchanged.
+
+**The tag is a snapshot of this repository, though, and `v2.1.0` predates this skill:**
+installing it yields `study-system` only. Until a tag that includes `study-plan` is cut,
+install from the branch that carries it, or from `master` once it is merged:
+
+```bash
+pi install git:github.com/lorenzorl/study-system@feat/study-plan-skill
+```
 
 The skill needs a server URL and, when the server sits behind Cloudflare Access, a
 service token. Both live in `~/.config/study-system/env` with `chmod 600`:
@@ -149,6 +168,11 @@ Its first step is a smoke test against `GET /api/rag/documents`: if that fails i
 stops and says why, instead of proposing cards against the wrong server. The skill
 reads and proposes; writing is gated on your explicit acceptance, and it never
 edits or deletes cards that already exist.
+
+`study-plan` has one known limit, recorded as `P3` in `odd/tasks/backlog.md`: the
+chapter table the ingestion builds (`document_sections`) is not exposed by any endpoint,
+so the plan works from the table of contents the book prints. A PDF whose contents are
+missing or mangled gets a plan that says so instead of inventing structure.
 
 ## The Obsidian plugin is gone
 

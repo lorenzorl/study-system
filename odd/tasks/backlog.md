@@ -1,7 +1,7 @@
 # Backlog — open findings
 
 **Single source of truth for everything deliberately not fixed yet.**
-Updated: 2026-10-17 (step 6 — HTTP upload and processing status)
+Updated: 2026-11-02 (D8/D9 from the `DDD.pdf` re-ingest; P2, the `resources` ↔ `documents` decision; P3, sections not exposed by the API; W1-W4, the coverage and plan slices)
 
 A follow-up is a finding that was real, but outside the scope of the step that
 found it. Fixing it mid-step would make that step unverifiable: you could no
@@ -613,6 +613,60 @@ asked" from "we asked and there is nothing", which no existing field could expre
 refetches once per mount rather than once per session. Intentional (a dead end is worse
 than a retry), unit-pinned, and worth revisiting if the endpoint gets flaky.
 
+### D8 — Re-uploading the same file leaves an orphan artifact on disk
+
+`UploadDocumentHandler.ServeHTTP` stores the artifact **before** it deduplicates the
+document: `store.Put` runs first, then `app.FindOrCreateDocument` looks the document
+up by `content_sha256`. The document row is correctly idempotent — the same bytes
+yield the same `documents.id` and the ingestion run resumes — but the stored copy is
+not, so every re-upload of unchanged bytes leaves a new
+`data/artifacts/<artifactID>/` that no row points at.
+
+**Measured, not theorised.** Uploading `DDD.pdf` twice on 2026-11-02 produced two
+artifact directories with byte-identical payloads (`sha256 5b4ee361…`, 4.4 MB each).
+`documents.artifact_id` named `d41b05c4…` (first upload, 22:03:28Z) while
+`0dac5de7…` (second upload, 22:06:24Z) was referenced by nothing. `documents` is the
+only table with an `artifact_id` column, so that check is exhaustive.
+
+**Why it was not fixed on sight:** the fix is a policy, not a line. Either `Put`
+becomes content-addressed (store keyed by hash, which changes the on-disk layout and
+the `meta.json` contract), or `Put` is skipped when the document already exists (which
+moves the hash computation ahead of the store and needs the upload to be readable
+twice). Both are decisions about the artifact contract, not about this defect, and
+both belong with `P1` — the manual orphan sweep that already exists on paper would
+have collected this directory for free.
+
+**How to close:** decide the artifact contract with `P1`, then either make the store
+content-addressed or skip `Put` on a known hash. A regression test can assert one
+artifact directory per content hash after two uploads of the same bytes. The directory
+`0dac5de7-3e40-4a17-88c6-58d4f8ac80c2` was deleted by hand on 2026-11-02 once
+`documents` was confirmed to be the only referrer; `data/` went 42 MB -> 37 MB with the
+document still `completed`.
+
+### D9 — A resumed ingestion keeps the timestamps of the run that failed
+
+`ingestion_jobs.updated_at` and `finished_at` are not rewritten when a resumed run
+finishes. The document's state is derived from the page outcomes and the chunk counts,
+so it reports `completed` correctly, while the job row still carries the instant the
+first attempt stopped.
+
+**Measured:** after the resumed `DDD.pdf` run, the last page was written at
+`2026-11-02T22:22:16Z` — the generated `book.md` header says the same — while
+`ingestion_jobs.finished_at` read `22:03:50Z`, and `GET /api/rag/documents/{id}/status`
+projected that stale value verbatim alongside `state: completed`. An 18-minute error in
+the only duration field the API exposes.
+
+**Why it matters beyond cosmetics:** anyone measuring ingestion time, alerting on a
+slow run, or deciding "is this still going?" from `finished_at` gets the wrong answer
+precisely in the case that took longest — the one that had to be retried. The page
+rows are correct (`job_pages.updated_at` advanced with each retry), so the evidence to
+fix it is already stored.
+
+**How to close:** have the pipeline rewrite `updated_at`/`finished_at` when the run
+terminates, whatever the attempt number, and add a test that resumes an interrupted
+job to completion and asserts `finished_at >= max(job_pages.updated_at)`. No schema
+change is needed.
+
 ## 🟡 Missing policy
 
 ### P1 — Nothing prunes stored artifacts (open, documented, awaiting a product decision)
@@ -626,6 +680,12 @@ R2, so does the remote copy.
 **Owner's call, 2026-10-30: leave it as it is for now, and keep this written down so
 the analysis does not have to be redone.** Everything below is what that analysis
 produced.
+
+**A real orphan already exists, produced by `D8`.** The upload handler stores the
+artifact before deduplicating the document, so re-uploading unchanged bytes leaves a
+directory no row points at. That is the first non-hypothetical case for a sweep, and it
+is also the reason to prefer the orphan policy over doing nothing: normal growth adds
+artifacts, but re-uploads add garbage.
 
 **The tools already exist; only the policy is missing.** Verified in the code:
 
@@ -671,6 +731,274 @@ Count and age delete good data and are the owner's call, not a default.
 high-risk item 1 — hard to detect and hard to undo. It gets an independent verifier
 and a native review on the source candidate, not the automatic path the UI changes
 of 2026-10-30 took.
+
+### P2 — `resources` and `documents` are two correct tables with no bridge between them
+
+**Open, awaiting an owner decision.** Whether a corpus document should appear in the
+launcher at all. Nothing here is a bug in either table; what is missing is the link,
+and the decision that would justify building one.
+
+**The two tables answer different questions, and that part is right.**
+
+| | `documents` (rag) | `resources` (study) |
+| --- | --- | --- |
+| Holds | the ingested bytes plus everything derived | a pointer to material that lives elsewhere |
+| Identity | `content_sha256 UNIQUE` — same bytes, same book | `source_uri UNIQUE` — same address, same material |
+| Owned by a topic | no | yes, `topic_id NOT NULL` |
+| Content columns | artifact, pages, chunks, vectors, sections | none |
+| Produced by | `POST /api/rag/documents`, `/text`, `/url`, CLI `convert` | `POST /api/sync/resource` only |
+
+Merging them is the wrong answer, and the reason is concrete rather than
+architectural: the merge fails in both directions. A `type=video` resource has no
+bytes and no hash to key on; the DDD.pdf feeds any number of topics and would have to
+pick one. One table would need two identities and two nullable halves, which is two
+tables with a `CASE` inside.
+
+**The link already existed once, and was cut deliberately.**
+
+- `study/sqlite/migrations.go:24` — migration 2, *"drop legacy
+  `resources.dify_document_id` column"*.
+- `odd/tasks/step0-restructure.md` — 44 Dify references removed, and
+  `SyncResourceUseCase` lost its `difyDocumentID` parameter. The recorded consequence:
+  *"re-syncing an existing `source_uri` is now a no-op. Previously the second sync
+  updated the stored Dify document ID. With that field gone there is nothing left to
+  update."*
+
+That removed the bridge to a **third-party** document store, not the idea of a bridge.
+When the in-house `documents` table was built afterwards, no equivalent link was ever
+created — so today the two tables are islands.
+
+**Measured state on 2026-11-02, after a full `DDD.pdf` ingest:**
+
+| Observation | Value |
+| --- | --- |
+| `documents` | 1 row, 359 pages, 1045 chunks, 1045 embeddings, 110 sections |
+| `resources` | **0 rows** |
+| `GET /api/resources` | `[]` |
+| Writers of `resources` in the app | **none** — only the Obsidian plugin's sync route |
+| What the upload created in `resources` | nothing |
+
+The only join that exists today is folklore: `resources.source_uri =
+'rag://documents/<id>'`. It is recognized in exactly one place
+(`pages/resources/model/openSource.ts`), classified as `corpus`, and
+`ResourcesPage.vue` disables the *Abrir* button for it because *"a corpus material has
+no address of its own — the corpus document is the material — so it is searched, not
+opened"*. No code creates such a row.
+
+**The three options, with their real costs.**
+
+1. **Nullable FK, one direction:** `resources.document_id TEXT NULL REFERENCES
+documents(id)`. Nullable is what makes it fit both exceptions — a video has no document,
+and a corpus with no topic has no resource at all. Requires a migration, a repo field,
+a producer in the upload path, and killing the `rag://` string convention. Buys: the
+launcher can show "Libro · DDD.pdf · 359 páginas · 17 capítulos".
+2. **Stay decoupled, say so.** No schema change. The corpus is agent-facing: its
+consumers are `/api/rag/search`, `/pages` and the skill. `section-metadata.md` S6
+already deferred corpus UI ("it adds no section filter and no UI"). Buys: nothing to
+build, but the gap has to be written down or it reads as an oversight.
+3. **Merge the tables.** Rejected above; recorded so it is not re-proposed.
+
+**The decision does not block the UI gap it exposed.** Uploading a book today closes
+the capture panel after a 46 ms `202` and then says nothing for ~18 minutes while 359
+pages convert, 1045 chunks embed and the structure stage runs. `GET
+/api/rag/documents/{id}/status` already reports `state`, `pages.pending`,
+`pages.transcribed`, `chunks` and `embedded`, so showing live progress needs no schema
+decision and no new endpoint. That work is independent of P2 and should not wait for
+it.
+
+**How to close:** the owner picks 1 or 2. Option 1 gets a migration, the nullable
+field, a producer wired into the upload response, and a test that an uploaded book
+produces exactly one resource with `document_id` set; option 2 gets one paragraph in
+`ARCHITECTURE.md` and a line in this entry saying the separation is intentional.
+
+### P3 — The chapter table is built, stored, and unreachable through the API
+
+The structure stage stores `document_sections` — 110 rows for a 359-page book, with the
+printed page ranges and provenance (`toc`, `typography`, `pattern`, `mixed`). **No
+endpoint exposes it.** `GET /api/rag/documents/{id}/status` does not report the count
+either, so the only way to see the chapters is `sqlite3` on the server's own disk.
+
+**Why it matters now:** a client that is not shelling into the server — a phone running
+Pi in Termux, which is the premise of both skills — cannot see the chapter structure at
+all. `skills/study-plan` has to reassemble the contents from the printed pages
+(`?from=1&to=6`), which works, and is strictly worse: the pages arrive with dot leaders
+and can be mangled or missing entirely, and the stored table is the validated answer
+(≥95% of chapters on the exact page, per `section-metadata.md` S4).
+
+**Measured:** `document_sections` has 110 rows for `DDD.pdf`; the printed contents is on
+pp. 3-5 and survives extraction; the plan skill's own verification needed
+`pages?from=1&to=6` plus manual reassembly to get the 17 chapter titles.
+
+**S6 of `section-metadata.md` said so deliberately** ("no section filter, no UI"), so
+this is not an oversight — it is a scope cut that the skills changed the cost of.
+
+**How to close:** add `GET /api/rag/documents/{id}/sections` returning the same shape the
+table stores: `[{id, parent_id, level, title, start_page, end_page, source}]`, ascending
+by `start_page`, empty array when a document has none (a document with no structure is
+normal, not an error). Additive and read-only, so it is not high risk; it needs a
+handler, a repository method (`section_repo.go` already reads by document), and tests for
+the empty case and for the ordering. Then `skills/study-plan` reads the chapters instead
+of guessing them, and the plan cites the book's own structure.
+
+---
+
+## 🔵 Designed, not started
+
+Decided in conversation on 2026-11-02, not built. Recorded so the design work is not
+redone, and so the order of the slices is explicit: `W1` -> `W2` -> `W3`, with `W4`
+independent of all three and — by the owner's decision on 2026-11-02 — **the chosen way
+to get cards out of a book**.
+
+**The idea they share.** The app has one axis and needs two. Today everything it tracks
+is **retrieval**: a card is attempted, graded, and FSRS schedules it; the Feynman page is
+the same idea for an explanation. Nothing tracks **coverage** — where the reader is
+inside a material. Reading is not a third retrieval modality (it cannot be graded and it
+has no `next_review`); it is position, and it belongs on the other axis.
+
+| Axis | Measures | Engine | Exists |
+| --- | --- | --- | --- |
+| Coverage | where the reader is in this material | none — it is a position | **no** |
+| Retrieval | what the reader can produce from memory | FSRS, due dates, review logs | yes |
+
+The value is in crossing them: a range read and not yet distilled is "read, not studied",
+which is an actionable state and today is invisible. It is also the honest answer to *what
+should I study now*: a datum instead of advice.
+
+### W1 — Reading coverage: a range is read or not read
+
+The unit is the **range the plan recommends**, not the page. Two states, `unread` and
+`read`. Nothing else.
+
+**Why not pages:** a page counter produces states that mean nothing to a reader. The plan
+says "read chapter 2 (pp. 24-36)"; after two pages, a page counter says `2/13` and the
+chapter is neither read nor not read. A range with two states answers the only question
+the plan asks: did this block get done.
+
+**Why not a percentage:** showing "62% of the book" as the primary number turns the app
+into a page treadmill, the completionism this project already named as an anti-pattern.
+Coverage is shown as ranges the reader can act on, never as a progress bar.
+
+**Shape:** a `reading_progress` row per `(document_id, from_page, to_page)` with the two
+states and a timestamp. Keyed to page ranges and **not** to `document_sections` ids,
+because sections are derived data rebuilt on reprocess (and unexposed by the API, `P3`).
+Page ranges are stable across a re-ingest of the same bytes, and survive a document whose
+structure extraction failed.
+
+**Attached to `documents`, not to `resources`**, so this slice does not force the `P2`
+decision.
+
+**Marking a range read is a claim, not a proof.** See `W4` for why a gate here would be
+the wrong instrument.
+
+**Risk:** additive (a new table, no change to existing rows). Not high risk.
+
+### W2 — A persisted study plan, produced by the skill and stored by the app
+
+Today the plan exists as text from `skills/study-plan` and is lost. Persisting it is what
+turns "you have a book" into "today you do this".
+
+**Three constraints, each of which decides whether this works:**
+
+1. **Items are page ranges, not section ids.** Same reason as `W1`: sections are derived
+   and unstable, ranges are stable.
+2. **The agent produces the plan; the app stores and projects it.** The classification and
+   the core 20-30% are judgment, and that judgment lives in the skill. Re-deriving it in
+   the app would be two implementations of one decision, and they will disagree.
+3. **A plan is partial and disposable.** The skill recommends skipping chapters; a plan
+   forced to cover every page fights its own recommendation. A plan that cannot be thrown
+   away becomes a moral debt, and the reader abandons both the plan and the app.
+
+**Shape:** `POST /api/study/plan` (from the skill), a `study_plans` table plus items with
+their state, and a read endpoint. The plan is **not** the progress metric: it is a queue of
+candidate next actions whose priority is re-derived from reality (due cards, ranges read
+and not distilled, last failures).
+
+**Risk:** high-risk item 1 — it adds tables and the user's own written data. It gets a
+migration, an independent verifier, and a native review on the source candidate. This is
+the slice where the sequence `W1` -> `W2` -> `W3` matters least: W2 could ship on its own
+once W1 exists, but not before, because a plan with nothing to mark is a schedule with no
+state.
+
+### W3 — The projection: what to do today
+
+The slice where the two axes meet, and the one that answers the question the product
+started from.
+
+**Shape:** one projection over existing data — due cards, ranges read and not yet
+distilled into cards, and the next item of the plan for each material. No new tables; it
+reads `W1`, `W2` and `/api/study/due`.
+
+**The rule that keeps it honest:** every entry is an action, not a statistic. "Chapter 6
+is read with 0 cards" is an entry; "you are 41% through Part II" is not.
+
+**Risk:** additive and read-only. Not high risk.
+
+### W4 — Explain a range, and turn the gaps into cards
+
+**Chosen path (owner decision, 2026-11-02).** Of the two ways to get cards out of a book,
+this is the one to build: the reader explains the range in their own words, and the app
+compares that against the text to find what the explanation left out.
+
+**The two routes, separated so they are never confused again:**
+
+| Route | Input | Produces | Exists |
+| --- | --- | --- | --- |
+| **A — the agent drafts** | the range's pages | cards with a citation, accepted one by one | yes: `skills/study-system` |
+| **B — the explanation reveals gaps** | the pages **and** the reader's own words | the gaps, then cards for the gaps | this entry |
+
+Reading alone produces no cards, in either route. That is exactly why `W1`'s "read with 0
+cards" is an actionable state: it says which route to run.
+
+**Sequencing: `W4` does not depend on `W1`.** The explanation is its own evidence of
+having read, so nothing has to be marked first. What it needs is a range, which the reader
+names or `W2` supplies — which makes it the only slice in this set that can ship on its
+own.
+
+**The mechanism, precisely.** For one range: take the stored page text, take the
+explanation, and ask the model for what the material states that the explanation does not
+cover. Each gap carries three things — the point missed, the page that states it, and a
+short quote as evidence. **A gap without a page is rejected**, the same rule the card
+skill already enforces.
+
+**What is stored, and what is deliberately not:**
+
+- the explanation, verbatim — the reader's own words, and re-reading them two weeks later
+  is itself a retrieval test;
+- the gap list with its page references and its state (`open`, `discarded`, `carded`);
+- **no comprehension score.** A number on an open response is noisy, not actionable, and
+  invites writing for the grader. The longitudinal number already exists: the cards the
+  gaps produced, and the share of reviews passed over weeks.
+
+**Two bounds that decide whether it is usable:**
+
+1. **The gap list is capped and ranked** (5 to 7 items). Against a 28-page chapter and a
+   short explanation, an uncapped diff lists everything, which is the same as listing
+   nothing.
+2. **An explanation too short to judge is refused, not graded.** "This range is broad and
+   your explanation covers one idea: explain one section at a time, or say more." A model
+   that produces 40 gaps from two sentences is a slot machine, not a study tool.
+
+**The fork, with a recommendation.** Who calls the model:
+
+- **the server — recommended.** `POST /api/study/explanation` stores the explanation and
+  returns the gaps. The app owns the feature, it works with no agent present, and the call
+  is bounded to one range. Ingestion already calls the same OpenRouter client, and the
+  background processor is the precedent for not blocking a request on model work.
+- the skill. Reuses the "propose, then the human decides" pattern with no new model
+  plumbing, but the web UI cannot do it alone and the gaps still need a home.
+
+**Shape:** `range_explanations` (`document_id`, `from_page`, `to_page`, text, created_at)
+and `range_gaps` (explanation id, point, page, quote, state). Accepting a gap posts to the
+existing `POST /api/sync/flashcards`, so the accept-or-discard gate does not change: no
+card is ever written without the reader's word.
+
+**This also fixes the Feynman placeholder** instead of adding a second explanation surface
+beside it: generalizing Feynman from *concept* to *range* is the same feature, and
+`FeynmanPage.vue:146` already promises "gap detection" and returns hardcoded text.
+
+**Risk:** high-risk item 1 for the two new tables that hold the reader's own text, plus a
+model call over it. It gets a migration, an independent verifier and a native review on
+the source candidate — the same bar as `W2`.
 
 ---
 
