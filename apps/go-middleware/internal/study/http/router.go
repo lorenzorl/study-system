@@ -23,6 +23,7 @@ func NewRouter(
 	listResources ListResourcesUseCase,
 	getDueCards GetDueCardsUseCase,
 	submitReview SubmitReviewUseCase,
+	explainRange ExplainRangeUseCase,
 ) http.Handler {
 	mux := http.NewServeMux()
 
@@ -35,6 +36,7 @@ func NewRouter(
 	mux.Handle("GET /api/resources", NewListResourcesHandler(listResources))
 	mux.Handle("GET /api/study/due", NewDueCardsHandler(getDueCards))
 	mux.Handle("POST /api/study/review", NewReviewHandler(submitReview))
+	mux.Handle("POST /api/study/explanation", NewExplanationHandler(explainRange))
 
 	return mux
 }

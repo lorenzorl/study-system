@@ -1,9 +1,10 @@
 // Package llm is the OpenRouter chat-completions client used by the ingestion
-// pipeline.
+// pipeline and by the range-explanation endpoint.
 //
 // It knows how to reach one endpoint and nothing about what the text means: the
 // prompt and the page model live in the context that needs them, and this package
-// satisfies rag/domain.PageTranscriber implicitly.
+// satisfies rag/domain.PageTranscriber implicitly. Its two entry points differ in
+// what they carry — an image, or only text — and share one retry policy.
 package llm
 
 import (
@@ -146,6 +147,38 @@ func (c *Client) Transcribe(ctx context.Context, prompt string, imagePNG []byte)
 		return "", fmt.Errorf("encode request: %w", err)
 	}
 
+	return c.send(ctx, payload, "transcribe page")
+}
+
+// Complete sends one text prompt and returns the model's answer.
+//
+// Transcribe always carries an image because it reads a page. A question about
+// text the corpus already holds has no image, and sending a blank one would be a
+// lie about what the model is being shown, so this is a separate entry point
+// instead of a widened Transcribe. Both share the timeout, the retry policy and
+// the error wording through send.
+func (c *Client) Complete(ctx context.Context, prompt string) (string, error) {
+	if strings.TrimSpace(prompt) == "" {
+		return "", fmt.Errorf("prompt is empty: %w", apperror.ErrInvalidInput)
+	}
+
+	payload, err := json.Marshal(chatRequest{
+		Model:    c.model,
+		Messages: []chatMessage{{Role: "user", Content: []contentPart{{Type: "text", Text: prompt}}}},
+	})
+	if err != nil {
+		return "", fmt.Errorf("encode request: %w", err)
+	}
+
+	return c.send(ctx, payload, "complete prompt")
+}
+
+// send performs one encoded payload with the retry policy every chat call shares.
+//
+// action names the call in the messages it returns, so a run that gives up says
+// which one did. Keeping the loop here is what stops a second entry point from
+// growing its own attempt budget.
+func (c *Client) send(ctx context.Context, payload []byte, action string) (string, error) {
 	var lastErr error
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		content, retryable, attemptErr := c.attempt(ctx, payload)
@@ -161,7 +194,7 @@ func (c *Client) Transcribe(ctx context.Context, prompt string, imagePNG []byte)
 		// The context is checked before waiting so a cancelled run reports the
 		// cancellation rather than "gave up after 3 attempts".
 		if ctx.Err() != nil {
-			return "", fmt.Errorf("transcribe page: %w", ctx.Err())
+			return "", fmt.Errorf("%s: %w", action, ctx.Err())
 		}
 		if attempt == maxAttempts {
 			break
@@ -171,7 +204,7 @@ func (c *Client) Transcribe(ctx context.Context, prompt string, imagePNG []byte)
 		}
 	}
 
-	return "", fmt.Errorf("transcribe page: gave up after %d attempts: %w", maxAttempts, lastErr)
+	return "", fmt.Errorf("%s: gave up after %d attempts: %w", action, maxAttempts, lastErr)
 }
 
 // attempt performs one request. It reports whether the failure is worth

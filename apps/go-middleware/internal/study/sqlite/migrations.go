@@ -25,6 +25,11 @@ func Migrations() []db.Migration {
 			Description: "drop legacy resources.dify_document_id column",
 			Up:          dropLegacyDifyColumn,
 		},
+		{
+			Version:     3,
+			Description: "range_explanations and range_gaps: the reader's explanation of a page range and what it left out",
+			Up:          migrateRangeExplanations,
+		},
 	}
 }
 
@@ -110,6 +115,45 @@ func dropLegacyDifyColumn(ctx context.Context, tx *sql.Tx) error {
 
 	if _, err := tx.ExecContext(ctx, `ALTER TABLE resources DROP COLUMN dify_document_id`); err != nil {
 		return fmt.Errorf("drop %s.%s: %w", table, column, err)
+	}
+	return nil
+}
+
+// migrateRangeExplanations adds the two tables behind POST /api/study/explanation.
+//
+// document_id is not a foreign key. The documents it names belong to the
+// ingestion context: both contexts share one database file, but neither owns the
+// other's schema, and a cross-context reference would couple a study migration to
+// a rag table's shape.
+//
+// range_gaps.state is TEXT with no CHECK, following ingestion_jobs.status: the
+// vocabulary (open, carded, and whatever the next slice adds) grows, and a stored
+// row must not need a migration to gain a word.
+func migrateRangeExplanations(ctx context.Context, tx *sql.Tx) error {
+	schema := `
+	CREATE TABLE IF NOT EXISTS range_explanations (
+		id TEXT PRIMARY KEY,
+		document_id TEXT NOT NULL,
+		from_page INTEGER NOT NULL,
+		to_page INTEGER NOT NULL,
+		text TEXT NOT NULL,
+		created_at TEXT NOT NULL
+	);
+
+	CREATE TABLE IF NOT EXISTS range_gaps (
+		id TEXT PRIMARY KEY,
+		explanation_id TEXT NOT NULL REFERENCES range_explanations(id),
+		point TEXT NOT NULL,
+		page INTEGER NOT NULL,
+		quote TEXT NOT NULL,
+		state TEXT NOT NULL
+	);
+
+	CREATE INDEX IF NOT EXISTS range_gaps_explanation_id ON range_gaps(explanation_id);
+	`
+
+	if _, err := tx.ExecContext(ctx, schema); err != nil {
+		return fmt.Errorf("create range explanation schema: %w", err)
 	}
 	return nil
 }
