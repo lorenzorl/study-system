@@ -184,6 +184,8 @@ will be lexical-only because it cannot reach the embedding API.
 | `POST` | `/api/study/explanation` | Store the reader's explanation of a page range and the gaps it left out |
 | `PUT` | `/api/study/reading` | Mark one page range `read` or `unread`; the same range is one row |
 | `GET` | `/api/study/reading` | The ranges marked on one document (`document_id`), in page order |
+| `POST` | `/api/study/plan` | Store the plan the agent produced for a document; it supersedes the previous active plan |
+| `GET` | `/api/study/plan` | The document's active plan (`document_id`) with each item's derived `read` |
 | `GET` | `/api/rag/search` | Ranked chunks for a query (`q`, `limit`, and an optional `document_id` that scopes it to one document); no key required |
 | `GET` | `/api/rag/documents` | The corpus: `id`, `title`, `created_at` and the page and chunk counts of each document |
 | `POST` | `/api/rag/documents` | Upload a PDF and queue background processing; `multipart/form-data` with one `file` part |

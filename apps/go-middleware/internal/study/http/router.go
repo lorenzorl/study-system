@@ -23,6 +23,8 @@ type UseCases struct {
 	ExplainRange        ExplainRangeUseCase
 	SetReadingProgress  SetReadingProgressUseCase
 	ListReadingProgress ListReadingProgressUseCase
+	SavePlan            SavePlanUseCase
+	GetPlan             GetPlanUseCase
 }
 
 // NewRouter builds the study context's HTTP handler.
@@ -53,6 +55,13 @@ func NewRouter(useCases UseCases) http.Handler {
 	// edit, which is why it is not under /api/rag/.
 	mux.Handle("PUT /api/study/reading", NewSetReadingProgressHandler(useCases.SetReadingProgress))
 	mux.Handle("GET /api/study/reading", NewListReadingProgressHandler(useCases.ListReadingProgress))
+
+	// The plan: the agent produces it, the app stores and projects it. One route to
+	// write it and one to read the active plan of a document; there is no route to
+	// edit an item, because a plan is partial and disposable and a new POST replaces
+	// it instead.
+	mux.Handle("POST /api/study/plan", NewSavePlanHandler(useCases.SavePlan))
+	mux.Handle("GET /api/study/plan", NewGetPlanHandler(useCases.GetPlan))
 
 	return mux
 }

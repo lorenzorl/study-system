@@ -1,5 +1,7 @@
 package http_test
 
+// The coverage routes through the whole study mux.
+
 import (
 	"context"
 	"encoding/json"

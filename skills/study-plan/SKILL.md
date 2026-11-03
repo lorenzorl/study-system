@@ -155,10 +155,48 @@ Read `references/plan.md` and fill its template. The plan must state:
 
 Present it in the reader's language. Every page range comes from the book.
 
-## 7. Hand off
+## 7. Store the plan — the one write this skill makes
 
-The plan is where this skill stops. The cards are `study-system`'s job: one chapter at a
-time, after the reader picks the first chapter from this plan.
+The plan stops being text here. Post it so the app can project it, and so the reader
+can mark a range read from it:
+
+```bash
+curl -sS -X POST \
+  -H "CF-Access-Client-Id: $STUDY_ACCESS_CLIENT_ID" \
+  -H "CF-Access-Client-Secret: $STUDY_ACCESS_CLIENT_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{
+        "document_id": "<the id from step 2>",
+        "reading_mode": "linear",
+        "objective": "<the decision the reader named, verbatim>",
+        "source": "sections",
+        "items": [
+          {"title": "Chapter 2: Ubiquitous Language", "from_page": 24, "to_page": 36,
+           "note": "first: it names the vocabulary every later chapter uses"}
+        ]
+      }' \
+  "$STUDY_BASE_URL/api/study/plan"
+```
+
+- `reading_mode` is the mode you chose in step 6, one of `linear`, `project`, `survey`,
+  `consult`.
+- `source` is the skeleton the ranges came from: `sections`, `printed-contents`, or
+  `none`. The app stores it so a reader can tell later what the pages were derived from.
+- **One item per range you recommend, in the order you recommend reading it.** The
+  server keeps that order and numbers the items; do not send a position.
+- **Only ranges you would stand behind.** A chapter you told the reader to skip is not an
+  item. A plan is partial by design and does not have to cover the book.
+- Post **after** the reader chose the first chapter. Posting before that stores a plan
+  nobody accepted.
+- `201` means it landed, and it supersedes the previous plan for this book: the old plan
+  is kept, not deleted. `400` answers a sentence naming the field or the item to fix —
+  fix it and post again; nothing was stored. `404` means that document id is not in the
+  corpus, so go back to step 2 rather than inventing one.
+
+## 8. Hand off
+
+The plan is stored and where this skill stops. The cards are `study-system`'s job: one
+chapter at a time, after the reader picks the first chapter from this plan.
 
 ## Rules that are not negotiable
 
@@ -169,8 +207,8 @@ time, after the reader picks the first chapter from this plan.
 - **Never invent the reader's objective or their project.** Ask, then wait.
 - **The plan is a proposal.** The reader chooses the first chapter; do not start one
   because it seems obvious.
-- **Read only.** This skill writes nothing to the server: no cards, no topics, no
-  concepts. Proposing cards here would skip the "no acceptance, no write" rule that
-  `study-system` enforces.
+- **This skill writes the plan and nothing else.** No cards, no topics, no concepts:
+  posting a card here would skip the "no acceptance, no write" rule that
+  `study-system` enforces. The plan is the one write, and it carries no card.
 - **Do not recommend studying everything.** A book that deserves 30 minutes of
   extraction and nothing more is a normal outcome, and saying so is part of the answer.

@@ -188,3 +188,46 @@ type ReadingProgressResponse struct {
 	CreatedAt  string `json:"created_at"`
 	UpdatedAt  string `json:"updated_at"`
 }
+
+// SavePlanRequest is the JSON body for POST /api/study/plan.
+type SavePlanRequest struct {
+	DocumentID  string            `json:"document_id"`
+	ReadingMode string            `json:"reading_mode"`
+	Objective   string            `json:"objective"`
+	Source      string            `json:"source"`
+	Items       []PlanItemRequest `json:"items"`
+}
+
+// PlanItemRequest is one recommended range in the plan the agent produced.
+type PlanItemRequest struct {
+	Title    string `json:"title"`
+	FromPage int    `json:"from_page"`
+	ToPage   int    `json:"to_page"`
+	Note     string `json:"note"`
+	State    string `json:"state"`
+}
+
+// StudyPlanResponse is a stored plan as a caller reads it.
+//
+// Read is derived, not stored: it says whether coverage marked this item's exact
+// range, so the plan and the coverage axis cannot disagree.
+type StudyPlanResponse struct {
+	PlanID      string             `json:"plan_id"`
+	DocumentID  string             `json:"document_id"`
+	ReadingMode string             `json:"reading_mode"`
+	Objective   string             `json:"objective"`
+	Source      string             `json:"source"`
+	CreatedAt   string             `json:"created_at"`
+	Items       []PlanItemResponse `json:"items"`
+}
+
+// PlanItemResponse is one recommended range with its derived read flag.
+type PlanItemResponse struct {
+	Position int    `json:"position"`
+	Title    string `json:"title"`
+	FromPage int    `json:"from_page"`
+	ToPage   int    `json:"to_page"`
+	Note     string `json:"note"`
+	State    string `json:"state"`
+	Read     bool   `json:"read"`
+}

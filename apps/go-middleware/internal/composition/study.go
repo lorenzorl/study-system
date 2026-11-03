@@ -32,6 +32,11 @@ type Study struct {
 	// reader is inside a material, which the plan turns into the next action.
 	SetReadingProgress  *studyapp.SetReadingProgressUseCase
 	ListReadingProgress *studyapp.ListReadingProgressUseCase
+
+	// SavePlan and GetPlan are the plan the agent produces: the app stores it and
+	// projects it, and never classifies a book itself.
+	SavePlan *studyapp.SavePlanUseCase
+	GetPlan  *studyapp.GetPlanUseCase
 }
 
 // NewStudy wires the study context over an open database.
@@ -65,6 +70,12 @@ func NewStudyWithRangeExplanations(
 	reviewLogs := studysqlite.NewReviewLogRepository(sqlDB)
 	explanations := studysqlite.NewRangeExplanationRepository(sqlDB)
 	readingProgress := studysqlite.NewReadingProgressRepository(sqlDB)
+	plans := studysqlite.NewStudyPlanRepository(sqlDB)
+
+	// The plan names a material, so it needs the ingestion context's catalogue: the
+	// adapter keeps study from importing rag, the same shape the page-text adapter
+	// uses. Building the repository twice over one *sql.DB is free and stateless.
+	documents := newDocumentTitles(NewRAG(sqlDB).DocumentRepo())
 
 	return &Study{
 		SyncConcept:    studyapp.NewSyncConceptUseCase(topics, concepts),
@@ -83,5 +94,7 @@ func NewStudyWithRangeExplanations(
 		),
 		SetReadingProgress:  studyapp.NewSetReadingProgressUseCase(readingProgress),
 		ListReadingProgress: studyapp.NewListReadingProgressUseCase(readingProgress),
+		SavePlan:            studyapp.NewSavePlanUseCase(documents, plans, readingProgress),
+		GetPlan:             studyapp.NewGetPlanUseCase(plans, readingProgress),
 	}
 }

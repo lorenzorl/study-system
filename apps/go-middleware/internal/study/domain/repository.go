@@ -90,3 +90,16 @@ type ReadingProgressRepository interface {
 	// when nothing was marked.
 	ListByDocument(ctx context.Context, documentID string) ([]ReadingProgress, error)
 }
+
+// StudyPlanRepository stores the plan the agent produced and reads back the one
+// active plan of a document.
+type StudyPlanRepository interface {
+	// CreateActive writes the plan with its items in one transaction and marks the
+	// document's previous active plan superseded, keeping its rows. Two live plans
+	// for one book would make "the next item" ambiguous.
+	CreateActive(ctx context.Context, plan *StudyPlan) (*StudyPlan, error)
+
+	// FindActiveByDocument returns the document's active plan with its items in
+	// position order, or apperror.ErrNotFound when nobody planned it.
+	FindActiveByDocument(ctx context.Context, documentID string) (*StudyPlan, error)
+}

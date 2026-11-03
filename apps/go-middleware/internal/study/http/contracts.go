@@ -87,3 +87,18 @@ type ListReadingProgressUseCase interface {
 	// has none.
 	Execute(ctx context.Context, documentID string) ([]domain.ReadingProgress, error)
 }
+
+// SavePlanUseCase stores the plan the agent produced for one document.
+type SavePlanUseCase interface {
+	// Execute supersedes the document's active plan and returns the stored one. A
+	// malformed plan is apperror.ErrInvalidInput and an unknown document is
+	// apperror.ErrNotFound; nothing is stored in either case.
+	Execute(ctx context.Context, input app.SavePlanInput) (app.StudyPlanView, error)
+}
+
+// GetPlanUseCase reads the active plan of one document.
+type GetPlanUseCase interface {
+	// Execute returns the active plan with each item's derived read flag, or
+	// apperror.ErrNotFound when the document has no active plan.
+	Execute(ctx context.Context, documentID string) (app.StudyPlanView, error)
+}

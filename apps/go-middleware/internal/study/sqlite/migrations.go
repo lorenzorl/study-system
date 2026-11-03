@@ -35,6 +35,11 @@ func Migrations() []db.Migration {
 			Description: "reading_progress: one row per page range, read or unread",
 			Up:          migrateReadingProgress,
 		},
+		{
+			Version:     5,
+			Description: "study_plans and study_plan_items: the plan the agent produced and the ranges it recommends",
+			Up:          migrateStudyPlan,
+		},
 	}
 }
 
@@ -194,6 +199,50 @@ func migrateReadingProgress(ctx context.Context, tx *sql.Tx) error {
 
 	if _, err := tx.ExecContext(ctx, schema); err != nil {
 		return fmt.Errorf("create reading progress schema: %w", err)
+	}
+
+	return nil
+}
+
+// migrateStudyPlan creates the plan the agent produces and the app stores.
+//
+// Two tables and not one: a plan is a decision about a book, while an item is one
+// recommended range with its own state, and the reader acts on items. `read` is not
+// a column here — coverage lives in reading_progress and is derived for each item, so
+// the same fact has one owner.
+//
+// superseded_at is a timestamp and not a deletion, so a plan the reader threw away
+// keeps what it said (backlog, W2: a plan is partial and disposable).
+func migrateStudyPlan(ctx context.Context, tx *sql.Tx) error {
+	schema := `
+	CREATE TABLE IF NOT EXISTS study_plans (
+		id TEXT PRIMARY KEY,
+		document_id TEXT NOT NULL,
+		reading_mode TEXT NOT NULL,
+		objective TEXT NOT NULL DEFAULT '',
+		source TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL,
+		superseded_at TEXT
+	);
+
+	CREATE INDEX IF NOT EXISTS study_plans_active
+		ON study_plans(document_id, superseded_at);
+
+	CREATE TABLE IF NOT EXISTS study_plan_items (
+		id TEXT PRIMARY KEY,
+		plan_id TEXT NOT NULL REFERENCES study_plans(id) ON DELETE CASCADE,
+		position INTEGER NOT NULL CHECK (position >= 1),
+		title TEXT NOT NULL,
+		from_page INTEGER NOT NULL CHECK (from_page >= 1),
+		to_page INTEGER NOT NULL CHECK (to_page >= from_page),
+		note TEXT NOT NULL DEFAULT '',
+		state TEXT NOT NULL,
+		UNIQUE (plan_id, position)
+	);
+	`
+
+	if _, err := tx.ExecContext(ctx, schema); err != nil {
+		return fmt.Errorf("create study plan schema: %w", err)
 	}
 
 	return nil

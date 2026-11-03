@@ -191,3 +191,54 @@ The ranges marked on one document, in page order, `[]` when none is marked.
 | Case | Response |
 | --- | --- |
 | `document_id` missing or blank | `400 document_id is required` |
+
+## POST /api/study/plan
+
+Store the plan you recommended. This is the one write the planning skill makes: the
+app stores the plan and projects it, and never classifies a book itself.
+
+```json
+{"document_id":"0f0b6b0e-…","reading_mode":"linear","objective":"decidir qué agregado va en qué contexto","source":"sections","items":[{"title":"Capítulo 2","from_page":24,"to_page":36,"note":"primero: nombra el vocabulario"}]}
+```
+
+- `reading_mode` is `linear`, `project`, `survey` or `consult`.
+- `source` is `sections`, `printed-contents` or `none`: the skeleton the ranges came
+  from.
+- `items` is in the order you recommend reading; the server keeps that order and
+  numbers the items 1..N. A position you send is ignored.
+- `state` is `pending` or `skipped`; omit it and the item is `pending`.
+- A stored plan **supersedes** the document's previous active plan. The old plan and
+  its items are kept, so throwing a plan away never loses what it said.
+- `read` in the answer is derived from coverage for the exact range; it is never
+  stored on the item.
+
+`201` answers the stored plan:
+
+```json
+{"plan_id":"3f1c…","document_id":"0f0b6b0e-…","reading_mode":"linear","objective":"decidir qué agregado va en qué contexto","source":"sections","created_at":"2026-11-03T09:00:00Z","items":[{"position":1,"title":"Capítulo 2","from_page":24,"to_page":36,"note":"primero: nombra el vocabulario","state":"pending","read":false}]}
+```
+
+| Case | Response |
+| --- | --- |
+| body is not JSON | `400 invalid request body` |
+| `document_id` missing or blank | `400 document_id is required` |
+| `reading_mode` missing or unknown | `400 reading_mode must be linear, project, survey or consult` |
+| `items` missing or empty | `400 items is required` |
+| an item has no title | `400 item 1: title is required` |
+| an item starts below page 1 | `400 item 1: from_page must be at least 1` |
+| an item's range is backwards | `400 item 1: to_page must not be before from_page` |
+| an item's state is neither `pending` nor `skipped` | `400 item 1: state must be pending or skipped` |
+| two items name the same range | `400 duplicate range 24-36` |
+| the document is not in the corpus | `404 not found` |
+
+Nothing is stored on a refusal, so a corrected plan starts from a clean slate.
+
+## GET /api/study/plan?document_id=…
+
+The document's active plan, with each item's derived `read` flag. The shape is the
+one `POST` answers.
+
+| Case | Response |
+| --- | --- |
+| `document_id` missing or blank | `400 document_id is required` |
+| the document has no active plan | `404 not found` |
