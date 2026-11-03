@@ -253,12 +253,14 @@ gaps and every one was dropped". After this fix the common case returns real gap
 ambiguity is rare rather than permanent, but a `dropped` count in the response is what would
 close it. Recorded here instead of guessed at.
 
-**L9 — commit slice boundary.** Two commits on `feat/range-explanations`, not pushed:
+**L9 — commit slice boundary.** Four commits on `feat/range-explanations`, not pushed:
 
-| Commit | Unit | Authored lines |
+| Commit | Unit | Insertions |
 | --- | --- | --- |
-| `fix(db)` | the migration runner, by presence instead of maximum | 91 |
-| `feat(study)` | the endpoint, its tables, the four live-verification fixes, the tests and this document | 2895 |
+| `fix(db)` | the migration runner, by presence instead of maximum | 81 |
+| `feat(study)` | the endpoint, its tables, the four live-verification fixes, the tests and this document | 2899 |
+| `test(db)` | the probes an independent verification asked for: cross-context, presence as a property, byte-identical rollback, legacy schema_version | 199 |
+| `docs(db)` | the three comments that still taught the removed rule, and the authoring rule the fix implies | 22 |
 
 The second is far past the ~400-line review unit. It stays one commit on purpose: the
 feature, the adapter hardening and the invariants live in the same files, and splitting them

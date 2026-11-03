@@ -11,13 +11,15 @@ import (
 // Migration versions this context owns.
 //
 // platform/db keeps ONE schema_version table for the whole database, keyed by
-// version alone, and its runner treats every migration at or below
-// max(version) as already applied. Two contexts sharing one ascending sequence
-// therefore break in a way that is easy to miss: a call that receives only one
-// context's list does not fail, it silently skips the other context's earlier
-// versions. The study context owns 1-2, so this context takes 100-199, which
-// makes cross-context collisions impossible and makes a single-context call
-// harmless.
+// version alone, and its runner applies a migration when its version is not
+// recorded. Two contexts sharing one ascending sequence would still share that
+// table, so each context owns a disjoint block: the study context takes 1-99 and
+// this one 100-199. The blocks make a cross-context collision impossible and make
+// a single-context call harmless.
+//
+// A block is not an ordering. Ingestion reached 103 long before study gained its
+// version 3, and presence is what lets that low version still apply — see
+// db.Migrate and TestMigrate_AppliesTheLowBlockAfterTheHighBlock.
 //
 // Never renumber an applied migration: databases in the wild have run it.
 const (

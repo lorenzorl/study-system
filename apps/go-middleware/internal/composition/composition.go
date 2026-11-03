@@ -38,18 +38,17 @@ import (
 //
 // This is the single definition of what this database's schema is. It matters
 // more than it looks: platform/db keeps ONE schema_version table for the whole
-// file and treats every migration at or below max(version) as applied, so a
-// caller that passes only one context's list does not fail — it silently skips
-// the other context's earlier versions. Each context therefore owns a disjoint
-// version block (study 1-2, rag 100-199), and this function is what puts both
-// blocks in one run.
+// file and applies a migration when its version is not recorded, so each context
+// owns a disjoint version block (study 1-99, rag 100-199). Passing one context's
+// list alone is harmless for ordering and still not enough — it applies only that
+// block, which is why this function puts both in one run.
 func Migrations() []db.Migration {
 	return slices.Concat(studysqlite.Migrations(), ragsqlite.Migrations())
 }
 
 // OpenDatabase opens the database read-write and applies every pending
 // migration. It is what a process that may write uses, and it is safe to call on
-// every boot: migrations at or below the recorded version are skipped.
+// every boot: a migration whose version is already recorded is skipped.
 //
 // The error messages are the ones the commands printed before this package
 // existed, so a failure reads the same from either binary.

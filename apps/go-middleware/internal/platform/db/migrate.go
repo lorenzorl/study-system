@@ -40,6 +40,14 @@ type Migration struct {
 // after both were applied. Calling it on every boot is safe. Adopting an existing
 // database is supported as long as the first migration is written to tolerate an
 // already-present schema (use CREATE TABLE IF NOT EXISTS in a baseline).
+//
+// The rule that follows for authors: a migration may run against a database whose
+// tables already exist. An adopted database, or one whose bookkeeping was lost,
+// records nothing and therefore re-runs every version in the list. Guard the
+// change on the schema (IF NOT EXISTS, a column check) or accept that it will run
+// twice. The rule this replaced — skip everything at or below the recorded
+// maximum — protected that class by accident, and is exactly what made a version
+// below another context's block unreachable.
 func Migrate(ctx context.Context, sqlDB *sql.DB, migrations []Migration) error {
 	ordered, err := validate(migrations)
 	if err != nil {
