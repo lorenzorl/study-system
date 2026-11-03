@@ -123,10 +123,10 @@ instead of calling the model again.
 
 | Id | Slices | Spec | Route | Commit |
 | --- | --- | --- | --- | --- |
-| U1 | gap id + state on the wire, `GET /explanations/{id}`, state route | S2, S7 | inline (small) | `feat(study): make a stored gap addressable` |
-| U2 | the explanation page: form, refusals, gaps list, stored reload | S4, S5, S8, S9 | writer | `feat(web): explain a range and read the gaps` |
-| U3 | accept → card: topic/concept derivation, one transaction, gap state | S6, S10 | writer | `feat(study): accept a gap into a card` |
-| U4 | Feynman retirement (`/feynman` → the range surface, placeholder and its hardcoded test gone) and the link from `/today` | S9 | inline | `feat(web): retire the Feynman placeholder` |
+| U1 | gap id + state on the wire, `GET /explanations/{id}`, state route | S2, S7 | inline (small) | `feat(study): make a stored gap addressable` — `6126ab0` |
+| U2 | the explanation page: form, refusals, gaps list, stored reload | S4, S5, S8, S9 | writer | `feat(web): explain a range and read the gaps` — `0d883a5` |
+| U3 | accept → card: topic/concept derivation, write order, gap state | S6, S10 | writer | `feat(study): accept a gap into a card` — `2e71e3a`, closed by `a1c0026` |
+| U4 | Feynman retirement, the accept control on the page, and the link from `/today` | S6, S9 | writer | `feat(web): accept a gap into a card, and retire the Feynman placeholder` — `a443196` |
 
 U1 must land before U2: a page cannot show an id it never receives. U3 depends on D1's
 answer; U4 has no dependency beyond U2.
@@ -168,3 +168,37 @@ the gap's point is a statement ("the prototype binds model and implementation"),
 card whose front asserts cannot be recalled, only recognised. The server writes what
 the reader accepted — front from the client, back from the quote plus its page — and
 the gap's state last, so nothing claims a card that a failed write never stored.
+
+**L6 — verification of the accept route, and the two holes it found.** The independent
+verifier confirmed the write order *from the database* rather than from fakes — an
+audit trigger recorded `card → carded` — and found the state machine open in both
+directions: a gap with a card could be discarded, and a discarded gap could be
+accepted. Both were unreachable before this slice, because nothing could write
+`carded`. Closed in `a1c0026`: both answer 409 and the sentence says which state
+stands in the way, through a `GapConflict` that carries its own sentence instead of
+the envelope's generic "conflict".
+
+Two advisories were accepted rather than fixed, with the reason written here:
+
+- A card written while the claim write fails leaves `cards=1, gap_state=open`. That is
+  the chosen order (the claim must never precede the card), and a retry converges for
+  the same question because the card's identity is derived from the concept and the
+  question. The alternative — one transaction over the card and the state — would
+  duplicate the card invariants the flashcards path owns.
+- The `reflect` guard cannot see a typed-nil pointer inside an interface. A literal
+  holding one still panics per request; catching it would need a value check that a
+  nil-able interface does not support without reflection on the underlying value.
+
+**L7 — the live run.** Against a temporary server over a copy of the real database
+(`data/study.db` plus its `-wal`, because the running server had not checkpointed):
+the stored explanation for pp. 15-23 came back with its six gaps and their ids; the
+first gap was accepted and answered a 201 with the card, the concept `pp. 15-23` and
+the topic `DDD.pdf`; that card is due, so `/api/study/due` returned one and `/today`
+reported `due_count: 1`; discarding the carded gap answered `409 this gap already has
+a card`; discarding another gap and then accepting it answered `409 this gap was
+discarded`. The concept fell back to `pp. 15-23` rather than a plan item's title
+because the active plan in that database names Preface 7-11 and no item matches
+15-23 — which is the rule working, not an accident.
+
+The real database was not touched: the run used a copy, and this slice adds no
+migration.
