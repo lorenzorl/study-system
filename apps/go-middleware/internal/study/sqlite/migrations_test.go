@@ -103,7 +103,7 @@ func TestMigrations_FreshDatabaseGetsTheStudySchema(t *testing.T) {
 
 	version, err := db.CurrentVersion(t.Context(), sqlDB)
 	require.NoError(t, err)
-	assert.Equal(t, 3, version)
+	assert.Equal(t, 4, version)
 
 	assert.False(t, hasColumn(t, sqlDB, "resources", "dify_document_id"),
 		"a fresh database must never have the legacy column")
@@ -139,7 +139,7 @@ func TestMigrations_AdoptLegacyDatabaseWithoutDataLoss(t *testing.T) {
 
 	version, err := db.CurrentVersion(t.Context(), sqlDB)
 	require.NoError(t, err)
-	assert.Equal(t, 3, version)
+	assert.Equal(t, 4, version)
 }
 
 func TestMigrations_AreIdempotentOnALegacyDatabase(t *testing.T) {
@@ -154,7 +154,7 @@ func TestMigrations_AreIdempotentOnALegacyDatabase(t *testing.T) {
 
 	var applied int
 	require.NoError(t, sqlDB.QueryRow(`SELECT count(*) FROM schema_version`).Scan(&applied))
-	assert.Equal(t, 3, applied)
+	assert.Equal(t, 4, applied)
 }
 
 // The baseline must be safe against a database that never had the legacy column
@@ -218,7 +218,7 @@ func TestMigrations_RangeExplanationsCarryTheReaderTextAndItsGaps(t *testing.T) 
 
 	version, err := db.CurrentVersion(t.Context(), sqlDB)
 	require.NoError(t, err)
-	assert.Equal(t, 3, version, "the study block keeps its ascending order")
+	assert.Equal(t, 4, version, "the study block keeps its ascending order")
 }
 
 // A gap state outside the current vocabulary must be storable: the column is
@@ -233,6 +233,49 @@ func TestMigrations_RangeGapStateAcceptsAVocabularyItDoesNotKnowYet(t *testing.T
 		VALUES ('e1', 'd1', 88, 114, 'an explanation', '2026-11-02T10:00:00Z');
 		INSERT INTO range_gaps (id, explanation_id, point, page, quote, state)
 		VALUES ('g1', 'e1', 'a point', 89, 'a quote', 'discarded');
+	`)
+	assert.NoError(t, err, "an unknown state must be stored, not rejected by a CHECK")
+}
+
+// S1: coverage is one row per page range, keyed to the book's pages and never to
+// a derived section id.
+func TestMigrations_ReadingProgressIsOneRowPerPageRange(t *testing.T) {
+	sqlDB := openFile(t, "reading.db")
+
+	require.NoError(t, db.Migrate(t.Context(), sqlDB, sqlite.Migrations()))
+
+	for _, column := range []string{
+		"id", "document_id", "from_page", "to_page", "state", "created_at", "updated_at",
+	} {
+		assert.True(t, hasColumn(t, sqlDB, "reading_progress", column),
+			"reading_progress.%s must exist", column)
+	}
+
+	_, err := sqlDB.Exec(`
+		INSERT INTO reading_progress (id, document_id, from_page, to_page, state, created_at, updated_at)
+		VALUES ('rp1', 'doc-1', 24, 36, 'read', '2026-11-02T10:00:00Z', '2026-11-02T10:00:00Z');
+		INSERT INTO reading_progress (id, document_id, from_page, to_page, state, created_at, updated_at)
+		VALUES ('rp2', 'doc-1', 24, 36, 'unread', '2026-11-02T11:00:00Z', '2026-11-02T11:00:00Z');
+	`)
+	require.Error(t, err, "the same range twice is one row: the second insert must conflict")
+
+	// The migration must be re-runnable, like every other one.
+	require.NoError(t, db.Migrate(t.Context(), sqlDB, sqlite.Migrations()))
+
+	version, err := db.CurrentVersion(t.Context(), sqlDB)
+	require.NoError(t, err)
+	assert.Equal(t, 4, version)
+}
+
+// S1: the state vocabulary grows without a migration, following
+// ingestion_jobs.status and range_gaps.state.
+func TestMigrations_ReadingProgressAcceptsAStateItDoesNotKnowYet(t *testing.T) {
+	sqlDB := openFile(t, "reading-state.db")
+	require.NoError(t, db.Migrate(t.Context(), sqlDB, sqlite.Migrations()))
+
+	_, err := sqlDB.Exec(`
+		INSERT INTO reading_progress (id, document_id, from_page, to_page, state, created_at, updated_at)
+		VALUES ('rp1', 'doc-1', 24, 36, 'skimmed', '2026-11-02T10:00:00Z', '2026-11-02T10:00:00Z');
 	`)
 	assert.NoError(t, err, "an unknown state must be stored, not rejected by a CHECK")
 }

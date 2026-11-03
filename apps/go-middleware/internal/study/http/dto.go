@@ -166,3 +166,25 @@ type ExplainRangeResponse struct {
 	ToPage        int                `json:"to_page"`
 	Gaps          []RangeGapResponse `json:"gaps"`
 }
+
+// SetReadingProgressRequest is the JSON body for PUT /api/study/reading.
+type SetReadingProgressRequest struct {
+	DocumentID string `json:"document_id"`
+	FromPage   int    `json:"from_page"`
+	ToPage     int    `json:"to_page"`
+	State      string `json:"state"`
+}
+
+// ReadingProgressResponse is one page range and whether the reader read it.
+//
+// Both timestamps travel: created_at is when the range was first marked and
+// updated_at when its state last changed, and the difference is what lets a client
+// show "marked read two days ago" without a second request.
+type ReadingProgressResponse struct {
+	DocumentID string `json:"document_id"`
+	FromPage   int    `json:"from_page"`
+	ToPage     int    `json:"to_page"`
+	State      string `json:"state"`
+	CreatedAt  string `json:"created_at"`
+	UpdatedAt  string `json:"updated_at"`
+}

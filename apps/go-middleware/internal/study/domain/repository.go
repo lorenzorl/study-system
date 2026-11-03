@@ -76,3 +76,17 @@ type RangeGapRepository interface {
 	// an empty slice when it has none.
 	ListByExplanationID(ctx context.Context, explanationID string) ([]RangeGap, error)
 }
+
+// ReadingProgressRepository manages persistence of ReadingProgress entities.
+//
+// It is the coverage axis: a range is read or not read, and there is no score.
+type ReadingProgressRepository interface {
+	// Upsert writes the state of one range, creating the row on its first marking.
+	// The stored row is returned because created_at belongs to that first marking
+	// and only the database knows it.
+	Upsert(ctx context.Context, progress *ReadingProgress) (*ReadingProgress, error)
+
+	// ListByDocument returns one document's ranges in page order, as an empty slice
+	// when nothing was marked.
+	ListByDocument(ctx context.Context, documentID string) ([]ReadingProgress, error)
+}

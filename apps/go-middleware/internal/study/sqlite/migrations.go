@@ -30,6 +30,11 @@ func Migrations() []db.Migration {
 			Description: "range_explanations and range_gaps: the reader's explanation of a page range and what it left out",
 			Up:          migrateRangeExplanations,
 		},
+		{
+			Version:     4,
+			Description: "reading_progress: one row per page range, read or unread",
+			Up:          migrateReadingProgress,
+		},
 	}
 }
 
@@ -155,6 +160,42 @@ func migrateRangeExplanations(ctx context.Context, tx *sql.Tx) error {
 	if _, err := tx.ExecContext(ctx, schema); err != nil {
 		return fmt.Errorf("create range explanation schema: %w", err)
 	}
+	return nil
+}
+
+// migrateReadingProgress creates the coverage table: the other axis, the one that
+// says where the reader is rather than what they can recall.
+//
+// The unit is the page range, not the page: a page counter produces numbers that
+// mean nothing to a reader, while a range is the thing a plan recommends. The key
+// is the range itself and not a document_sections id, because sections are derived
+// data rebuilt on reprocess and a re-ingest would orphan the reader's work. There
+// is no foreign key to documents for the same reason range_explanations has none:
+// the two contexts share a database file, not a schema.
+//
+// state is TEXT with no CHECK, following ingestion_jobs.status, so the vocabulary
+// can grow without a migration for every new word.
+func migrateReadingProgress(ctx context.Context, tx *sql.Tx) error {
+	schema := `
+	CREATE TABLE IF NOT EXISTS reading_progress (
+		id TEXT PRIMARY KEY,
+		document_id TEXT NOT NULL,
+		from_page INTEGER NOT NULL CHECK (from_page >= 1),
+		to_page INTEGER NOT NULL CHECK (to_page >= from_page),
+		state TEXT NOT NULL,
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL,
+		UNIQUE (document_id, from_page, to_page)
+	);
+
+	CREATE INDEX IF NOT EXISTS reading_progress_document_id
+		ON reading_progress(document_id, from_page);
+	`
+
+	if _, err := tx.ExecContext(ctx, schema); err != nil {
+		return fmt.Errorf("create reading progress schema: %w", err)
+	}
+
 	return nil
 }
 

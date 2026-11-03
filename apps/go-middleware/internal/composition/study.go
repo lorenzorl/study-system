@@ -27,6 +27,11 @@ type Study struct {
 	GetDueCards    *studyapp.GetDueCardsUseCase
 	SubmitReview   *studyapp.SubmitReviewUseCase
 	ExplainRange   *studyapp.ExplainRangeUseCase
+
+	// SetReadingProgress and ListReadingProgress are the coverage axis: where the
+	// reader is inside a material, which the plan turns into the next action.
+	SetReadingProgress  *studyapp.SetReadingProgressUseCase
+	ListReadingProgress *studyapp.ListReadingProgressUseCase
 }
 
 // NewStudy wires the study context over an open database.
@@ -59,6 +64,7 @@ func NewStudyWithRangeExplanations(
 	cardStates := studysqlite.NewCardStateRepository(sqlDB)
 	reviewLogs := studysqlite.NewReviewLogRepository(sqlDB)
 	explanations := studysqlite.NewRangeExplanationRepository(sqlDB)
+	readingProgress := studysqlite.NewReadingProgressRepository(sqlDB)
 
 	return &Study{
 		SyncConcept:    studyapp.NewSyncConceptUseCase(topics, concepts),
@@ -75,5 +81,7 @@ func NewStudyWithRangeExplanations(
 			newModelGapFinder(model),
 			explanations,
 		),
+		SetReadingProgress:  studyapp.NewSetReadingProgressUseCase(readingProgress),
+		ListReadingProgress: studyapp.NewListReadingProgressUseCase(readingProgress),
 	}
 }

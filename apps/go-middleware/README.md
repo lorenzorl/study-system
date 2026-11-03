@@ -181,11 +181,15 @@ will be lexical-only because it cannot reach the embedding API.
 | `GET` | `/api/resources` | Every stored resource with its topic name, newest first; the array is `[]` when none exists |
 | `GET` | `/api/study/due` | Flashcards whose next review is due |
 | `POST` | `/api/study/review` | Record a review, recompute the card state |
+| `POST` | `/api/study/explanation` | Store the reader's explanation of a page range and the gaps it left out |
+| `PUT` | `/api/study/reading` | Mark one page range `read` or `unread`; the same range is one row |
+| `GET` | `/api/study/reading` | The ranges marked on one document (`document_id`), in page order |
 | `GET` | `/api/rag/search` | Ranked chunks for a query (`q`, `limit`, and an optional `document_id` that scopes it to one document); no key required |
 | `GET` | `/api/rag/documents` | The corpus: `id`, `title`, `created_at` and the page and chunk counts of each document |
 | `POST` | `/api/rag/documents` | Upload a PDF and queue background processing; `multipart/form-data` with one `file` part |
 | `GET` | `/api/rag/documents/{id}/status` | Processing status of an uploaded document |
 | `GET` | `/api/rag/documents/{id}/pages` | The text of a page range (`from`, `to`, at most 50 pages), with the outcome each page recorded |
+| `GET` | `/api/rag/documents/{id}/sections` | The chapter table the ingestion recovered: parts, chapters and sections with their printed page ranges |
 
 ## Configuration
 

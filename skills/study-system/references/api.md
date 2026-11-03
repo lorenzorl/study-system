@@ -147,3 +147,47 @@ never for choosing what to propose.
 ```json
 [{"flashcard_id":"b64958c5-…","question":"…","answer":"…","concept_title":"Aggregates","topic_name":"DDD","next_review":"2026-10-23T15:11:49Z"}]
 ```
+
+## PUT /api/study/reading
+
+Mark one page range read or unread. This is the coverage axis, the one beside
+retrieval: a card is attempted and graded, while a range is only a position —
+where the reader is inside the book.
+
+```json
+{"document_id":"0f0b6b0e-…","from_page":24,"to_page":36,"state":"read"}
+```
+
+- The unit is the **range the plan recommends**, not the page. A page counter turns
+  a chapter into `2/13`, which is neither read nor not read.
+- `state` is `read` or `unread`. Marking `unread` keeps the row: it is a state, not
+  a deletion, and "not read" stays different from "never looked at".
+- Marking the same range again is one row: `created_at` stays, `updated_at` moves.
+- **A mark is a claim, not a proof.** Nothing verifies the reader read the pages,
+  and nothing should.
+
+`200` answers the stored row:
+
+```json
+{"document_id":"0f0b6b0e-…","from_page":24,"to_page":36,"state":"read","created_at":"2026-11-02T10:00:00Z","updated_at":"2026-11-02T10:00:00Z"}
+```
+
+| Case | Response |
+| --- | --- |
+| body is not JSON | `400 invalid request body` |
+| `document_id` missing or blank | `400 document_id is required` |
+| `from_page` below 1 | `400 from_page must be at least 1` |
+| `to_page` before `from_page` | `400 to_page must not be before from_page` |
+| `state` is neither `read` nor `unread` | `400 state must be read or unread` |
+
+## GET /api/study/reading?document_id=…
+
+The ranges marked on one document, in page order, `[]` when none is marked.
+
+```json
+[{"document_id":"0f0b6b0e-…","from_page":24,"to_page":36,"state":"read","created_at":"2026-11-02T10:00:00Z","updated_at":"2026-11-02T10:00:00Z"}]
+```
+
+| Case | Response |
+| --- | --- |
+| `document_id` missing or blank | `400 document_id is required` |

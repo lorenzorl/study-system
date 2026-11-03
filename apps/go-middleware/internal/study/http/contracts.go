@@ -69,3 +69,21 @@ type ExplainRangeUseCase interface {
 	// and a model failure is a plain error, which is a 500 and nothing stored.
 	Execute(ctx context.Context, input app.ExplainRangeInput) (domain.RangeExplanation, error)
 }
+
+// SetReadingProgressUseCase records whether one page range was read.
+//
+// The range arrives as the application's own input for the same reason the
+// explanation does: deciding what a valid range is belongs to the application
+// layer, and the transport only decides whether the body carried those fields.
+type SetReadingProgressUseCase interface {
+	// Execute returns the stored row. A refused range is apperror.ErrInvalidInput,
+	// which is a 400 with nothing stored.
+	Execute(ctx context.Context, input app.SetReadingProgressInput) (domain.ReadingProgress, error)
+}
+
+// ListReadingProgressUseCase lists one document's marked ranges.
+type ListReadingProgressUseCase interface {
+	// Execute returns the ranges in page order, as an empty slice when the document
+	// has none.
+	Execute(ctx context.Context, documentID string) ([]domain.ReadingProgress, error)
+}
