@@ -58,8 +58,9 @@ The chosen rule, which the server owns and a client never re-derives:
 - the concept's `file_path` — the column is `NOT NULL UNIQUE`, so a synthetic key is
   required — is `ranges/<document_id>/<from>-<to>`, which makes a second accept of the
   same range reuse the concept instead of failing on the unique constraint;
-- the card and `state = 'carded'` land in one transaction, so an accepted gap can
-  never be a card without the state or a state without the card.
+- the card is written first and `state = 'carded'` last, in that order and for that
+  reason: the state is the claim, and a claim written before the card could be true
+  of nothing.
 
 **D2 — what happens to the Feynman page: it is replaced.** Decided option A. It is
 per concept and its `explain()` returns hardcoded text
@@ -94,8 +95,13 @@ time, or say more"*.
 Already true in the application layer; the page can only reach it through a plan item
 that is too wide, so it must render the refusal instead of a spinner.
 
-**S6 — Accepting a gap writes a card and marks the gap, or neither.** Whichever D1
-option is chosen, one failed write leaves no card and no `carded` gap.
+**S6 — Accepting a gap writes a card and marks the gap.** The card's front is the
+reader's own question, edited from the gap's point, and the card's back is the quote
+with its page: the reader writes the question, the book provides the evidence. The
+card is written through the **existing** flashcards path, so the invariants a card has
+one owner — the derived `obsidian_id` and the initial `next_review`. The gap's state is
+written **last**, so a failure never claims a card that does not exist, and a retry is
+idempotent because the card's identity is derived from the concept and the question.
 
 **S7 — Discarding a gap is a state, not a deletion.** The gap stops being actionable
 and stays readable.
@@ -156,3 +162,9 @@ decides the shape: `concepts.file_path` is `NOT NULL UNIQUE`, so "the server der
 the concept" is not one lookup — it is a synthetic stable key per range. Without it,
 the second accept of the same range fails on the constraint, which is exactly the
 kind of thing a plan has to settle before a writer meets it.
+
+**L5 — the card's wording, decided.** The reader edits the front before accepting:
+the gap's point is a statement ("the prototype binds model and implementation"), and a
+card whose front asserts cannot be recalled, only recognised. The server writes what
+the reader accepted — front from the client, back from the quote plus its page — and
+the gap's state last, so nothing claims a card that a failed write never stored.
