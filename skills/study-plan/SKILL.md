@@ -7,8 +7,8 @@ compatibility: Needs network access to a running study-system server and its acc
 # Study plan
 
 A book in the corpus is raw material, not a plan. This skill reads its skeleton,
-decides what kind of knowledge it carries, and returns how to study it. It writes
-nothing to the server.
+decides what kind of knowledge it carries, and returns how to study it. It ends by
+storing the plan it recommended (step 7) and writes nothing else.
 
 **The premise that makes this worth doing:** the unit of study is not a chapter, it is
 the decision the reader cannot yet make well. Everything below is in service of

@@ -83,7 +83,8 @@ type StudyPlan struct {
 	ReadingMode ReadingMode
 
 	// Objective is the decision the reader wants to be able to take, in their own
-	// words. Empty is a survey plan, which is a legitimate outcome.
+	// words, stored as written except for surrounding whitespace. Empty is a survey
+	// plan, which is a legitimate outcome.
 	Objective string
 
 	// Source names the skeleton the plan was built from — `sections`, the printed
@@ -115,7 +116,8 @@ type StudyPlanItem struct {
 	FromPage int
 	ToPage   int
 
-	// Note is the agent's reason or condition for this item, verbatim.
+	// Note is the agent's reason or condition for this item, as written except for
+	// surrounding whitespace.
 	Note string
 
 	State PlanItemState

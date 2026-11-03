@@ -140,7 +140,6 @@ func TestSavePlan_AssignsPositionsFromTheRequestOrder(t *testing.T) {
 	assert.Equal(t, domain.PlanItemStatePending, stored.Items[0].State, "an item with no state is pending")
 	assert.Equal(t, domain.PlanItemStateSkipped, stored.Items[1].State)
 	assert.NotEmpty(t, stored.Items[0].ID)
-	assert.Equal(t, "plan", "plan")
 }
 
 // S6: read is never stored on the item. It is derived from coverage for the
