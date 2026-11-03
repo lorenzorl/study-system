@@ -846,7 +846,8 @@ of guessing them, and the plan cites the book's own structure.
 
 Decided in conversation on 2026-11-02, not built. Recorded so the design work is not
 redone, and so the order of the slices is explicit: `W1` -> `W2` -> `W3`, with `W4`
-independent of all three.
+independent of all three and — by the owner's decision on 2026-11-02 — **the chosen way
+to get cards out of a book**.
 
 **The idea they share.** The app has one axis and needs two. Today everything it tracks
 is **retrieval**: a card is attempted, graded, and FSRS schedules it; the Feynman page is
@@ -932,38 +933,72 @@ is read with 0 cards" is an entry; "you are 41% through Part II" is not.
 
 **Risk:** additive and read-only. Not high risk.
 
-### W4 — Explain a range, and store the gaps instead of a score
+### W4 — Explain a range, and turn the gaps into cards
 
-Proposed in the same conversation as `W1`: require proof of reading by making the reader
-explain the range in their own words, and store a score of comprehension.
+**Chosen path (owner decision, 2026-11-02).** Of the two ways to get cards out of a book,
+this is the one to build: the reader explains the range in their own words, and the app
+compares that against the text to find what the explanation left out.
 
-**The activity is right and the score is wrong.** Explaining in your own words is one of
-the best-evidenced study actions there is, so it should be built — on the **retrieval**
-axis, not as a condition for marking a range read:
+**The two routes, separated so they are never confused again:**
 
-- **A gate makes coverage dishonest.** If marking a range read costs a graded paragraph,
-  readers stop marking ranges, and the coverage signal that `W3` needs disappears. Reading
-  careful readers get punished for not wanting to write.
-- **A number is not actionable and is gameable.** A model's `7/10` on an open response is
-  noisy, invites optimizing for the grader, and cannot be acted on. What can be acted on
-  is the **gap**: what the material says that the explanation did not.
-- **The app already has a real comprehension metric, and it is longitudinal.** Cards that
-  the explanation produced, and the share of reviews passed over weeks. That number is
-  earned rather than assigned, and it does not need a model to invent one.
-- **It is the same feature as the Feynman placeholder.** `FeynmanPage.vue:146` already
-  promises "RAG-powered analysis with gap detection and guided follow-up" and returns
-  hardcoded text. Building a second, scored explanation surface would add a parallel
-  feature beside an unbuilt one; generalizing Feynman from *concept* to *range* fixes the
-  placeholder and serves this request at once.
+| Route | Input | Produces | Exists |
+| --- | --- | --- | --- |
+| **A — the agent drafts** | the range's pages | cards with a citation, accepted one by one | yes: `skills/study-system` |
+| **B — the explanation reveals gaps** | the pages **and** the reader's own words | the gaps, then cards for the gaps | this entry |
 
-**Shape:** "explain this range" stores the explanation (the reader's own words, valuable
-later as their own retrieval material) plus a gap list; each gap becomes a candidate card,
-and the cards go through `skills/study-system`'s existing accept-or-discard gate.
+Reading alone produces no cards, in either route. That is exactly why `W1`'s "read with 0
+cards" is an actionable state: it says which route to run.
 
-**Risk:** a model call per explanation, over the existing OpenRouter client. Additive.
+**Sequencing: `W4` does not depend on `W1`.** The explanation is its own evidence of
+having read, so nothing has to be marked first. What it needs is a range, which the reader
+names or `W2` supplies — which makes it the only slice in this set that can ship on its
+own.
 
-**A note on what to measure instead of a score:** explanations produced, gaps turned into
-cards, and reviews passed. All three already exist or fall out of this design.
+**The mechanism, precisely.** For one range: take the stored page text, take the
+explanation, and ask the model for what the material states that the explanation does not
+cover. Each gap carries three things — the point missed, the page that states it, and a
+short quote as evidence. **A gap without a page is rejected**, the same rule the card
+skill already enforces.
+
+**What is stored, and what is deliberately not:**
+
+- the explanation, verbatim — the reader's own words, and re-reading them two weeks later
+  is itself a retrieval test;
+- the gap list with its page references and its state (`open`, `discarded`, `carded`);
+- **no comprehension score.** A number on an open response is noisy, not actionable, and
+  invites writing for the grader. The longitudinal number already exists: the cards the
+  gaps produced, and the share of reviews passed over weeks.
+
+**Two bounds that decide whether it is usable:**
+
+1. **The gap list is capped and ranked** (5 to 7 items). Against a 28-page chapter and a
+   short explanation, an uncapped diff lists everything, which is the same as listing
+   nothing.
+2. **An explanation too short to judge is refused, not graded.** "This range is broad and
+   your explanation covers one idea: explain one section at a time, or say more." A model
+   that produces 40 gaps from two sentences is a slot machine, not a study tool.
+
+**The fork, with a recommendation.** Who calls the model:
+
+- **the server — recommended.** `POST /api/study/explanation` stores the explanation and
+  returns the gaps. The app owns the feature, it works with no agent present, and the call
+  is bounded to one range. Ingestion already calls the same OpenRouter client, and the
+  background processor is the precedent for not blocking a request on model work.
+- the skill. Reuses the "propose, then the human decides" pattern with no new model
+  plumbing, but the web UI cannot do it alone and the gaps still need a home.
+
+**Shape:** `range_explanations` (`document_id`, `from_page`, `to_page`, text, created_at)
+and `range_gaps` (explanation id, point, page, quote, state). Accepting a gap posts to the
+existing `POST /api/sync/flashcards`, so the accept-or-discard gate does not change: no
+card is ever written without the reader's word.
+
+**This also fixes the Feynman placeholder** instead of adding a second explanation surface
+beside it: generalizing Feynman from *concept* to *range* is the same feature, and
+`FeynmanPage.vue:146` already promises "gap detection" and returns hardcoded text.
+
+**Risk:** high-risk item 1 for the two new tables that hold the reader's own text, plus a
+model call over it. It gets a migration, an independent verifier and a native review on
+the source candidate — the same bar as `W2`.
 
 ---
 
