@@ -165,8 +165,8 @@ func TestMigrations_CombinedListsApplyWithoutCollision(t *testing.T) {
 	version, err := db.CurrentVersion(t.Context(), sqlDB)
 	require.NoError(t, err)
 	assert.Equal(t, sectionVersion, version)
-	assert.Equal(t, 6, schemaVersionRows(t, sqlDB),
-		"two study migrations plus four ingestion migrations must be recorded")
+	assert.Equal(t, 7, schemaVersionRows(t, sqlDB),
+		"three study migrations plus four ingestion migrations must be recorded")
 }
 
 // Adoption: the study schema is already applied and holds data. This context's
@@ -203,7 +203,8 @@ func TestMigrations_AreIdempotent(t *testing.T) {
 	require.NoError(t, db.Migrate(t.Context(), sqlDB, combinedMigrations()),
 		"a second boot must not fail or duplicate anything")
 
-	assert.Equal(t, 6, schemaVersionRows(t, sqlDB))
+	assert.Equal(t, 7, schemaVersionRows(t, sqlDB),
+		"three study migrations plus four ingestion migrations must be recorded")
 	for _, table := range chunkIndexTables {
 		assert.True(t, hasTable(t, sqlDB, table), "table %s must survive a second migrate", table)
 	}
