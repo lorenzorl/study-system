@@ -149,10 +149,20 @@ type ExplainRangeRequest struct {
 // RangeGapResponse is one gap the explanation left out: the point, the page that
 // states it, and the quote that evidences it. The three travel together because a
 // gap missing any of them cannot become a card.
+//
+// gap_id and state are what let a client act on the gap it chose — discard it, or
+// accept it into a card — instead of sending the whole explanation back.
 type RangeGapResponse struct {
+	GapID string `json:"gap_id"`
 	Point string `json:"point"`
 	Page  int    `json:"page"`
 	Quote string `json:"quote"`
+	State string `json:"state"`
+}
+
+// SetGapStateRequest is the JSON body for PUT /api/study/gaps/{gapID}/state.
+type SetGapStateRequest struct {
+	State string `json:"state"`
 }
 
 // ExplainRangeResponse is the JSON body returned by POST /api/study/explanation.

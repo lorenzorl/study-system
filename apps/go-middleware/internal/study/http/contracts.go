@@ -111,3 +111,16 @@ type TodayUseCase interface {
 	// is read-only and reports what it knows, it does not fail on a missing name.
 	Execute(ctx context.Context) (app.Today, error)
 }
+
+// GetExplanationUseCase reads a stored explanation with its gaps.
+type GetExplanationUseCase interface {
+	// Execute returns the stored explanation, or apperror.ErrNotFound.
+	Execute(ctx context.Context, explanationID string) (domain.RangeExplanation, error)
+}
+
+// SetGapStateUseCase discards a gap or returns it to open.
+type SetGapStateUseCase interface {
+	// Execute returns the gap as stored. A state a client may not set is
+	// apperror.ErrInvalidInput and an unknown gap is apperror.ErrNotFound.
+	Execute(ctx context.Context, input app.SetGapStateInput) (domain.RangeGap, error)
+}

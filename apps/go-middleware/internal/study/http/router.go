@@ -26,6 +26,8 @@ type UseCases struct {
 	SavePlan            SavePlanUseCase
 	GetPlan             GetPlanUseCase
 	Today               TodayUseCase
+	GetExplanation      GetExplanationUseCase
+	SetGapState         SetGapStateUseCase
 }
 
 // NewRouter builds the study context's HTTP handler.
@@ -50,6 +52,12 @@ func NewRouter(useCases UseCases) http.Handler {
 	mux.Handle("GET /api/study/due", NewDueCardsHandler(useCases.GetDueCards))
 	mux.Handle("POST /api/study/review", NewReviewHandler(useCases.SubmitReview))
 	mux.Handle("POST /api/study/explanation", NewExplanationHandler(useCases.ExplainRange))
+
+	// The explanation is stored, so it is also readable, and its gaps are actionable
+	// one by one. Without these two, opening a page again would pay for the model and
+	// a reader could not dismiss a gap they disagreed with.
+	mux.Handle("GET /api/study/explanations/{explanationID}", NewExplanationReadHandler(useCases.GetExplanation))
+	mux.Handle("PUT /api/study/gaps/{gapID}/state", NewGapStateHandler(useCases.SetGapState))
 
 	// The coverage axis. It sits under /api/study/ beside the retrieval routes and
 	// shares their mux: marking a range read is a study action, not a document

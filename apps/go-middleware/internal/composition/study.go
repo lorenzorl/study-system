@@ -41,6 +41,11 @@ type Study struct {
 	// Today is the projection over the three axes above plus the due count: what to
 	// do today, read from rows the other routes already stored.
 	Today *studyapp.TodayUseCase
+
+	// GetExplanation and SetGapState make a stored explanation usable twice:
+	// re-reading it costs nothing, and a gap can be dismissed on its own.
+	GetExplanation *studyapp.GetExplanationUseCase
+	SetGapState    *studyapp.SetGapStateUseCase
 }
 
 // NewStudy wires the study context over an open database.
@@ -73,6 +78,7 @@ func NewStudyWithRangeExplanations(
 	cardStates := studysqlite.NewCardStateRepository(sqlDB)
 	reviewLogs := studysqlite.NewReviewLogRepository(sqlDB)
 	explanations := studysqlite.NewRangeExplanationRepository(sqlDB)
+	gaps := studysqlite.NewRangeGapRepository(sqlDB)
 	readingProgress := studysqlite.NewReadingProgressRepository(sqlDB)
 	plans := studysqlite.NewStudyPlanRepository(sqlDB)
 
@@ -96,6 +102,8 @@ func NewStudyWithRangeExplanations(
 			newModelGapFinder(model),
 			explanations,
 		),
+		GetExplanation:      studyapp.NewGetExplanationUseCase(explanations),
+		SetGapState:         studyapp.NewSetGapStateUseCase(gaps),
 		SetReadingProgress:  studyapp.NewSetReadingProgressUseCase(readingProgress),
 		ListReadingProgress: studyapp.NewListReadingProgressUseCase(readingProgress),
 		SavePlan:            studyapp.NewSavePlanUseCase(documents, plans, readingProgress),

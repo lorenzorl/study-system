@@ -182,6 +182,8 @@ will be lexical-only because it cannot reach the embedding API.
 | `GET` | `/api/study/due` | Flashcards whose next review is due |
 | `POST` | `/api/study/review` | Record a review, recompute the card state |
 | `POST` | `/api/study/explanation` | Store the reader's explanation of a page range and the gaps it left out |
+| `GET` | `/api/study/explanations/{id}` | A stored explanation with its gaps, without calling the model |
+| `PUT` | `/api/study/gaps/{id}/state` | Discard one gap or return it to `open`; `carded` is written only by the accept route |
 | `PUT` | `/api/study/reading` | Mark one page range `read` or `unread`; the same range is one row |
 | `GET` | `/api/study/reading` | The ranges marked on one document (`document_id`), in page order |
 | `POST` | `/api/study/plan` | Store the plan the agent produced for a document; it supersedes the previous active plan |

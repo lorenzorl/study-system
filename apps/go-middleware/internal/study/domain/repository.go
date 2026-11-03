@@ -83,6 +83,13 @@ type RangeGapRepository interface {
 	// ListByExplanationID returns the gaps of one explanation in stored order, as
 	// an empty slice when it has none.
 	ListByExplanationID(ctx context.Context, explanationID string) ([]RangeGap, error)
+
+	// UpdateState writes one gap's state and returns it as stored, or
+	// apperror.ErrNotFound when no gap has that id.
+	//
+	// It changes only the state: the point, the page and the quote are the evidence
+	// that makes the gap actionable, and they are not what a reader discards.
+	UpdateState(ctx context.Context, gapID string, state RangeGapState) (*RangeGap, error)
 }
 
 // ReadingProgressRepository manages persistence of ReadingProgress entities.

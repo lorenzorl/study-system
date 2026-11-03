@@ -42,6 +42,11 @@ const (
 	// stored gap has in v1.
 	RangeGapStateOpen RangeGapState = "open"
 
+	// RangeGapStateDiscarded is a gap the reader decided against. It is kept, not
+	// deleted: a discarded gap is a judgment about the material, and re-reading the
+	// list two weeks later is how the reader sees what they thought was unimportant.
+	RangeGapStateDiscarded RangeGapState = "discarded"
+
 	// RangeGapStateCarded is a gap a card now covers, written through the existing
 	// flashcards endpoint.
 	//
