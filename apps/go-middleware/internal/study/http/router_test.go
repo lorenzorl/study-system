@@ -2,7 +2,13 @@ package http_test
 
 import (
 	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/study/app"
 	"github.com/lorenzorangel/study-system/apps/go-middleware/internal/study/domain"
@@ -36,12 +42,14 @@ func testUseCases() httppkg.UseCases {
 			NextReview: time.Date(2026, 11, 5, 10, 0, 0, 0, time.UTC),
 			LastReview: time.Date(2026, 11, 2, 10, 0, 0, 0, time.UTC),
 		}},
+		ExplainRange:        &mockExplainRangeUseCase{},
 		SetReadingProgress:  &mockSetReadingProgressUseCase{},
 		ListReadingProgress: &mockListReadingProgressUseCase{},
 		SavePlan:            &mockSavePlanUseCase{},
 		GetPlan:             &mockGetPlanUseCase{},
 		GetExplanation:      &mockGetExplanationUseCase{},
 		SetGapState:         &mockSetGapStateUseCase{},
+		AcceptGap:           &mockAcceptGapUseCase{},
 		Today:               &mockTodayUseCase{},
 	}
 }
@@ -50,4 +58,42 @@ func newStudyRouter(explain httppkg.ExplainRangeUseCase) http.Handler {
 	useCases := testUseCases()
 	useCases.ExplainRange = explain
 	return httppkg.NewRouter(useCases)
+}
+
+// testUseCasesWithExplanation is the whole surface, explanation included, which is what
+// a composition root builds.
+func testUseCasesWithExplanation() httppkg.UseCases {
+	return testUseCases()
+}
+
+// A use case the composition root forgot is a boot failure that names the field.
+//
+// SetGapState is the field this test proves, and it is not an arbitrary one: it is one of
+// the two use cases internal/server/server.go left out of its UseCases literal, and a
+// nil there used to reach the handler and panic on the first request instead.
+func TestNewRouter_PanicsNamingTheUseCaseThatWasNotWired(t *testing.T) {
+	useCases := testUseCases()
+	useCases.SetGapState = nil
+
+	assert.PanicsWithValue(t,
+		"study http: use case SetGapState is not wired",
+		func() { httppkg.NewRouter(useCases) },
+	)
+}
+
+// The two U1 routes answer through the router a complete composition builds, which is
+// the evidence that neither handler holds a nil use case.
+func TestNewRouter_AnswersTheExplanationReadAndGapStateRoutes(t *testing.T) {
+	router := httppkg.NewRouter(testUseCasesWithExplanation())
+
+	read := httptest.NewRecorder()
+	router.ServeHTTP(read, httptest.NewRequest(http.MethodGet, "/api/study/explanations/x", nil))
+	require.Equal(t, http.StatusOK, read.Code, read.Body.String())
+
+	state := httptest.NewRecorder()
+	write := httptest.NewRequest(http.MethodPut, "/api/study/gaps/x/state",
+		strings.NewReader(`{"state":"discarded"}`))
+	write.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(state, write)
+	require.Equal(t, http.StatusOK, state.Code, state.Body.String())
 }

@@ -124,3 +124,12 @@ type SetGapStateUseCase interface {
 	// apperror.ErrInvalidInput and an unknown gap is apperror.ErrNotFound.
 	Execute(ctx context.Context, input app.SetGapStateInput) (domain.RangeGap, error)
 }
+
+// AcceptGapUseCase turns an accepted gap into a card.
+type AcceptGapUseCase interface {
+	// Execute writes the card and marks the gap `carded`. An unknown gap is
+	// apperror.ErrNotFound, a gap that already has a card is apperror.ErrConflict, and
+	// a blank question is apperror.ErrInvalidInput; nothing is written in any of
+	// those cases.
+	Execute(ctx context.Context, input app.AcceptGapInput) (app.AcceptGapResult, error)
+}

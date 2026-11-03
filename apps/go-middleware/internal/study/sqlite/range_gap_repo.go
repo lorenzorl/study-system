@@ -24,6 +24,30 @@ func (r *RangeGapRepository) ListByExplanationID(ctx context.Context, explanatio
 	return listGaps(ctx, r.db, explanationID)
 }
 
+// FindByID returns one gap by its id, or apperror.ErrNotFound when no gap has it.
+//
+// Every column is read, evidence included: the accept route builds a card's back from
+// the quote and its page, so a projection would only move the same columns into a
+// second query.
+func (r *RangeGapRepository) FindByID(ctx context.Context, gapID string) (*domain.RangeGap, error) {
+	var gap domain.RangeGap
+	var state string
+
+	err := r.db.QueryRowContext(ctx,
+		`SELECT id, explanation_id, point, page, quote, state FROM range_gaps WHERE id = ?`,
+		gapID,
+	).Scan(&gap.ID, &gap.ExplanationID, &gap.Point, &gap.Page, &gap.Quote, &state)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, apperror.ErrNotFound
+		}
+		return nil, fmt.Errorf("query range_gap by id: %w", err)
+	}
+	gap.State = domain.RangeGapState(state)
+
+	return &gap, nil
+}
+
 // UpdateState writes one gap's state and returns the row as stored.
 //
 // The update is followed by a read inside the same transaction, because the state is

@@ -210,6 +210,53 @@ Discard a gap, or return a discarded one to `open`.
 | `state` is not `discarded` or `open` (including `carded`) | `400 state must be discarded or open` |
 | no gap has that id | `404 not found` |
 
+## POST /api/study/gaps/{gapID}/card
+
+Accept one gap into a flashcard. You write the question, the book provides the evidence:
+this route builds the card's back as the gap's quote plus its page, so the card asserts
+nothing the page does not say.
+
+```json
+{"question":"¿Por qué el prototipo ata modelo e implementación?"}
+```
+
+- The question is **yours**, and it is edited from the gap's point before you send it.
+  A gap's point is a statement, and a card whose front asserts can only be recognised,
+  never recalled.
+- The answer is the gap's `quote` followed by `(p.<page>)`, read from what the server
+  stored. Sending a quote is not possible: the evidence never comes from the client.
+- The topic and the concept are **named by the server**: the topic is the document's
+  title, and the concept is the active plan item's title when the explained range is
+  exactly that item's range, `pp. <from>-<to>` otherwise.
+- The card is written through the existing flashcards path, so it gets the derived
+  `obsidian_id` and an initial `next_review` of now — it is due immediately.
+- Accepting the same gap twice is a `409`: the gap already carries the card. Accepting a
+  *different* gap of the same range reuses the same topic and concept, and only a
+  different question makes a different card.
+- **The card is written first and the gap's state `carded` last**, and the order is the
+  point: the state is a claim that a card exists, so a claim written first could be true
+  of nothing. A failure before the last step leaves the gap `open` and stores no lie, and
+  a retry converges because the card's identity is derived from the concept and the
+  question.
+
+`201` answers the card that was written:
+
+```json
+{"gap_id":"7b1c…","question":"¿Por qué el prototipo ata modelo e implementación?",
+ "answer":"That crude prototype forged the essential link. (p.18)",
+ "concept_id":"3d9f…","topic_id":"a1c2…","state":"carded"}
+```
+
+| Case | Response |
+| --- | --- |
+| body is not JSON | `400 invalid request body` |
+| `question` missing or blank | `400 question is required` |
+| the gap already has a card | `409 this gap already has a card` |
+| no gap has that id | `404 not found` |
+
+Nothing is written on a refusal: no gap state, no card, and not even a topic or a
+concept.
+
 ## GET /api/study/due
 
 What the user has to review today. Useful for a closing line ("quedan N para hoy"),

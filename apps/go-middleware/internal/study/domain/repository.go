@@ -80,6 +80,12 @@ type RangeExplanationRepository interface {
 
 // RangeGapRepository manages persistence of RangeGap entities.
 type RangeGapRepository interface {
+	// FindByID returns one gap by its id, or apperror.ErrNotFound on a miss.
+	//
+	// A gap is addressable on its own: a client acts on the gap it chose, so the
+	// accept route reads it back instead of trusting the page that sent it.
+	FindByID(ctx context.Context, gapID string) (*RangeGap, error)
+
 	// ListByExplanationID returns the gaps of one explanation in stored order, as
 	// an empty slice when it has none.
 	ListByExplanationID(ctx context.Context, explanationID string) ([]RangeGap, error)

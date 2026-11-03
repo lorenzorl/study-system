@@ -267,3 +267,24 @@ type TodayResponse struct {
 	DueCount int                  `json:"due_count"`
 	Entries  []TodayEntryResponse `json:"entries"`
 }
+
+// AcceptGapRequest is the JSON body for POST /api/study/gaps/{gapID}/card.
+//
+// It carries the front of the card and nothing else: the back is the gap's quote and
+// page, which the server reads from what it stored, so a client cannot claim evidence
+// the book does not state.
+type AcceptGapRequest struct {
+	Question string `json:"question"`
+}
+
+// AcceptGapResponse is the card one accept wrote, and the names the server derived for
+// it. concept_id and topic_id travel because a client that links to the card needs
+// them and could not derive them without re-implementing the naming rule.
+type AcceptGapResponse struct {
+	GapID     string `json:"gap_id"`
+	Question  string `json:"question"`
+	Answer    string `json:"answer"`
+	ConceptID string `json:"concept_id"`
+	TopicID   string `json:"topic_id"`
+	State     string `json:"state"`
+}

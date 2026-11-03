@@ -58,6 +58,38 @@ func TestRangeGapRepository_UpdateStateCanReturnAGapToOpen(t *testing.T) {
 	assert.Equal(t, domain.RangeGapStateOpen, updated.State)
 }
 
+// S6: the accept route addresses the gap it turns into a card, so one gap is
+// readable by id with its evidence intact.
+func TestRangeGapRepository_FindByIDReturnsTheGapWithItsEvidence(t *testing.T) {
+	ctx := t.Context()
+	sqlDB := openMigratedDB(t)
+	t.Cleanup(func() { sqlDB.Close() })
+	explanation := newExplanation("an explanation of the aggregate boundary")
+	require.NoError(t, sqlite.NewRangeExplanationRepository(sqlDB).Create(ctx, explanation))
+
+	repo := sqlite.NewRangeGapRepository(sqlDB)
+	target := explanation.Gaps[0]
+
+	found, err := repo.FindByID(ctx, target.ID)
+	require.NoError(t, err)
+
+	assert.Equal(t, target.ID, found.ID)
+	assert.Equal(t, explanation.ID, found.ExplanationID, "the gap must still name the explanation it belongs to")
+	assert.Equal(t, target.Point, found.Point)
+	assert.Equal(t, target.Page, found.Page)
+	assert.Equal(t, target.Quote, found.Quote)
+	assert.Equal(t, domain.RangeGapStateOpen, found.State)
+}
+
+func TestRangeGapRepository_FindByIDOfAStrangerIsNotFound(t *testing.T) {
+	sqlDB := openMigratedDB(t)
+	t.Cleanup(func() { sqlDB.Close() })
+
+	_, err := sqlite.NewRangeGapRepository(sqlDB).FindByID(t.Context(), "no-such-gap")
+
+	assert.ErrorIs(t, err, apperror.ErrNotFound)
+}
+
 func TestRangeGapRepository_UpdateStateOfAnUnknownGapIsNotFound(t *testing.T) {
 	sqlDB := openMigratedDB(t)
 	repo := sqlite.NewRangeGapRepository(sqlDB)

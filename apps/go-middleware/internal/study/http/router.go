@@ -2,6 +2,7 @@ package http
 
 import (
 	"net/http"
+	"reflect"
 )
 
 // UseCases is the study context's application surface, as the transport needs it.
@@ -28,6 +29,7 @@ type UseCases struct {
 	Today               TodayUseCase
 	GetExplanation      GetExplanationUseCase
 	SetGapState         SetGapStateUseCase
+	AcceptGap           AcceptGapUseCase
 }
 
 // NewRouter builds the study context's HTTP handler.
@@ -40,6 +42,11 @@ type UseCases struct {
 // here. The composition root wraps this handler, so a context never encodes
 // platform policy.
 func NewRouter(useCases UseCases) http.Handler {
+	// Before a single route is registered: a use case the composition root forgot is a
+	// boot failure that names the field, not a handler holding a nil interface that
+	// panics on the first reader who reaches that route.
+	requireWired(useCases)
+
 	mux := http.NewServeMux()
 
 	mux.Handle("POST /api/sync/concept", NewSyncConceptHandler(useCases.SyncConcept))
@@ -58,6 +65,11 @@ func NewRouter(useCases UseCases) http.Handler {
 	// a reader could not dismiss a gap they disagreed with.
 	mux.Handle("GET /api/study/explanations/{explanationID}", NewExplanationReadHandler(useCases.GetExplanation))
 	mux.Handle("PUT /api/study/gaps/{gapID}/state", NewGapStateHandler(useCases.SetGapState))
+
+	// Accepting a gap is its own route and not a third state: it writes the card, so it
+	// is the only writer of `carded`, and a state that says a card exists can only come
+	// from the request that stored one.
+	mux.Handle("POST /api/study/gaps/{gapID}/card", NewAcceptGapHandler(useCases.AcceptGap))
 
 	// The coverage axis. It sits under /api/study/ beside the retrieval routes and
 	// shares their mux: marking a range read is a study action, not a document
@@ -78,4 +90,29 @@ func NewRouter(useCases UseCases) http.Handler {
 	mux.Handle("GET /api/study/today", NewTodayHandler(useCases.Today))
 
 	return mux
+}
+
+// requireWired panics when any use case of the context is missing.
+//
+// The check walks the struct instead of listing the fields again: a hand-written list
+// is one more place to forget, and forgetting is exactly the defect this prevents —
+// two routes shipped holding nil use cases because nothing compared UseCases with the
+// struct literal that filled it.
+//
+// A nil here is a composition error, not a request error. A panic at construction is a
+// bug report with the field's name in it; the same nil discovered by a request is an
+// outage.
+func requireWired(useCases UseCases) {
+	value := reflect.ValueOf(useCases)
+	typeOf := value.Type()
+
+	for index := 0; index < value.NumField(); index++ {
+		field := value.Field(index)
+		// Only interfaces can hold nil; a value field is always wired.
+		if field.Kind() != reflect.Interface || !field.IsNil() {
+			continue
+		}
+
+		panic("study http: use case " + typeOf.Field(index).Name + " is not wired")
+	}
 }

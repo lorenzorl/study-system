@@ -53,14 +53,18 @@ func ctNew(t *testing.T) *ctHarness {
 	progress := sqlite.NewReadingProgressRepository(sqlDB)
 	docs := &ctDocs{ids: map[string]string{"doc-1": "DDD"}}
 
+	// The two routes under contract get the real repositories; every other use case is a
+	// mock. NewRouter refuses an incomplete surface, so this starts from the complete set
+	// rather than listing sixteen uninvolved fields here.
+	useCases := testUseCases()
+	useCases.SavePlan = app.NewSavePlanUseCase(docs, plans, progress)
+	useCases.GetPlan = app.NewGetPlanUseCase(plans, progress)
+
 	return &ctHarness{
 		sqlDB:    sqlDB,
 		plans:    plans,
 		progress: progress,
-		router: httppkg.NewRouter(httppkg.UseCases{
-			SavePlan: app.NewSavePlanUseCase(docs, plans, progress),
-			GetPlan:  app.NewGetPlanUseCase(plans, progress),
-		}),
+		router:   httppkg.NewRouter(useCases),
 	}
 }
 

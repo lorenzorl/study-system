@@ -43,6 +43,19 @@ func (f *fakeGatewayRepo) UpdateState(
 	return nil, apperror.ErrNotFound
 }
 
+func (f *fakeGatewayRepo) FindByID(ctx context.Context, gapID string) (*domain.RangeGap, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	for _, gap := range f.gaps {
+		if gap.ID == gapID {
+			found := gap
+			return &found, nil
+		}
+	}
+	return nil, apperror.ErrNotFound
+}
+
 func (f *fakeGatewayRepo) ListByExplanationID(ctx context.Context, explanationID string) ([]domain.RangeGap, error) {
 	if f.err != nil {
 		return nil, f.err
