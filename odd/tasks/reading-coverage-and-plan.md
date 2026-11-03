@@ -108,7 +108,7 @@ README's API table gains their rows (and the missing `/sections` row).
 | --- | --- | --- | --- |
 | T1 | W1 — S1-S5 | inline | `feat(study): record which page ranges were read` — `40e2338` |
 | T2 | W2 — S6-S12 | inline | `feat(study): store the plan the agent produces` — `8761dbe`; independent verifier + native review (high-risk item 1) |
-| T3 | W3 — S13, S15 | inline | `feat(study): project what to do today` |
+| T3 | W3 — S13, S15 | inline (writer) | `feat(study): project what to do today` — `294ba69` |
 | T4 | W3 UI — S14 | inline | `feat(web): open the app on what to do today` |
 
 ## Log
